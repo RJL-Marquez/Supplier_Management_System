@@ -9,6 +9,7 @@ interface EmployeeNotificationBellProps {
   partnerCompanies: PartnerCompany[];
   responses: SurveyResponse[];
   onFillForm: (surveyId: string) => void;
+  onViewAll?: () => void;
   variant?: 'header' | 'sidebar';
   isSidebarCollapsed?: boolean;
 }
@@ -19,6 +20,7 @@ export function EmployeeNotificationBell({
   partnerCompanies,
   responses,
   onFillForm,
+  onViewAll,
   variant = 'header',
   isSidebarCollapsed = false,
 }: EmployeeNotificationBellProps) {
@@ -242,6 +244,19 @@ export function EmployeeNotificationBell({
               </li>
             ))}
           </ul>
+        )}
+
+        {onViewAll && (
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false);
+              onViewAll();
+            }}
+            className="w-full border-t border-slate-100 px-4 py-2.5 text-center text-xs font-semibold text-azure transition hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900/60"
+          >
+            View all reminders
+          </button>
         )}
       </>
     );

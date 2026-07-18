@@ -51,10 +51,10 @@ export function getDefaultPermissions(designation: string, department: string): 
   let pages: PageModuleKey[] = [];
 
   if (rank === 'Rank & File') {
-    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies'];
+    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'notifications'];
   } else if (rank === 'Supervisory') {
     // Supervisor gets Dashboard, Analytics, Survey Forms, Partner Companies, and optionally Reports for basic exports
-    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'reports'];
+    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'reports', 'notifications'];
   } else if (rank === 'Managerial') {
     pages = [
       'dashboard', 
@@ -64,7 +64,8 @@ export function getDefaultPermissions(designation: string, department: string): 
       'explorer', 
       'reports', 
       'present', 
-      'archive'
+      'archive',
+      'notifications'
     ];
   } else if (rank === 'Director') {
     pages = [
@@ -79,7 +80,7 @@ export function getDefaultPermissions(designation: string, department: string): 
       'notifications'
     ];
   } else if (rank === 'Executive') {
-    pages = ['dashboard', 'analytics', 'reports', 'present'];
+    pages = ['dashboard', 'analytics', 'reports', 'present', 'notifications'];
   } else {
     // Default fallback or Admin
     pages = [

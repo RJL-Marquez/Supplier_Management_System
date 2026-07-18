@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
-import { BarChart3, Bell, FileText, LayoutDashboard, Moon, Search, Sun, Table2, FilePlus, ClipboardCheck, ArrowLeft, LogOut, ShieldAlert, Users, Presentation, Archive, Database, UserCog } from 'lucide-react';
+import { BarChart3, Bell, FileText, LayoutDashboard, Moon, Search, Sun, Table2, FilePlus, ClipboardCheck, ArrowLeft, LogOut, ShieldAlert, Users, Presentation, Archive, Database, UserCog, Mail } from 'lucide-react';
 import { AccountMenu } from './components/AccountMenu';
 import { NotificationBell } from './components/NotificationBell';
 import { EmployeeNotificationBell } from './components/EmployeeNotificationBell';
@@ -8,6 +8,7 @@ import { AnalyticsPage } from './pages/AnalyticsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotificationLogsPage } from './pages/NotificationLogsPage';
+import { EmployeeNotificationLogsPage } from './pages/EmployeeNotificationLogsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SurveyExplorerPage } from './pages/SurveyExplorerPage';
 import { CreateSurveyPage } from './pages/CreateSurveyPage';
@@ -419,8 +420,15 @@ export default function App() {
 
 
   const visiblePages = useMemo(() => {
-    return adminPages.filter((page) => userPermissions.pages.includes(page.key as PageModuleKey));
-  }, [userPermissions.pages]);
+    return adminPages
+      .filter((page) => userPermissions.pages.includes(page.key as PageModuleKey))
+      .map((page) => {
+        if (page.key === 'notifications' && !isAdmin) {
+          return { ...page, label: 'Survey Reminders', icon: Mail };
+        }
+        return page;
+      });
+  }, [userPermissions.pages, isAdmin]);
 
   const activeTitle = useMemo(() => {
     if (activePage === 'dashboard') {
@@ -434,8 +442,8 @@ export default function App() {
       return selected ? `Survey: ${selected.title}` : 'Survey Details';
     }
     if (activePage === 'fill-form') return 'Fill Out Stakeholder Survey';
-    return adminPages.find((page) => page.key === activePage)?.label ?? 'Dashboard';
-  }, [activePage, selectedSurveyId, surveys, editingSurveyId, profile]);
+    return visiblePages.find((page) => page.key === activePage)?.label ?? 'Dashboard';
+  }, [activePage, selectedSurveyId, surveys, editingSurveyId, profile, visiblePages]);
 
   const pageHeading = useMemo(() => {
     if (activePage === 'dashboard') {
@@ -559,7 +567,21 @@ export default function App() {
         isAllCompanies={!filters.company}
       />
     ),
-    notifications: <NotificationLogsPage notifications={notifications} unreadCount={unreadCount} />,
+    notifications: isAdmin ? (
+      <NotificationLogsPage notifications={notifications} unreadCount={unreadCount} />
+    ) : (
+      <EmployeeNotificationLogsPage
+        userEmail={account || ''}
+        profile={profile}
+        surveys={surveys}
+        partnerCompanies={partnerCompanies}
+        responses={responses}
+        onFillForm={(id) => {
+          setSelectedSurveyId(id);
+          setActivePage('fill-form');
+        }}
+      />
+    ),
     'create-form': (
       <CreateSurveyPage
         onBack={() => {
@@ -723,22 +745,6 @@ export default function App() {
         title={activeTitle}
         pageHeading={pageHeading}
         renderDropdown={renderSidebarDropdown}
-        sidebarExtra={(isCollapsed) =>
-          !isAdmin && (
-            <EmployeeNotificationBell
-              userEmail={account || ''}
-              surveys={surveys}
-              partnerCompanies={partnerCompanies}
-              responses={responses}
-              onFillForm={(id) => {
-                setSelectedSurveyId(id);
-                setActivePage('fill-form');
-              }}
-              variant="sidebar"
-              isSidebarCollapsed={isCollapsed}
-            />
-          )
-        }
         action={
           <div className="flex items-center divide-x divide-blue-400/25">
             {isAdmin ? (
@@ -761,6 +767,7 @@ export default function App() {
                     setSelectedSurveyId(id);
                     setActivePage('fill-form');
                   }}
+                  onViewAll={() => setActivePage('notifications')}
                   variant="header"
                 />
               </div>
