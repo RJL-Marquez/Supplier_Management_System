@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Mail,
   Inbox,
@@ -9,9 +9,18 @@ import {
   Award,
   Search,
   Clock,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { CustomForm, PartnerCompany, SurveyResponse } from '../types/survey';
 import { getEmployeePendingSurveys, EmployeeNotification } from '../utils/employeeNotifications';
+import {
+  getReadIds,
+  getDeletedIds,
+  markNotificationRead,
+  deleteNotifications,
+  subscribeNotificationState,
+} from '../utils/employeeNotificationState';
 import { StateMessage } from '../components/StateMessage';
 
 interface EmployeeNotificationLogsPageProps {
@@ -33,10 +42,24 @@ export function EmployeeNotificationLogsPage({
 }: EmployeeNotificationLogsPageProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [, forceTick] = useState(0);
 
-  const notifications = useMemo(
+  // Re-render whenever read/deleted state changes anywhere (e.g. the header bell).
+  useEffect(() => subscribeNotificationState(() => forceTick((t) => t + 1)), []);
+
+  const readIds = getReadIds(userEmail);
+  const deletedIds = getDeletedIds(userEmail);
+
+  const allNotifications = useMemo(
     () => getEmployeePendingSurveys(userEmail, profile, surveys, partnerCompanies, responses),
     [userEmail, profile, surveys, partnerCompanies, responses],
+  );
+
+  const notifications = useMemo(
+    () => allNotifications.filter((item) => !deletedIds.has(item.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allNotifications, deletedIds.size],
   );
 
   const filtered = useMemo(() => {
@@ -50,6 +73,12 @@ export function EmployeeNotificationLogsPage({
   const totalPendingCompanies = useMemo(
     () => notifications.reduce((sum, item) => sum + item.pendingCompanies.length, 0),
     [notifications],
+  );
+
+  const unreadCount = useMemo(
+    () => notifications.filter((item) => !readIds.has(item.id)).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notifications, readIds.size],
   );
 
   const freqHours = localStorage.getItem('admin_reminder_frequency') || '24';
@@ -66,8 +95,35 @@ export function EmployeeNotificationLogsPage({
 
   const selected = notifications.find((item) => item.id === selectedId) || null;
 
+  const handleOpen = (id: string) => {
+    markNotificationRead(userEmail, id);
+    setSelectedId(id);
+  };
+
+  const toggleChecked = (id: string) => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    deleteNotifications(userEmail, Array.from(checkedIds));
+    setCheckedIds(new Set());
+  };
+
   if (selected) {
-    return <MessageView notification={selected} userEmail={userEmail} onBack={() => setSelectedId(null)} onFillForm={onFillForm} frequencyLabel={frequencyLabel} />;
+    return (
+      <MessageView
+        notification={selected}
+        userEmail={userEmail}
+        onBack={() => setSelectedId(null)}
+        onFillForm={onFillForm}
+        frequencyLabel={frequencyLabel}
+      />
+    );
   }
 
   return (
@@ -88,21 +144,47 @@ export function EmployeeNotificationLogsPage({
             </div>
           </div>
           <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-black text-red-600 dark:bg-red-950/50 dark:text-red-400">
-            {notifications.length} unread
+            {unreadCount} unread
           </span>
         </div>
 
-        <div className="border-b border-slate-100 px-5 py-3 dark:border-slate-800">
-          <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 transition focus-within:border-azure focus-within:ring-2 focus-within:ring-blue-100 dark:border-slate-800 dark:bg-slate-900 dark:focus-within:ring-blue-950">
-            <Search size={15} className="shrink-0 text-slate-400" />
-            <input
-              className="w-full bg-transparent py-2 text-sm text-ink outline-none placeholder:text-slate-400 dark:text-slate-100"
-              placeholder="Search reminders..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+        {checkedIds.size > 0 ? (
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-blue-50/60 px-5 py-3 dark:border-slate-800 dark:bg-blue-950/20">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setCheckedIds(new Set())}
+                className="cursor-pointer rounded-full p-1 text-slate-500 transition hover:bg-slate-200 dark:hover:bg-slate-800"
+                title="Clear selection"
+              >
+                <X size={15} />
+              </button>
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                {checkedIds.size} selected
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleDeleteSelected}
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-600 transition hover:bg-rose-50 dark:border-rose-900/50 dark:bg-slate-900 dark:text-rose-400 dark:hover:bg-rose-950/30"
+            >
+              <Trash2 size={13} />
+              <span>Delete</span>
+            </button>
           </div>
-        </div>
+        ) : (
+          <div className="border-b border-slate-100 px-5 py-3 dark:border-slate-800">
+            <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 transition focus-within:border-azure focus-within:ring-2 focus-within:ring-blue-100 dark:border-slate-800 dark:bg-slate-900 dark:focus-within:ring-blue-950">
+              <Search size={15} className="shrink-0 text-slate-400" />
+              <input
+                className="w-full bg-transparent py-2 text-sm text-ink outline-none placeholder:text-slate-400 dark:text-slate-100"
+                placeholder="Search reminders..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+          </div>
+        )}
 
         {filtered.length === 0 ? (
           <div className="py-6">
@@ -117,34 +199,49 @@ export function EmployeeNotificationLogsPage({
           </div>
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-            {filtered.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(item.id)}
-                  className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/40"
+            {filtered.map((item) => {
+              const isRead = readIds.has(item.id);
+              const isChecked = checkedIds.has(item.id);
+              return (
+                <li
+                  key={item.id}
+                  className={`flex w-full items-center gap-4 px-5 py-4 transition hover:bg-slate-50 dark:hover:bg-slate-900/40 ${
+                    isChecked ? 'bg-blue-50/60 dark:bg-blue-950/20' : ''
+                  }`}
                 >
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-[#0063a9]" title="Unread" />
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-600 text-sm font-bold text-white">
-                    M
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                        Microgenesis Administrator
-                      </p>
-                      <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">Today</span>
+                  <label
+                    className="flex shrink-0 cursor-pointer items-center justify-center p-1"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleChecked(item.id)}
+                      className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#0063a9] focus:ring-blue-200 dark:border-slate-600"
+                    />
+                  </label>
+                  <button type="button" onClick={() => handleOpen(item.id)} className="flex min-w-0 flex-1 items-center gap-4 text-left">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-600 text-sm font-bold text-white">
+                      M
                     </div>
-                    <p className="truncate text-sm font-semibold text-red-600 dark:text-red-400">
-                      {item.subject}: {item.surveyTitle}
-                    </p>
-                    <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                      {item.pendingCompanies.length} partner {item.pendingCompanies.length === 1 ? 'company' : 'companies'} still awaiting your evaluation &middot; Due {item.deadlineDate}
-                    </p>
-                  </div>
-                </button>
-              </li>
-            ))}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className={`truncate text-sm text-slate-900 dark:text-white ${isRead ? 'font-medium text-slate-600 dark:text-slate-300' : 'font-bold'}`}>
+                          Microgenesis Administrator
+                        </p>
+                        <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">Today</span>
+                      </div>
+                      <p className={`truncate text-sm ${isRead ? 'font-medium text-slate-500 dark:text-slate-400' : 'font-semibold text-red-600 dark:text-red-400'}`}>
+                        {item.subject}: {item.surveyTitle}
+                      </p>
+                      <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                        {item.pendingCompanies.length} partner {item.pendingCompanies.length === 1 ? 'company' : 'companies'} still awaiting your evaluation &middot; Due {item.deadlineDate}
+                      </p>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -277,21 +374,14 @@ function MessageView({
             continue until all partner companies under this survey have been fully evaluated.
           </div>
 
-          <div className="flex flex-col items-stretch gap-3 pt-4 sm:flex-row sm:items-center">
+          <div className="pt-4">
             <button
               type="button"
               onClick={() => onFillForm(notification.surveyId)}
-              className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-red-600 px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-red-700 hover:shadow-lg"
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#0063a9] px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#00528c] hover:shadow-lg sm:w-auto"
             >
               <Award size={16} />
-              <span>\ud83d\udc49 Start Survey Evaluation Now</span>
-            </button>
-            <button
-              type="button"
-              onClick={onBack}
-              className="cursor-pointer rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900"
-            >
-              Back to Inbox
+              <span>Start Evaluation Now</span>
             </button>
           </div>
         </div>

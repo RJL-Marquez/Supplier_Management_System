@@ -2,6 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { Bell, Mail, ArrowLeft, X, CornerUpLeft, MoreVertical, Star, Inbox, CheckSquare, Award } from 'lucide-react';
 import { CustomForm, PartnerCompany, SurveyResponse } from '../types/survey';
 import { getEmployeePendingSurveys, EmployeeNotification } from '../utils/employeeNotifications';
+import {
+  getReadIds,
+  getDeletedIds,
+  markNotificationRead,
+  subscribeNotificationState,
+} from '../utils/employeeNotificationState';
 
 interface EmployeeNotificationBellProps {
   userEmail: string;
@@ -27,6 +33,10 @@ export function EmployeeNotificationBell({
   const [isOpen, setIsOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<EmployeeNotification | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [, forceTick] = useState(0);
+
+  // Re-render whenever read/deleted state changes anywhere (e.g. the Survey Reminders page).
+  useEffect(() => subscribeNotificationState(() => forceTick((t) => t + 1)), []);
 
   // Compute pending surveys dynamically
   // To get the user profile structure for matching permissions, we retrieve accounts or create a fallback
@@ -44,15 +54,18 @@ export function EmployeeNotificationBell({
     }
   }
 
+  const deletedIds = getDeletedIds(userEmail);
+  const readIds = getReadIds(userEmail);
+
   const notifications = getEmployeePendingSurveys(
     userEmail,
     matchedProfile,
     surveys,
     partnerCompanies,
     responses
-  );
+  ).filter((item) => !deletedIds.has(item.id));
 
-  const unreadCount = notifications.length;
+  const unreadCount = notifications.filter((item) => !readIds.has(item.id)).length;
 
   // Retrieve admin notification frequency configuration from localStorage
   const freqHours = localStorage.getItem('admin_reminder_frequency') || '24';
@@ -83,6 +96,7 @@ export function EmployeeNotificationBell({
   };
 
   const handleSelectNotification = (notif: EmployeeNotification) => {
+    markNotificationRead(userEmail, notif.id);
     setSelectedNotification(notif);
     setIsOpen(false);
   };
@@ -214,35 +228,38 @@ export function EmployeeNotificationBell({
           </div>
         ) : (
           <ul className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-            {notifications.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => handleSelectNotification(item)}
-                  className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-850/40 transition"
-                >
-                  <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/30 text-red-500">
-                    <Mail size={13} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <p className="truncate text-xs font-bold text-slate-900 dark:text-white">
-                        {item.sender}
-                      </p>
-                      <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
-                        Today
-                      </span>
+            {notifications.map((item) => {
+              const isRead = readIds.has(item.id);
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectNotification(item)}
+                    className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-850/40 transition"
+                  >
+                    <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/30 text-red-500">
+                      <Mail size={13} />
                     </div>
-                    <p className="truncate text-xs font-semibold text-red-600 dark:text-red-400 mt-0.5">
-                      {item.subject}
-                    </p>
-                    <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
-                      {item.surveyTitle} ({item.pendingCompanies.length} pending)
-                    </p>
-                  </div>
-                </button>
-              </li>
-            ))}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <p className={`truncate text-xs text-slate-900 dark:text-white ${isRead ? 'font-medium text-slate-600 dark:text-slate-300' : 'font-bold'}`}>
+                          {item.sender}
+                        </p>
+                        <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
+                          Today
+                        </span>
+                      </div>
+                      <p className={`truncate text-xs mt-0.5 ${isRead ? 'font-medium text-slate-500 dark:text-slate-400' : 'font-semibold text-red-600 dark:text-red-400'}`}>
+                        {item.subject}
+                      </p>
+                      <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                        {item.surveyTitle} ({item.pendingCompanies.length} pending)
+                      </p>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -397,22 +414,15 @@ export function EmployeeNotificationBell({
                 <span className="font-bold">every {frequencyLabel}</span> in accordance with administrative policy, and will continue until all partner companies under this survey have been fully evaluated.
               </div>
 
-              {/* Call to Action Buttons */}
-              <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {/* Call to Action */}
+              <div className="pt-4">
                 <button
                   type="button"
                   onClick={() => handleStartSurvey(selectedNotification.surveyId)}
-                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 shadow-md hover:shadow-lg transition cursor-pointer text-sm"
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-[#0063a9] hover:bg-[#00528c] text-white font-bold py-3 px-6 shadow-md hover:shadow-lg transition cursor-pointer text-sm"
                 >
                   <Award size={16} />
-                  <span>👉 Start Survey Evaluation Now</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedNotification(null)}
-                  className="rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900 py-3 px-5 text-sm font-semibold transition cursor-pointer"
-                >
-                  Close & Keep Unread
+                  <span>Start Evaluation Now</span>
                 </button>
               </div>
             </div>
