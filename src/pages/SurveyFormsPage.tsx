@@ -669,7 +669,7 @@ export function SurveyFormsPage({
                           )}
                           <div className="space-y-0.5 max-w-sm">
                             <span
-                              className="font-bold text-slate-850 dark:text-slate-100 hover:text-[#0063a9] dark:hover:text-blue-400 cursor-pointer"
+                              className="font-bold text-slate-800 dark:text-slate-100 hover:text-[#0063a9] dark:hover:text-blue-400 cursor-pointer"
                               onClick={() => {
                                 if (isSelectMode) {
                                   handleToggleSelect(survey.id);
@@ -776,7 +776,7 @@ export function SurveyFormsPage({
           />
           
           {/* Modal Panel */}
-          <div className="relative bg-white dark:bg-slate-950 rounded-xl max-w-lg w-full max-h-[85vh] overflow-hidden shadow-2xl border border-slate-100 dark:border-slate-850 flex flex-col animate-in fade-in zoom-in duration-200">
+          <div className="relative bg-white dark:bg-slate-950 rounded-xl max-w-lg w-full max-h-[85vh] overflow-hidden shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col animate-in fade-in zoom-in duration-200">
             {/* Header */}
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/20">
               <div className="space-y-1">
@@ -828,7 +828,7 @@ export function SurveyFormsPage({
                   </span>
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-350">
+                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-100">
                     Current progress: {evaluatedCount} / {totalCompanies} companies
                   </h4>
                   <p className="text-[11px] text-slate-400 mt-0.5">
@@ -1186,7 +1186,7 @@ export function SurveyFormsPage({
                               className={`flex items-center gap-2.5 p-2 rounded-lg border text-xs font-semibold cursor-pointer transition ${
                                 notificationFrequency === opt.value
                                   ? 'border-[#0063a9] bg-blue-50/40 text-[#0063a9] dark:border-blue-500 dark:bg-blue-950/20 dark:text-blue-300'
-                                  : 'border-slate-200 hover:bg-slate-50 dark:border-slate-800/40 dark:hover:bg-slate-850/30 text-slate-700 dark:text-slate-300'
+                                  : 'border-slate-200 hover:bg-slate-50 dark:border-slate-800/40 dark:hover:bg-slate-800/30 text-slate-700 dark:text-slate-300'
                               }`}
                             >
                               <input
@@ -1270,9 +1270,15 @@ export function SurveyFormsPage({
 
           {/* Modify Companies to Evaluate - full-screen picker (single-survey modify only) */}
           {isCompanyPickerOpen && (() => {
+            const currentDateStr = '2026-07-19';
             const targetSurvey = surveys.find((s) => selectedSurveyIds.has(s.id));
             const pickerCompanies = targetSurvey
-              ? partnerCompanies.filter((c) => c.type === targetSurvey.surveyType)
+              ? partnerCompanies.filter((c) => {
+                  if (c.type !== targetSurvey.surveyType) return false;
+                  if (c.isArchived) return false;
+                  if (c.expirationDate && currentDateStr >= c.expirationDate) return false;
+                  return true;
+                })
               : [];
             const allSelected = pickerCompanies.length > 0 && pickerCompanies.every((c) => evaluationCompanyIds.includes(c.id));
 

@@ -15,7 +15,13 @@ export function getSurveyEvaluationCompanies(
   survey: Pick<CustomForm, 'surveyType' | 'evaluationCompanyIds'>,
   partnerCompanies: PartnerCompany[]
 ): PartnerCompany[] {
-  const companiesOfType = partnerCompanies.filter((c) => c.type === survey.surveyType);
+  const currentDateStr = '2026-07-19';
+  const companiesOfType = partnerCompanies.filter((c) => {
+    if (c.type !== survey.surveyType) return false;
+    if (c.isArchived) return false;
+    if (c.expirationDate && currentDateStr >= c.expirationDate) return false;
+    return true;
+  });
   if (!survey.evaluationCompanyIds || survey.evaluationCompanyIds.length === 0) {
     return companiesOfType;
   }

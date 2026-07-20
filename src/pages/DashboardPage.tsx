@@ -585,7 +585,7 @@ export function DashboardPage({
           ACTIVE WIDGETS GRID
           ---------------------------------------------------- */}
       {activeWidgets.length === 0 ? (
-        <div className="flex flex-col items-center justify-center min-h-[360px] text-center p-8 bg-white dark:bg-slate-900 rounded-2xl border-2 border-dashed border-slate-250 dark:border-slate-850">
+        <div className="flex flex-col items-center justify-center min-h-[360px] text-center p-8 bg-white dark:bg-slate-900 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
           <div className="w-16 h-16 bg-blue-50 dark:bg-blue-950/20 rounded-full flex items-center justify-center mb-4 text-blue-500">
             <Sparkles size={32} />
           </div>
@@ -625,14 +625,14 @@ export function DashboardPage({
                   onDragStart={(e: React.DragEvent) => handleDragStart(e, widget.id)}
                   onDragOver={handleDragOver}
                   onDrop={(e: React.DragEvent) => handleDrop(e, widget.id)}
-                  className={`${spanClass} flex flex-col bg-white dark:bg-slate-950 rounded-2xl border ${isCustomizing ? 'border-blue-300 dark:border-blue-700/50 cursor-grab hover:border-blue-400 dark:hover:border-blue-500 shadow-md ring-2 ring-blue-500/20' : 'border-slate-200/90 dark:border-slate-850 shadow-sm'} relative group overflow-visible transition-all`}
+                  className={`${spanClass} flex flex-col bg-white dark:bg-slate-950 rounded-2xl border ${isCustomizing ? 'border-blue-300 dark:border-blue-700/50 cursor-grab hover:border-blue-400 dark:hover:border-blue-500 shadow-md ring-2 ring-blue-500/20' : 'border-slate-200/90 dark:border-slate-800 shadow-sm'} relative group overflow-visible transition-all`}
                 >
                   
                   {/* Widget Card Header */}
-                  <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-850 bg-slate-50/40 dark:bg-slate-900/30 rounded-t-2xl">
+                  <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30 rounded-t-2xl">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-350 truncate" title={widget.title}>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-100 truncate" title={widget.title}>
                         {widget.title}
                       </h4>
                     </div>
@@ -747,7 +747,7 @@ export function DashboardPage({
 
                     {widget.type === 'volume-tracker' && (
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-slate-50/50 dark:bg-slate-900/40 p-3.5 rounded-xl border border-slate-100 dark:border-slate-850">
+                        <div className="bg-slate-50/50 dark:bg-slate-900/40 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800">
                           <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total Feedback</span>
                           <span className="text-2xl font-light text-slate-800 dark:text-white mt-1 block">
                             {submissionCount(allResponses)}
@@ -755,7 +755,7 @@ export function DashboardPage({
                           <span className="text-[10px] text-blue-500 mt-1 block font-medium">Submissions log</span>
                         </div>
 
-                        <div className="bg-slate-50/50 dark:bg-slate-900/40 p-3.5 rounded-xl border border-slate-100 dark:border-slate-850">
+                        <div className="bg-slate-50/50 dark:bg-slate-900/40 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800">
                           <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Active Partners</span>
                           <span className="text-2xl font-light text-slate-800 dark:text-white mt-1 block">
                             {partnerCompanies.length}
@@ -845,7 +845,7 @@ export function DashboardPage({
                             // respondent submissions rather than raw per-question answer rows.
                             const count = submissionCount(allResponses.filter(r => r.surveyType === survey.surveyType));
                             return (
-                              <div key={survey.id} className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50/50 dark:bg-slate-900/20 border border-slate-100 dark:border-slate-850 text-sm">
+                              <div key={survey.id} className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50/50 dark:bg-slate-900/20 border border-slate-100 dark:border-slate-800 text-sm">
                                 <div className="min-w-0 flex-1 pr-2">
                                   <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{survey.title}</p>
                                   <p className="text-xs text-slate-400 mt-1">Due: {survey.deadlineDate || 'No close date'}</p>
@@ -944,7 +944,7 @@ export function DashboardPage({
             animate={{ opacity: 1, scale: 1 }}
             className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 p-6 shadow-2xl"
           >
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-4 mb-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">Workspace Catalog</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Select a widget card to place onto your tailored metrics feed.</p>
@@ -990,7 +990,7 @@ export function DashboardPage({
                     <div>
                       <div className="flex items-center gap-1.5 justify-between">
                         <span className="text-xs font-bold text-slate-800 dark:text-slate-100">{item.title}</span>
-                        <span className="text-[9px] uppercase font-extrabold tracking-wider bg-slate-100 dark:bg-slate-850 px-1.5 py-0.5 rounded text-slate-400 dark:text-slate-500">
+                        <span className="text-[9px] uppercase font-extrabold tracking-wider bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 dark:text-slate-500">
                           {item.category}
                         </span>
                       </div>
@@ -999,7 +999,7 @@ export function DashboardPage({
                       </p>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-850 flex items-center justify-between gap-2">
+                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
                       <span className="text-[10px] text-slate-400">
                         Default width: {item.defaultSpan === 3 ? 'Full Width' : item.defaultSpan === 2 ? 'Two-Thirds' : 'One-Third'}
                       </span>
@@ -1017,10 +1017,10 @@ export function DashboardPage({
               })}
             </div>
 
-            <div className="flex justify-end pt-4 mt-6 border-t border-slate-100 dark:border-slate-850">
+            <div className="flex justify-end pt-4 mt-6 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setIsAddOpen(false)}
-                className="inline-flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-850 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 cursor-pointer transition-all"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 cursor-pointer transition-all"
                 type="button"
               >
                 Cancel

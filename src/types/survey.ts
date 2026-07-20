@@ -8,6 +8,12 @@ export interface PartnerCompany {
   type: SurveyType;
   affiliation?: string;
   createdAt: string;
+  registeredAt?: string;
+  renewedAt?: string;
+  expirationDate?: string;
+  reminderFirstThresholdMonths?: number;
+  reminderFrequency?: 'daily' | 'weekly' | 'none';
+  isArchived?: boolean;
 }
 
 export interface SurveyResponse {

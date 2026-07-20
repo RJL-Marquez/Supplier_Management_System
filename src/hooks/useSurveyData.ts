@@ -62,7 +62,24 @@ function normalizeCustomForm(form: CustomForm): CustomForm {
 }
 
 function normalizePartnerCompany(company: PartnerCompany): PartnerCompany {
+  const defaultRegisteredAt = company.createdAt ? company.createdAt.split('T')[0] : '2025-01-15';
+  
+  // Set interesting expirations to seed different statuses on first load (relative to '2026-07-19')
+  let defaultExpirationDate = '2027-04-15';
+  if (company.id === 'pc-1') defaultExpirationDate = '2026-06-15'; // Expired
+  else if (company.id === 'pc-2') defaultExpirationDate = '2026-08-10'; // Expiring soon (Warning in 22 days)
+  else if (company.id === 'pc-3') defaultExpirationDate = '2026-09-15'; // Expiring in 2 months (Warning)
+  else if (company.id === 'pc-9') defaultExpirationDate = '2026-07-01'; // Expired
+  else if (company.id === 'pc-22') defaultExpirationDate = '2026-05-20'; // Expired
+  else if (company.id === 'pc-23') defaultExpirationDate = '2026-08-18'; // Expiring soon (Warning)
+
   return {
+    registeredAt: defaultRegisteredAt,
+    renewedAt: defaultRegisteredAt,
+    expirationDate: defaultExpirationDate,
+    reminderFirstThresholdMonths: 1,
+    reminderFrequency: 'weekly',
+    isArchived: false,
     ...company,
     type: normalizeSurveyType(company.type),
   };
@@ -1155,18 +1172,46 @@ export function useSurveyData(accounts: SimulatableAccount[] = []) {
   };
 
   // Create or add a partner company
-  const addPartnerCompany = (name: string, type: SurveyType, affiliation?: string) => {
-    const newCompany: PartnerCompany = {
+  const addPartnerCompany = (
+    name: string,
+    type: SurveyType,
+    affiliation?: string,
+    registeredAt?: string,
+    renewedAt?: string,
+    expirationDate?: string,
+    reminderFirstThresholdMonths?: number,
+    reminderFrequency?: 'daily' | 'weekly' | 'none'
+  ) => {
+    const todayStr = '2026-07-19';
+    const nextYearStr = '2027-07-19';
+    const newCompany: PartnerCompany = normalizePartnerCompany({
       id: `pc-${Date.now()}`,
       name: name.trim(),
       type,
       affiliation: affiliation?.trim() || 'General partner',
       createdAt: new Date().toISOString(),
-    };
+      registeredAt: registeredAt || todayStr,
+      renewedAt: renewedAt || todayStr,
+      expirationDate: expirationDate || nextYearStr,
+      reminderFirstThresholdMonths: reminderFirstThresholdMonths ?? 1,
+      reminderFrequency: reminderFrequency ?? 'weekly',
+      isArchived: false,
+    });
     const updated = [...partnerCompanies, newCompany];
     setPartnerCompanies(updated);
     localStorage.setItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
     return newCompany;
+  };
+
+  // Update an existing partner company
+  const updatePartnerCompany = (updatedCompany: PartnerCompany) => {
+    const normalizedCompany = normalizePartnerCompany(updatedCompany);
+    setPartnerCompanies((currentCompanies) => {
+      const updated = currentCompanies.map((c) => c.id === normalizedCompany.id ? normalizedCompany : c);
+      localStorage.setItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
+      return updated;
+    });
+    return normalizedCompany;
   };
 
   // Remove a partner company
@@ -1405,6 +1450,63 @@ export function useSurveyData(accounts: SimulatableAccount[] = []) {
     return partnerCompanies.map((c) => c.name).sort();
   }, [partnerCompanies]);
 
+  // Dynamic contract warnings and expirations for admin notifications
+  const contractNotifications = useMemo<ResponseNotification[]>(() => {
+    const todayStr = '2026-07-19';
+    const currentDate = new Date(todayStr);
+    const list: ResponseNotification[] = [];
+    
+    partnerCompanies.forEach((c) => {
+      if (c.isArchived) return;
+      if (!c.expirationDate) return;
+      
+      const exp = new Date(c.expirationDate);
+      const diffTime = exp.getTime() - currentDate.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays <= 0) {
+        list.push({
+          id: `contract-expired-${c.id}`,
+          company: c.name,
+          surveyType: c.type,
+          respondentType: "Contract Expired",
+          submissionDate: new Date(exp.getTime() + 12 * 60 * 60 * 1000).toISOString(),
+          questionCount: 0,
+          respondentEmail: "system@mgenesis.com",
+          department: "Logistics",
+          designation: "Contract Alert"
+        });
+      } else {
+        const thresholdMonths = c.reminderFirstThresholdMonths ?? 1;
+        const thresholdDays = thresholdMonths * 30; // e.g., 30, 60, 120 days
+        
+        if (diffDays <= thresholdDays) {
+          list.push({
+            id: `contract-warning-${c.id}`,
+            company: c.name,
+            surveyType: c.type,
+            respondentType: `Contract Warning`,
+            submissionDate: new Date(currentDate.getTime() - 2 * 60 * 60 * 1000).toISOString(), // slightly in the past
+            questionCount: 0,
+            respondentEmail: "system@mgenesis.com",
+            department: "Logistics",
+            designation: "Contract Alert"
+          });
+        }
+      }
+    });
+    
+    return list;
+  }, [partnerCompanies]);
+
+  const combinedNotifications = useMemo(() => {
+    return [...contractNotifications, ...notifications];
+  }, [contractNotifications, notifications]);
+
+  const combinedUnreadCount = useMemo(() => {
+    return unreadCount + contractNotifications.length;
+  }, [unreadCount, contractNotifications]);
+
   return {
     responses: activeResponses,
     archivedResponses,
@@ -1419,11 +1521,12 @@ export function useSurveyData(accounts: SimulatableAccount[] = []) {
     companies,
     partnerCompanies,
     addPartnerCompany,
+    updatePartnerCompany,
     removePartnerCompany,
     isLoading,
     error,
-    notifications,
-    unreadCount,
+    notifications: combinedNotifications,
+    unreadCount: combinedUnreadCount,
     markNotificationsRead,
     createSurvey,
     updateSurvey,

@@ -224,6 +224,7 @@ export default function App() {
     companies,
     partnerCompanies,
     addPartnerCompany,
+    updatePartnerCompany,
     removePartnerCompany,
     isLoading,
     error,
@@ -514,6 +515,7 @@ export default function App() {
         responses={userAccessibleResponses}
         onAddCompany={addPartnerCompany}
         onRemoveCompany={removePartnerCompany}
+        onUpdateCompany={updatePartnerCompany}
         isAdmin={isAdmin}
       />
     ),

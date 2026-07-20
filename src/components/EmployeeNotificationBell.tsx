@@ -235,7 +235,7 @@ export function EmployeeNotificationBell({
                   <button
                     type="button"
                     onClick={() => handleSelectNotification(item)}
-                    className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-850/40 transition"
+                    className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition"
                   >
                     <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/30 text-red-500">
                       <Mail size={13} />

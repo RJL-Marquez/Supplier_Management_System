@@ -229,7 +229,7 @@ export function Shell<T extends string>({
         </div>
 
         {/* Page Content - Below Header */}
-        <main className="min-w-0 flex-1 transition-colors duration-300">
+        <main className="min-w-0 flex-1 transition-colors duration-300 dark:bg-slate-900">
           <div className="px-4 py-6 lg:px-8">
             <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>

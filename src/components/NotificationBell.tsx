@@ -81,18 +81,20 @@ export function NotificationBell({ notifications, unreadCount, onOpen, onViewAll
               {notifications.slice(0, 8).map((item) => (
                 <li key={item.id} className="flex items-start gap-3 px-4 py-3">
                   <span
-                    className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: surveyTypeColors[item.surveyType] }}
+                    className="mt-1.5 h-2 w-2 shrink-0 rounded-full animate-pulse"
+                    style={{ backgroundColor: item.respondentType.includes('Contract') ? (item.respondentType.includes('Expired') ? '#ef4444' : '#f59e0b') : surveyTypeColors[item.surveyType] }}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{item.company}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {item.surveyType} &middot; {item.respondentType}
+                    <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">{item.company}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                      {item.surveyType} &middot; <span className={item.respondentType.includes('Contract') ? 'text-amber-600 dark:text-amber-400 font-bold' : ''}>{item.respondentType}</span>
                     </p>
-                    <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
-                      {item.questionCount > 1
-                        ? `Answered ${item.questionCount} questions`
-                        : 'Answered 1 question'}
+                    <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500 font-semibold">
+                      {item.respondentType.includes('Contract')
+                        ? (item.respondentType.includes('Expired') ? '⚠️ Contract has EXPIRED. Please renew.' : '⏳ Contract is expiring soon.')
+                        : (item.questionCount > 1
+                          ? `Answered ${item.questionCount} questions`
+                          : 'Answered 1 question')}
                     </p>
                   </div>
                   <span className="shrink-0 whitespace-nowrap text-xs text-slate-400 dark:text-slate-500">

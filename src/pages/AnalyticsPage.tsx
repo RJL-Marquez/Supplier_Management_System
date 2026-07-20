@@ -455,7 +455,7 @@ export function AnalyticsPage({
             </p>
           </div>
 
-          <div className="pt-4 border-t border-slate-100 dark:border-slate-850 flex flex-col sm:flex-row items-center justify-center md:justify-start gap-4 text-xs text-slate-400 dark:text-slate-500">
+          <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-center md:justify-start gap-4 text-xs text-slate-400 dark:text-slate-500">
             <div className="flex items-center gap-1.5">
               <span>Combined average:</span>
               <span className="font-semibold text-slate-700 dark:text-slate-300">{formatNumber(displayedCompany.average, 2)} / {portfolioMaxRating.toFixed(0)}</span>

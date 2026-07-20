@@ -1,4 +1,5 @@
 import { CustomForm, PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
+import { getSurveyEvaluationCompanies } from './analytics';
 
 export interface EmployeeNotification {
   id: string;
@@ -39,8 +40,10 @@ export function getEmployeePendingSurveys(
       return; // No access to this survey
     }
 
-    // Find all partner companies of this survey's type
-    const matchingCompanies = partnerCompanies.filter((c) => c.type === survey.surveyType);
+    // Find the companies this specific survey is actually scoped to (respects
+    // a custom evaluationCompanyIds selection, and excludes archived/expired
+    // companies) instead of every company of this type in the registry.
+    const matchingCompanies = getSurveyEvaluationCompanies(survey, partnerCompanies);
 
     // Filter out the companies that the user has already evaluated for this survey type
     const userEvaluatedCompanyNames = new Set(

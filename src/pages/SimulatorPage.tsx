@@ -91,7 +91,7 @@ export function SimulatorPage({
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
             <div className="flex items-center gap-2.5 mb-6">
               <Sparkles size={18} className="text-blue-500" />
-              <h3 className="text-sm font-bold text-slate-850 dark:text-white">Simulation Options</h3>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-white">Simulation Options</h3>
             </div>
 
             {/* Selection modes */}
@@ -102,7 +102,7 @@ export function SimulatorPage({
                 className={`w-full flex items-start gap-4 p-4 rounded-xl border text-left transition-all ${
                   selectedMode === 'single'
                     ? 'border-blue-500 bg-blue-50/20 dark:bg-blue-950/20'
-                    : 'border-slate-100 dark:border-slate-850 hover:border-slate-200 dark:hover:border-slate-800'
+                    : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-800'
                 }`}
               >
                 <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
@@ -124,7 +124,7 @@ export function SimulatorPage({
                 className={`w-full flex items-start gap-4 p-4 rounded-xl border text-left transition-all ${
                   selectedMode === 'bulk'
                     ? 'border-blue-500 bg-blue-50/20 dark:bg-blue-950/20'
-                    : 'border-slate-100 dark:border-slate-850 hover:border-slate-200 dark:hover:border-slate-800'
+                    : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-800'
                 }`}
               >
                 <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
@@ -146,7 +146,7 @@ export function SimulatorPage({
                 className={`w-full flex items-start gap-4 p-4 rounded-xl border text-left transition-all ${
                   selectedMode === 'complete'
                     ? 'border-blue-500 bg-blue-50/20 dark:bg-blue-950/20'
-                    : 'border-slate-100 dark:border-slate-850 hover:border-slate-200 dark:hover:border-slate-800'
+                    : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-800'
                 }`}
               >
                 <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
@@ -164,7 +164,7 @@ export function SimulatorPage({
             </div>
 
             {/* Simulate Button */}
-            <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-850 flex items-center justify-between">
+            <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <span className="text-[11px] text-slate-400 dark:text-slate-500">
                 Responses are generated with realistic scores (biased high, 80-90ish, with a small low score probability and low N/A chance).
               </span>
@@ -186,24 +186,24 @@ export function SimulatorPage({
             <div>
               <div className="flex items-center gap-2.5 mb-6">
                 <Activity size={18} className="text-emerald-500" />
-                <h3 className="text-sm font-bold text-slate-850 dark:text-white">Database Metrics</h3>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white">Database Metrics</h3>
               </div>
 
               {/* Stats display */}
               <div className="space-y-4">
-                <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-850 text-xs">
+                <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800 text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Simulated (Active)</span>
                   <span className="font-bold text-slate-800 dark:text-white">{stats.activeSimulated} submissions</span>
                 </div>
-                <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-850 text-xs">
+                <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800 text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Simulated (Archived)</span>
                   <span className="font-bold text-slate-800 dark:text-white">{stats.archivedSimulated} submissions</span>
                 </div>
-                <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-850 text-xs">
+                <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800 text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Total Active Submissions</span>
                   <span className="font-bold text-slate-800 dark:text-white">{stats.totalActive} submissions</span>
                 </div>
-                <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-850 text-xs">
+                <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800 text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Total Archived Submissions</span>
                   <span className="font-bold text-slate-800 dark:text-white">{stats.totalArchived} submissions</span>
                 </div>
@@ -211,7 +211,7 @@ export function SimulatorPage({
             </div>
 
             {/* Reset Area */}
-            <div className="mt-8 pt-5 border-t border-slate-100 dark:border-slate-850">
+            <div className="mt-8 pt-5 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={handleReset}
                 disabled={stats.activeSimulated === 0 && stats.archivedSimulated === 0}
