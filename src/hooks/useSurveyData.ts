@@ -1044,9 +1044,11 @@ export function useSurveyData(accounts: SimulatableAccount[] = []) {
           loadedResponses = parsedResponses.map(normalizeSurveyResponse);
           localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(loadedResponses));
         } else {
-          loadedResponses = generateAllMockResponses(loadedSurveys, loadedCompanies, FALLBACK_NON_ADMIN_USERS);
+          // Start with zero submissions instead of auto-seeding a mock dataset.
+          // Admins can still populate synthetic data on demand via the
+          // Database Simulator's "Add Evaluation" tool (addEvaluations below).
+          loadedResponses = [];
           localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(loadedResponses));
-          localStorage.setItem('survey_analytics_full_dataset_active', 'true');
         }
 
         if (isMountedRef.current) {
