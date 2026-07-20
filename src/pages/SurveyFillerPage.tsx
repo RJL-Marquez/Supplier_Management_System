@@ -3,6 +3,7 @@ import { CheckCircle, Info, Shield, ArrowRight, ClipboardCopy, Send, UserCheck, 
 import { CustomForm, Rating, PartnerCompany } from '../types/survey';
 import { isValidDDMMYYYY } from '../utils/time';
 import { getQuestionMaxPoints } from '../data/questionWeights';
+import { getSurveyEvaluationCompanies } from '../utils/analytics';
 
 // Exposed to parent components (via ref) so that navigation triggered from
 // OUTSIDE this page — e.g. clicking the sidebar Home logo or another nav
@@ -126,15 +127,15 @@ export const SurveyFillerPage = forwardRef<SurveyFillerHandle, SurveyFillerPageP
         .map((r) => r.company)
     );
 
-    return partnerCompanies.filter(
-      (c) => c.type === activeSurvey.surveyType && !evaluatedCompanies.has(c.name)
+    return getSurveyEvaluationCompanies(activeSurvey, partnerCompanies).filter(
+      (c) => !evaluatedCompanies.has(c.name)
     );
   }, [partnerCompanies, activeSurvey, responses, userEmail]);
 
-  // All companies of this type registered in system (even if already evaluated)
+  // All companies assigned to this survey (even if already evaluated)
   const allCompaniesOfThisType = useMemo(() => {
     if (!activeSurvey) return [];
-    return partnerCompanies.filter((c) => c.type === activeSurvey.surveyType);
+    return getSurveyEvaluationCompanies(activeSurvey, partnerCompanies);
   }, [partnerCompanies, activeSurvey]);
 
   const hasEvaluatedAll = useMemo(() => {

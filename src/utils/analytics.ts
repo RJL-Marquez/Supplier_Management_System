@@ -1,5 +1,27 @@
-import { FilterState, KpiSummary, Rating, SurveyResponse, SurveyType } from '../types/survey';
+import { CustomForm, FilterState, KpiSummary, PartnerCompany, Rating, SurveyResponse, SurveyType } from '../types/survey';
 import { getQuestionMaxPoints, isScoredQuestion } from '../data/questionWeights';
+
+/**
+ * Resolves the live list of companies a given survey should be evaluated
+ * against. Always derived from the current `partnerCompanies` list, so
+ * additions/removals in the Partner Registry are reflected automatically:
+ * - If the survey has no custom selection (`evaluationCompanyIds` unset/empty),
+ *   every company of the survey's type counts (the default "select all").
+ * - If the survey has a custom selection, only companies of the survey's type
+ *   whose ID is still present in `evaluationCompanyIds` count. Companies that
+ *   were removed from the registry drop out automatically.
+ */
+export function getSurveyEvaluationCompanies(
+  survey: Pick<CustomForm, 'surveyType' | 'evaluationCompanyIds'>,
+  partnerCompanies: PartnerCompany[]
+): PartnerCompany[] {
+  const companiesOfType = partnerCompanies.filter((c) => c.type === survey.surveyType);
+  if (!survey.evaluationCompanyIds || survey.evaluationCompanyIds.length === 0) {
+    return companiesOfType;
+  }
+  const selectedIds = new Set(survey.evaluationCompanyIds);
+  return companiesOfType.filter((c) => selectedIds.has(c.id));
+}
 
 const SURVEY_TOTAL_POINTS: Record<SurveyType, number> = {
   Courier: 100,

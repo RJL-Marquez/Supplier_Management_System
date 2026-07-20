@@ -79,6 +79,12 @@ export interface CustomForm {
   status?: 'Running' | 'Paused' | 'Completed' | 'Archived';
   accessDepartments?: string[];
   accessRoles?: SurveyAccessRole[];
+  // IDs of PartnerCompany entries this survey should evaluate. Undefined/empty
+  // means "all companies of this survey's type" (the default, always kept in
+  // sync as companies are added/removed in the Partner Registry). Once an
+  // admin customizes the list via "Modify Companies to Evaluate", only the
+  // still-existing companies among these IDs are used.
+  evaluationCompanyIds?: string[];
   maxRating?: number;
   questions: {
     questionId: string;

@@ -29,6 +29,7 @@ import {
   averageRating,
   submissionScores,
   questionPerformance,
+  getSurveyEvaluationCompanies,
 } from '../utils/analytics';
 
 // ----------------------------------------------------
@@ -292,7 +293,19 @@ export function DashboardPage({
     const categories: SurveyType[] = ['Courier', 'Supplier', 'Subcontractor'];
     return categories.map(cat => {
       const hasAssignedForm = assignedSurveyTypes.has(cat);
-      const total = partnerCompanies.filter(c => c.type === cat).length;
+
+      // Union of companies this category's active, non-archived survey(s)
+      // are actually configured to evaluate (respects each survey's
+      // "Modify Companies to Evaluate" selection, always live against the
+      // current Partner Registry), so the denominator normalizes to 100%
+      // against the correct set of companies rather than every company of
+      // that type in the system.
+      const companyIds = new Map<string, true>();
+      surveys.forEach((survey: any) => {
+        if (survey.status === 'Archived' || survey.surveyType !== cat) return;
+        getSurveyEvaluationCompanies(survey, partnerCompanies).forEach((c) => companyIds.set(c.id, true));
+      });
+      const total = companyIds.size;
       
       // Get unique companies of this category that the current user has evaluated
       const userResponses = allResponses.filter(r => 
@@ -312,7 +325,7 @@ export function DashboardPage({
         hasAssignedForm
       };
     });
-  }, [allResponses, partnerCompanies, userEmail, assignedSurveyTypes]);
+  }, [allResponses, surveys, partnerCompanies, userEmail, assignedSurveyTypes]);
 
   // ----------------------------------------------------
   // COMPUTED STATS FOR WIDGETS

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { ArrowLeft, ExternalLink, Trash, Calendar, CalendarClock, Users, ClipboardCheck, AlertTriangle, Eye, Pencil, Building2, Check } from 'lucide-react';
 import { CustomForm, SurveyResponse, PartnerCompany } from '../types/survey';
 import { CompletionStatusBar } from '../components/CompletionStatusBar';
-import { formatNumber, scoredResponses, submissionScores } from '../utils/analytics';
+import { formatNumber, getSurveyEvaluationCompanies, scoredResponses, submissionScores } from '../utils/analytics';
 import { isScoredQuestion } from '../data/questionWeights';
 
 interface SurveyDetailsPageProps {
@@ -30,7 +30,7 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
       }
     });
 
-    const companiesForType = partnerCompanies.filter((c) => c.type === survey.surveyType);
+    const companiesForType = getSurveyEvaluationCompanies(survey, partnerCompanies);
     const pending = companiesForType.filter((c) => !evaluatedNames.has(c.name.trim().toLowerCase()));
 
     return {
@@ -38,7 +38,7 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
       completedCount: companiesForType.length - pending.length,
       totalCompanies: companiesForType.length,
     };
-  }, [partnerCompanies, responses, userEmail, survey.surveyType]);
+  }, [partnerCompanies, responses, userEmail, survey]);
 
   const surveyResponses = useMemo(() => {
     const surveyQuestionIds = new Set(survey.questions.map((q) => q.questionId));

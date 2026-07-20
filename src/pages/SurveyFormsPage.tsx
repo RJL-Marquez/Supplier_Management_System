@@ -3,6 +3,7 @@ import { ClipboardList, Plus, Search, Eye, FormInput, X, Check, Award, Building2
 import { CustomForm, SurveyType, PartnerCompany, SurveyAccessRole } from '../types/survey';
 import { StateMessage } from '../components/StateMessage';
 import { CompletionStatusBar } from '../components/CompletionStatusBar';
+import { getSurveyEvaluationCompanies } from '../utils/analytics';
 
 interface SurveyFormsPageProps {
   surveys: CustomForm[];
@@ -96,6 +97,10 @@ export function SurveyFormsPage({
   const [accessDepartments, setAccessDepartments] = useState<string[]>(departmentOptions);
   const [accessRoles, setAccessRoles] = useState<SurveyAccessRole[]>(roleOptions);
 
+  // State for the "Modify Companies to Evaluate" picker (single-survey modify only)
+  const [isCompanyPickerOpen, setIsCompanyPickerOpen] = useState(false);
+  const [evaluationCompanyIds, setEvaluationCompanyIds] = useState<string[]>([]);
+
   // Custom passcode and warning modals
   const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
@@ -136,11 +141,20 @@ export function SurveyFormsPage({
     return set;
   }, [surveys]);
 
-  // Companies the user can actually be asked to evaluate right now
-  const evaluableCompanies = useMemo(
-    () => partnerCompanies.filter((c) => assignedSurveyTypes.has(c.type)),
-    [partnerCompanies, assignedSurveyTypes]
-  );
+  // Companies the user can actually be asked to evaluate right now. This
+  // respects each survey's own "Modify Companies to Evaluate" selection
+  // (falling back to every company of that survey's type when uncustomized),
+  // and is always computed live against the current Partner Registry so
+  // additions/removals there are reflected immediately.
+  const evaluableCompanies = useMemo(() => {
+    const map = new Map<string, PartnerCompany>();
+    surveys.forEach((survey) => {
+      if (survey.status === 'Archived') return;
+      if (!assignedSurveyTypes.has(survey.surveyType)) return;
+      getSurveyEvaluationCompanies(survey, partnerCompanies).forEach((c) => map.set(c.id, c));
+    });
+    return Array.from(map.values());
+  }, [surveys, partnerCompanies, assignedSurveyTypes]);
 
   // Group pending partner companies
   const groupedPendingCompanies = useMemo(() => {
@@ -170,22 +184,27 @@ export function SurveyFormsPage({
   const evaluatedCount = totalCompanies - pendingCount;
   const completionPercentage = totalCompanies > 0 ? Math.round((evaluatedCount / totalCompanies) * 100) : 0;
 
-  // Per-category totals and completed counts, used to show a per-survey completion status for non-admins.
-  const companyTotalsByType = useMemo(() => {
-    const totals: Record<SurveyType, number> = { Courier: 0, Supplier: 0, Subcontractor: 0 };
-    evaluableCompanies.forEach((company) => {
-      totals[company.type] = (totals[company.type] || 0) + 1;
+  // Per-survey totals and completed counts, used to show each survey's own
+  // completion status. Scoped to that specific survey's evaluation company
+  // list (its "Modify Companies to Evaluate" selection, or every company of
+  // its type by default), so the percentage always normalizes to 100%
+  // against the correct denominator instead of every company in the system.
+  const companyTotalsBySurveyId = useMemo(() => {
+    const totals: Record<string, number> = {};
+    surveys.forEach((survey) => {
+      totals[survey.id] = getSurveyEvaluationCompanies(survey, partnerCompanies).length;
     });
     return totals;
-  }, [evaluableCompanies]);
+  }, [surveys, partnerCompanies]);
 
-  const companyCompletedByType = useMemo(() => {
-    const completed: Record<SurveyType, number> = { Courier: 0, Supplier: 0, Subcontractor: 0 };
-    (['Courier', 'Supplier', 'Subcontractor'] as SurveyType[]).forEach((type) => {
-      completed[type] = (companyTotalsByType[type] || 0) - (groupedPendingCompanies[type]?.length || 0);
+  const companyCompletedBySurveyId = useMemo(() => {
+    const completed: Record<string, number> = {};
+    surveys.forEach((survey) => {
+      const companies = getSurveyEvaluationCompanies(survey, partnerCompanies);
+      completed[survey.id] = companies.filter((c) => userEvaluations.has(c.name.trim().toLowerCase())).length;
     });
     return completed;
-  }, [companyTotalsByType, groupedPendingCompanies]);
+  }, [surveys, partnerCompanies, userEvaluations]);
 
   const formatDeadline = (deadlineDate?: string) => {
     if (!deadlineDate) return 'No deadline set';
@@ -254,6 +273,8 @@ export function SurveyFormsPage({
     setNewStatus('Running');
     setAccessDepartments(departmentOptions);
     setAccessRoles(roleOptions);
+    setIsCompanyPickerOpen(false);
+    setEvaluationCompanyIds([]);
   };
 
   const openBulkModify = () => {
@@ -265,6 +286,8 @@ export function SurveyFormsPage({
     setNewStatus('Running');
     setAccessDepartments(departmentOptions);
     setAccessRoles(roleOptions);
+    setIsCompanyPickerOpen(false);
+    setEvaluationCompanyIds([]);
     setIsModifyOpen(true);
   };
 
@@ -279,6 +302,14 @@ export function SurveyFormsPage({
     setOverrideStatus(true);
     setOverrideDeadline(true);
     setOverrideAccess(true);
+    // Default to whatever the survey already has saved; if it's never been
+    // customized, default to every company of this survey's type (standard
+    // "select all" default), always resolved live against the current
+    // Partner Registry.
+    setEvaluationCompanyIds(
+      getSurveyEvaluationCompanies(survey, partnerCompanies).map((c) => c.id)
+    );
+    setIsCompanyPickerOpen(false);
     setIsModifyOpen(true);
   };
 
@@ -325,6 +356,18 @@ export function SurveyFormsPage({
         if (overrideAccess) {
           updated.accessDepartments = accessDepartments;
           updated.accessRoles = accessRoles;
+        }
+        // Single-survey modify only: persist the "Modify Companies to
+        // Evaluate" selection. If it still matches every company of this
+        // survey's type, store it as "unset" so the list keeps following the
+        // Partner Registry automatically (the standard default); otherwise
+        // store the explicit custom selection.
+        if (!isSelectMode) {
+          const allIdsOfType = partnerCompanies.filter((c) => c.type === survey.surveyType).map((c) => c.id);
+          const isFullSelection =
+            evaluationCompanyIds.length === allIdsOfType.length &&
+            allIdsOfType.every((id) => evaluationCompanyIds.includes(id));
+          updated.evaluationCompanyIds = isFullSelection ? undefined : evaluationCompanyIds;
         }
         updatedSurveysList.push(updated);
       }
@@ -609,8 +652,8 @@ export function SurveyFormsPage({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredSurveys.map((survey) => {
                   const deadlineLabel = formatDeadline(survey.deadlineDate);
-                  const totalForType = companyTotalsByType[survey.surveyType] || 0;
-                  const completedForType = companyCompletedByType[survey.surveyType] || 0;
+                  const totalForType = companyTotalsBySurveyId[survey.id] || 0;
+                  const completedForType = companyCompletedBySurveyId[survey.id] || 0;
  
                   return (
                     <tr key={survey.id} className="align-middle hover:bg-slate-50/40 dark:hover:bg-slate-900/10">
@@ -1016,28 +1059,7 @@ export function SurveyFormsPage({
                         </div>
                       </div>
 
-                      {/* Section 2: Set Deadline */}
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-bold text-slate-800 dark:text-slate-200 block uppercase tracking-wider">
-                          Set Deadline
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="date"
-                            className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0063a9] pl-10 cursor-pointer"
-                            value={newDeadlineDate}
-                            onChange={(e) => {
-                              setNewDeadlineDate(e.target.value);
-                              setOverrideDeadline(true);
-                            }}
-                          />
-                          <CalendarClock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {/* Section 3: Survey Access */}
+                      {/* Section 2: Survey Access */}
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-3">
                           <label className="text-sm font-bold text-slate-800 dark:text-slate-200 block uppercase tracking-wider">
@@ -1055,9 +1077,6 @@ export function SurveyFormsPage({
                             </label>
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                          This is the actual visibility control for this form. Checking a department/role here grants them access to this specific survey (and its companies) even if their account-wide category permission hasn't been changed.
-                        </p>
 
                         <div className={`grid gap-4 md:grid-cols-2 ${!overrideAccess ? 'opacity-60' : ''}`}>
                           <div className="rounded-xl border border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-950/30 p-3 space-y-2">
@@ -1127,15 +1146,33 @@ export function SurveyFormsPage({
                           </div>
                         </div>
                       </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Section 3: Set Deadline */}
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-bold text-slate-800 dark:text-slate-200 block uppercase tracking-wider">
+                          Set Deadline
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="date"
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0063a9] pl-10 cursor-pointer"
+                            value={newDeadlineDate}
+                            onChange={(e) => {
+                              setNewDeadlineDate(e.target.value);
+                              setOverrideDeadline(true);
+                            }}
+                          />
+                          <CalendarClock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                        </div>
+                      </div>
 
                       {/* Section 4: Set Notification */}
                       <div className="space-y-3 pt-2">
                         <label className="text-sm font-bold text-slate-800 dark:text-slate-200 block uppercase tracking-wider">
                           Set Notification
                         </label>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                          Configure the dispatch frequency interval of automated survey reminders sent to employees who have pending partner evaluations.
-                        </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50/50 dark:bg-slate-950/30 rounded-xl p-3 border border-slate-100 dark:border-slate-800/60">
                           {[
                             { value: '4', label: 'Every 4 Hours (High Frequency)' },
@@ -1164,6 +1201,20 @@ export function SurveyFormsPage({
                           ))}
                         </div>
                       </div>
+
+                      {/* Modify Companies to Evaluate - single-survey modify only */}
+                      {!isSelectMode && (
+                        <div className="pt-2">
+                          <button
+                            onClick={() => setIsCompanyPickerOpen(true)}
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-800/60 px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 transition cursor-pointer"
+                            type="button"
+                          >
+                            <Building2 size={14} />
+                            <span>Modify Companies to Evaluate</span>
+                          </button>
+                        </div>
+                      )}
                     </>
                   )}
 
@@ -1216,6 +1267,114 @@ export function SurveyFormsPage({
               </div>
             </div>
           )}
+
+          {/* Modify Companies to Evaluate - full-screen picker (single-survey modify only) */}
+          {isCompanyPickerOpen && (() => {
+            const targetSurvey = surveys.find((s) => selectedSurveyIds.has(s.id));
+            const pickerCompanies = targetSurvey
+              ? partnerCompanies.filter((c) => c.type === targetSurvey.surveyType)
+              : [];
+            const allSelected = pickerCompanies.length > 0 && pickerCompanies.every((c) => evaluationCompanyIds.includes(c.id));
+
+            const toggleCompany = (id: string) => {
+              setEvaluationCompanyIds((current) =>
+                current.includes(id) ? current.filter((c) => c !== id) : [...current, id]
+              );
+            };
+
+            return (
+              <div className="fixed inset-0 z-[55] flex items-center justify-center p-4">
+                <div
+                  className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm transition-opacity"
+                  onClick={() => setIsCompanyPickerOpen(false)}
+                />
+                <div className="relative w-full max-w-2xl h-[85vh] max-h-[85vh] rounded-2xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="border-b border-slate-100 dark:border-slate-800 p-5 flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setIsCompanyPickerOpen(false)}
+                        className="p-1.5 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                        title="Back to Modify Settings"
+                        type="button"
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
+                      <div>
+                        <h3 className="text-lg font-extrabold text-slate-950 dark:text-white">
+                          Modify Companies to Evaluate
+                        </h3>
+                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                          {targetSurvey ? `${targetSurvey.surveyType} partners` : 'Partners'} · {evaluationCompanyIds.length} / {pickerCompanies.length} selected
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setIsCompanyPickerOpen(false)}
+                      className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                      title="Close"
+                      type="button"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Choose which registered {targetSurvey ? targetSurvey.surveyType.toLowerCase() : ''} partner companies this survey should evaluate. This list always reflects the companies currently in the Partner Registry, and every completion percentage for this survey is calculated against your selection here.
+                    </p>
+
+                    <label className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 px-3.5 py-2.5 cursor-pointer">
+                      <span className="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                        Select All
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={(event) =>
+                          setEvaluationCompanyIds(event.target.checked ? pickerCompanies.map((c) => c.id) : [])
+                        }
+                        className="h-4 w-4 rounded border-slate-300 text-[#0063a9] focus:ring-[#0063a9]"
+                      />
+                    </label>
+
+                    {pickerCompanies.length === 0 ? (
+                      <div className="text-center py-10 text-sm font-semibold text-slate-400 dark:text-slate-500">
+                        No {targetSurvey?.surveyType.toLowerCase()} partner companies are registered yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {pickerCompanies.map((company) => (
+                          <label
+                            key={company.id}
+                            className="flex items-center gap-2.5 rounded-lg border border-slate-100 dark:border-slate-800/60 px-3 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={evaluationCompanyIds.includes(company.id)}
+                              onChange={() => toggleCompany(company.id)}
+                              className="h-4 w-4 rounded border-slate-300 text-[#0063a9] focus:ring-[#0063a9]"
+                            />
+                            <Building2 size={14} className="text-slate-400 shrink-0" />
+                            <span>{company.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-end p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 shrink-0">
+                    <button
+                      onClick={() => setIsCompanyPickerOpen(false)}
+                      className="px-5 py-2.5 rounded-xl bg-[#0063a9] text-white hover:bg-[#00528c] dark:bg-blue-600 dark:hover:bg-blue-700 text-xs font-bold uppercase tracking-wider cursor-pointer transition shadow-md"
+                      type="button"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Custom Archive Confirmation Modal */}
           {isArchiveConfirmOpen && (
