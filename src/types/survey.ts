@@ -1,0 +1,100 @@
+export type SurveyType = 'Courier' | 'Supplier' | 'Subcontractor';
+export type Rating = number | 'N/A';
+export type SurveyAccessRole = 'Rank & File' | 'Supervisory' | 'Managerial' | 'Director' | 'Executive';
+
+export interface PartnerCompany {
+  id: string;
+  name: string;
+  type: SurveyType;
+  affiliation?: string;
+  createdAt: string;
+}
+
+export interface SurveyResponse {
+  responseId: string;
+  surveyType: SurveyType;
+  respondentType: string;
+  submissionDate: string;
+  company: string;
+  department?: string;
+  address?: string;
+  questionId: string;
+  questionNumber: number;
+  question: string;
+  questionCategory: string;
+  rating: Rating;
+  comment: string;
+  respondentEmail?: string;
+  archived?: boolean;
+  archivedAt?: string;
+  archivedBySurveyId?: string;
+  archivedBySurveyTitle?: string;
+}
+
+export interface FilterState {
+  surveyType: SurveyType[];
+  questionId: string;
+  rating: 'All' | Rating;
+  company: string;
+  search: string;
+}
+
+export interface QuestionDefinition {
+  questionId: string;
+  questionNumber: number;
+  question: string;
+  questionCategory: string;
+  surveyTypes: SurveyType[];
+}
+
+export interface KpiSummary {
+  overallSatisfactionScore: number;
+  totalResponses: number;
+  averageRating: number;
+  naPercentage: number;
+  highestRatedQuestion: string;
+  lowestRatedQuestion: string;
+  maxRating?: number;
+}
+
+export interface ResponseNotification {
+  id: string;
+  company: string;
+  surveyType: SurveyType;
+  respondentType: string;
+  submissionDate: string;
+  questionCount: number;
+  respondentEmail?: string;
+  department?: string;
+  designation?: string;
+}
+
+export interface CustomForm {
+  id: string;
+  title: string;
+  surveyType: SurveyType;
+  description: string;
+  createdAt: string;
+  deadlineDate?: string;
+  status?: 'Running' | 'Paused' | 'Completed' | 'Archived';
+  accessDepartments?: string[];
+  accessRoles?: SurveyAccessRole[];
+  // IDs of PartnerCompany entries this survey should evaluate. Undefined/empty
+  // means "all companies of this survey's type" (the default, always kept in
+  // sync as companies are added/removed in the Partner Registry). Once an
+  // admin customizes the list via "Modify Companies to Evaluate", only the
+  // still-existing companies among these IDs are used.
+  evaluationCompanyIds?: string[];
+  maxRating?: number;
+  questions: {
+    questionId: string;
+    questionNumber: number;
+    question: string;
+    questionCategory: string;
+    inputType?: 'text' | 'rating' | 'typed-rating' | 'select' | 'checkbox' | 'date-range' | 'matrix';
+    options?: string[];
+    subQuestions?: { id: string; label: string; description?: string; validationRange?: { min: number; max: number; allowNa: boolean } }[];
+    validationRange?: { min: number; max: number; allowNa: boolean };
+    section?: string;
+  }[];
+}
