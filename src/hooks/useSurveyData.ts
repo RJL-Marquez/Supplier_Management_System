@@ -174,7 +174,7 @@ export interface SimulatableAccount {
   department: string;
 }
 
-export function useSurveyData(accounts: SimulatableAccount[] = []) {
+export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEmail?: string | null, isAdmin?: boolean) {
   const [responses, setResponses] = useState<SurveyResponse[]>([]);
   const [surveys, setSurveys] = useState<CustomForm[]>([]);
   const [partnerCompanies, setPartnerCompanies] = useState<PartnerCompany[]>([]);
@@ -182,6 +182,34 @@ export function useSurveyData(accounts: SimulatableAccount[] = []) {
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<ResponseNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  const [chatNotifications, setChatNotifications] = useState<ResponseNotification[]>(() => {
+    try {
+      const data = localStorage.getItem('survey_notifications_v1');
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const handleNotificationsUpdated = () => {
+      try {
+        const data = localStorage.getItem('survey_notifications_v1');
+        if (data) {
+          setChatNotifications(JSON.parse(data));
+        }
+      } catch (e) {
+        // Ignore
+      }
+    };
+    window.addEventListener('notifications-updated', handleNotificationsUpdated);
+    window.addEventListener('chat-updated', handleNotificationsUpdated);
+    return () => {
+      window.removeEventListener('notifications-updated', handleNotificationsUpdated);
+      window.removeEventListener('chat-updated', handleNotificationsUpdated);
+    };
+  }, []);
   const [isFullDatasetActive, setIsFullDatasetActive] = useState(() => {
     return localStorage.getItem('survey_analytics_full_dataset_active') === 'true';
   });
@@ -1320,7 +1348,20 @@ export function useSurveyData(accounts: SimulatableAccount[] = []) {
     setUnreadCount(0);
   };
 
-  const markNotificationsRead = () => setUnreadCount(0);
+  const markNotificationsRead = () => {
+    setUnreadCount(0);
+    try {
+      const data = localStorage.getItem('survey_notifications_v1');
+      if (data) {
+        const parsed = JSON.parse(data);
+        const updated = parsed.map((item: any) => ({ ...item, read: true }));
+        localStorage.setItem('survey_notifications_v1', JSON.stringify(updated));
+        setChatNotifications(updated);
+      }
+    } catch (e) {
+      // Ignore
+    }
+  };
 
   // Split active and archived responses so the active dashboard is unaffected
   const activeResponses = useMemo(() => {
@@ -1501,13 +1542,29 @@ export function useSurveyData(accounts: SimulatableAccount[] = []) {
     return list;
   }, [partnerCompanies]);
 
+  const filteredChatNotifications = useMemo(() => {
+    return chatNotifications.filter((notif: any) => {
+      if (isAdmin) {
+        // Admins see notifications sent by Employees
+        return notif.senderRole === 'Employee';
+      } else {
+        // Employees see notifications from Admins sent to them
+        const userEmailNormalized = (currentUserEmail || '').trim().toLowerCase();
+        const notifEmployeeEmailNormalized = (notif.employeeEmail || '').trim().toLowerCase();
+        return notif.senderRole === 'Admin' && userEmailNormalized === notifEmployeeEmailNormalized;
+      }
+    });
+  }, [chatNotifications, isAdmin, currentUserEmail]);
+
   const combinedNotifications = useMemo(() => {
-    return [...contractNotifications, ...notifications];
-  }, [contractNotifications, notifications]);
+    const list = [...contractNotifications, ...notifications, ...filteredChatNotifications];
+    return list.sort((a, b) => b.submissionDate.localeCompare(a.submissionDate));
+  }, [contractNotifications, notifications, filteredChatNotifications]);
 
   const combinedUnreadCount = useMemo(() => {
-    return unreadCount + contractNotifications.length;
-  }, [unreadCount, contractNotifications]);
+    const unreadChatCount = filteredChatNotifications.filter((c: any) => !c.read).length;
+    return unreadCount + contractNotifications.length + unreadChatCount;
+  }, [unreadCount, contractNotifications, filteredChatNotifications]);
 
   return {
     responses: activeResponses,

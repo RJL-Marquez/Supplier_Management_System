@@ -217,52 +217,64 @@ export function NotificationLogsPage({ notifications, unreadCount }: Notificatio
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {sortedAndFiltered.map((item) => (
-                  <tr key={item.id} className="align-middle hover:bg-slate-50/50 dark:hover:bg-slate-900/10 transition">
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap text-xs">
-                          {formatLogDate(item.submissionDate)} {formatLogTime(item.submissionDate)}
+                {sortedAndFiltered.map((item) => {
+                  const isChat = (item as any).isChatNotification || item.id?.startsWith('chat-');
+                  return (
+                    <tr key={item.id} className="align-middle hover:bg-slate-50/50 dark:hover:bg-slate-900/10 transition">
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap text-xs">
+                            {formatLogDate(item.submissionDate)} {formatLogTime(item.submissionDate)}
+                          </span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">
+                            {formatRelativeTime(item.submissionDate)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium">
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: isChat ? '#6366f1' : surveyTypeColors[item.surveyType] }}
+                          />
+                          {isChat ? 'Support Chat' : item.surveyType}
                         </span>
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">
-                          {formatRelativeTime(item.submissionDate)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            {item.isNew && <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="New" />}
+                            <span className="font-bold text-slate-800 dark:text-slate-100">{item.company}</span>
+                          </div>
+                          {isChat && (item as any).comment && (
+                            <span className="text-xs text-slate-500 dark:text-slate-400 italic font-medium">
+                              "{(item as any).comment}"
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className={`px-4 py-3 font-mono text-xs ${isChat ? 'text-indigo-600 dark:text-indigo-400' : 'text-[#0063a9] dark:text-blue-400'}`}>
+                        {item.designation === 'Contract Alert' ? '⚠️ SYSTEM ALERT' : item.respondentEmail}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300 font-semibold text-xs">
+                        {item.designation === 'Contract Alert' ? (item.respondentType === 'Contract Expired' ? 'Expired Agreement' : 'Expiring Soon') : item.department}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300 text-xs">
+                        <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-extrabold ${
+                          isChat
+                            ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400'
+                            : (item.designation === 'Contract Alert'
+                              ? (item.respondentType === 'Contract Expired'
+                                ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400')
+                              : 'bg-slate-150 dark:bg-slate-800 text-slate-700 dark:text-slate-200')
+                        }`}>
+                          {isChat ? 'Chat Message' : item.designation}
                         </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium">
-                        <span
-                          className="h-2 w-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: surveyTypeColors[item.surveyType] }}
-                        />
-                        {item.surveyType}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {item.isNew && <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="New" />}
-                        <span className="font-bold text-slate-800 dark:text-slate-100">{item.company}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-[#0063a9] dark:text-blue-400">
-                      {item.designation === 'Contract Alert' ? '⚠️ SYSTEM ALERT' : item.respondentEmail}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300 font-semibold text-xs">
-                      {item.designation === 'Contract Alert' ? (item.respondentType === 'Contract Expired' ? 'Expired Agreement' : 'Expiring Soon') : item.department}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300 text-xs">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-extrabold ${
-                        item.designation === 'Contract Alert'
-                          ? (item.respondentType === 'Contract Expired'
-                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-                            : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400')
-                          : 'bg-slate-150 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
-                      }`}>
-                        {item.designation}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

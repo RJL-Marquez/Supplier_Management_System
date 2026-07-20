@@ -7,6 +7,7 @@ interface PageItem<T extends string> {
   icon: LucideIcon;
   hasDropdown?: boolean;
   section?: string;
+  badgeCount?: number;
 }
 
 interface ShellProps<T extends string> {
@@ -190,7 +191,21 @@ export function Shell<T extends string>({
                       title={isSidebarCollapsed ? page.label : undefined}
                     >
                       <Icon size={18} className="shrink-0" />
-                      {!isSidebarCollapsed && <span className="truncate">{page.label}</span>}
+                      {!isSidebarCollapsed && (
+                        <span className="flex-1 flex items-center justify-between min-w-0">
+                          <span className="truncate pr-1">{page.label}</span>
+                          {page.badgeCount !== undefined && page.badgeCount > 0 && (
+                            <span className="ml-2 flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white shadow-sm ring-1 ring-white dark:ring-slate-950">
+                              {page.badgeCount}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      {isSidebarCollapsed && page.badgeCount !== undefined && page.badgeCount > 0 && (
+                        <span className="absolute top-1 right-1 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-rose-500 text-[8px] font-bold text-white shadow-sm ring-1 ring-white dark:ring-slate-950">
+                          {page.badgeCount}
+                        </span>
+                      )}
                     </button>
                     {page.hasDropdown && !isSidebarCollapsed && (
                       <button

@@ -553,9 +553,8 @@ export function DashboardPage({
                         strokeWidth="18"
                         strokeLinecap="round"
                         pathLength={100}
-                        strokeDasharray={100}
-                        strokeDashoffset={100 - pct}
-                        style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+                        strokeDasharray={`${pct} 200`}
+                        style={{ transition: 'stroke-dasharray 0.6s ease' }}
                       />
                     </svg>
                     <div className="absolute inset-x-0 bottom-[22%] flex justify-center">

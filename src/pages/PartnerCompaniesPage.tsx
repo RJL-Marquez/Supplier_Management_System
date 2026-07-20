@@ -23,7 +23,9 @@ import {
   RefreshCw,
   FileText,
   Check,
-  ChevronRight
+  ChevronRight,
+  Truck,
+  Package
 } from 'lucide-react';
 import { PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
 import { getMaxRatingForResponses } from '../utils/analytics';
@@ -448,51 +450,51 @@ export function PartnerCompaniesPage({
         )}
       </div>
 
-      {/* Main Companies List Panel */}
-      <div className="panel p-0 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex flex-wrap justify-between items-center gap-3 bg-slate-50/50 dark:bg-slate-900/30">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            {statusTab} Registry List ({filteredCompanies.length}) &bull; Click row to edit/renew
-          </span>
-          <div className="flex rounded-lg border border-slate-200 bg-white p-1 dark:border-transparent dark:bg-slate-950">
-            <button
-              type="button"
-              onClick={() => setViewMode('general')}
-              className={`flex items-center gap-1.5 rounded-md py-1.5 px-3 text-[11px] font-bold transition-all duration-150 cursor-pointer ${
-                viewMode === 'general'
-                  ? 'bg-[#0063a9] text-white shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              <LayoutGrid size={12} />
-              <span>General</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('simplified')}
-              className={`flex items-center gap-1.5 rounded-md py-1.5 px-3 text-[11px] font-bold transition-all duration-150 cursor-pointer ${
-                viewMode === 'simplified'
-                  ? 'bg-[#0063a9] text-white shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              <List size={12} />
-              <span>Simplified</span>
-            </button>
-          </div>
+      {/* Registry Header & Controls Block */}
+      <div className="panel px-5 py-4 flex flex-wrap justify-between items-center gap-3">
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+          {statusTab} Registry List ({filteredCompanies.length}) &bull; Click card to edit/renew
+        </span>
+        <div className="flex rounded-lg border border-slate-200 bg-white p-1 dark:border-transparent dark:bg-slate-950">
+          <button
+            type="button"
+            onClick={() => setViewMode('general')}
+            className={`flex items-center gap-1.5 rounded-md py-1.5 px-3 text-[11px] font-bold transition-all duration-150 cursor-pointer ${
+              viewMode === 'general'
+                ? 'bg-[#0063a9] text-white shadow-xs'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <LayoutGrid size={12} />
+            <span>General</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('simplified')}
+            className={`flex items-center gap-1.5 rounded-md py-1.5 px-3 text-[11px] font-bold transition-all duration-150 cursor-pointer ${
+              viewMode === 'simplified'
+                ? 'bg-[#0063a9] text-white shadow-xs'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <List size={12} />
+            <span>Simplified</span>
+          </button>
         </div>
+      </div>
 
-        {filteredCompanies.length === 0 ? (
-          <div className="py-20 text-center text-slate-400">
-            <Building size={48} className="mx-auto mb-3 opacity-30 text-slate-300" />
-            <p className="text-sm font-semibold">No companies found under this tab selection.</p>
-            <p className="text-xs mt-1 text-slate-400">
-              {statusTab === 'Active' && 'There are no active contracts.'}
-              {statusTab === 'Expired' && 'No contracts are currently expired.'}
-              {statusTab === 'Archived' && 'The archive is currently empty.'}
-            </p>
-          </div>
-        ) : viewMode === 'simplified' ? (
+      {filteredCompanies.length === 0 ? (
+        <div className="panel py-20 text-center text-slate-400">
+          <Building size={48} className="mx-auto mb-3 opacity-30 text-slate-300" />
+          <p className="text-sm font-semibold">No companies found under this tab selection.</p>
+          <p className="text-xs mt-1 text-slate-400">
+            {statusTab === 'Active' && 'There are no active contracts.'}
+            {statusTab === 'Expired' && 'No contracts are currently expired.'}
+            {statusTab === 'Archived' && 'The archive is currently empty.'}
+          </p>
+        </div>
+      ) : viewMode === 'simplified' ? (
+        <div className="panel p-0 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
@@ -614,121 +616,130 @@ export function PartnerCompaniesPage({
               </tbody>
             </table>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-800">
-            {filteredCompanies.map((c) => {
-              const score = getCompanyScoreDetails(c.name, c.type);
-              const isExpiringSoon = c.expirationDate && !c.isArchived && 
-                (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() <= 30 * 24 * 60 * 60 * 1000) &&
-                (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() > 0);
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {filteredCompanies.map((c) => {
+            const score = getCompanyScoreDetails(c.name, c.type);
+            const isExpiringSoon = c.expirationDate && !c.isArchived && 
+              (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() <= 30 * 24 * 60 * 60 * 1000) &&
+              (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() > 0);
 
-              return (
-                <div 
-                  key={c.id} 
-                  onClick={() => handleCompanyClick(c)}
-                  className="p-6 hover:bg-slate-50/80 dark:hover:bg-slate-900/10 cursor-pointer group transition duration-150 relative"
-                >
-                  {/* Card Status Indicator Border */}
-                  <div className={`absolute top-0 bottom-0 left-0 w-1 ${
-                    c.isArchived ? 'bg-slate-300' : statusTab === 'Expired' ? 'bg-rose-500' : isExpiringSoon ? 'bg-amber-400' : 'bg-emerald-500'
-                  }`} />
+            return (
+              <div 
+                key={c.id} 
+                onClick={() => handleCompanyClick(c)}
+                className="panel relative overflow-hidden cursor-pointer hover:shadow-lg transition-all duration-200 border border-slate-200 dark:border-slate-800/80 hover:border-[#0063a9] dark:hover:border-blue-900/80 p-6 flex flex-col justify-between"
+              >
+                {/* Card Status Indicator Border */}
+                <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${
+                  c.isArchived ? 'bg-slate-300' : statusTab === 'Expired' ? 'bg-rose-500' : isExpiringSoon ? 'bg-amber-400' : 'bg-emerald-500'
+                }`} />
 
-                  {/* Top segment: Title, pill badges and Action */}
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-base font-bold text-slate-900 dark:text-white truncate group-hover:text-[#0063a9] dark:group-hover:text-blue-300 transition">
-                          {c.name}
-                        </h4>
-                        
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider ${
-                          c.type === 'Courier' 
-                            ? 'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-950/20 dark:text-blue-400' 
-                            : c.type === 'Supplier'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400'
-                            : 'bg-orange-50 text-orange-700 border border-orange-100 dark:bg-orange-950/20 dark:text-orange-400'
-                        }`}>
-                          {c.type}
+                {/* Top segment: Title, prominent badges and Action */}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-2 min-w-0 flex-1 pl-1.5">
+                    <h4 className="text-lg font-bold text-slate-900 dark:text-white truncate group-hover:text-[#0063a9] dark:group-hover:text-blue-300 transition-colors">
+                      {c.name}
+                    </h4>
+                    
+                    {/* Highly Recognizable Category Tag with Icon */}
+                    <div className="pt-0.5">
+                      {c.type === 'Courier' && (
+                        <span className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/30">
+                          <Truck size={14} className="text-blue-600 dark:text-blue-400" />
+                          <span>Courier Partner</span>
                         </span>
-                      </div>
-
-                      {/* Meta Tags Bar */}
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 dark:text-slate-500">
-                        <span className="flex items-center gap-1">
-                          <Hash size={12} className="text-slate-300 dark:text-slate-700" />
-                          <span className="font-mono text-[10px] uppercase tracking-wider">
-                            {c.id.substring(0, 10).toUpperCase()}
-                          </span>
+                      )}
+                      {c.type === 'Supplier' && (
+                        <span className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/30">
+                          <Package size={14} className="text-emerald-600 dark:text-emerald-400" />
+                          <span>Supplier Partner</span>
                         </span>
-
-                        <span className="text-slate-200 dark:text-slate-800">|</span>
-
-                        <span className="flex items-center gap-1">
-                          <Calendar size={12} className="text-slate-300 dark:text-slate-700" />
-                          <span>Registered: <strong className="text-slate-600 dark:text-slate-400 font-semibold">{formatDate(c.registeredAt || c.createdAt)}</strong></span>
+                      )}
+                      {c.type === 'Subcontractor' && (
+                        <span className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/30">
+                          <Briefcase size={14} className="text-amber-600 dark:text-amber-400" />
+                          <span>Subcontractor</span>
                         </span>
-                      </div>
-                    </div>
-
-                    {/* Badge Status */}
-                    <div>
-                      {c.isArchived ? (
-                        <span className="inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">Archived</span>
-                      ) : statusTab === 'Expired' ? (
-                        <span className="inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400 animate-pulse">Expired</span>
-                      ) : isExpiringSoon ? (
-                        <span className="inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400 animate-bounce">Expiring Soon</span>
-                      ) : (
-                        <span className="inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">Active</span>
                       )}
                     </div>
-                  </div>
 
-                  {/* Lifespan Dates Box */}
-                  <div className="mt-4 p-3 bg-slate-50/60 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800/80 grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-slate-400 font-medium block">Last Contract Renewal</span>
-                      <strong className="text-slate-700 dark:text-slate-300 font-semibold">{formatDate(c.renewedAt || c.registeredAt || c.createdAt)}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 font-medium block">Contract Expiration</span>
-                      <strong className={`font-bold block ${statusTab === 'Expired' ? 'text-rose-600' : isExpiringSoon ? 'text-amber-600' : 'text-slate-700 dark:text-slate-300'}`}>
-                        {formatDate(c.expirationDate)}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {/* Multi-column specs details grid */}
-                  <div className="mt-4 grid grid-cols-2 gap-4 pt-3 text-xs">
-                    
-                    {/* Column 1: Scope */}
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Specialization Scope</span>
-                      <span className="text-slate-600 dark:text-slate-300 font-medium line-clamp-1">
-                        {c.affiliation || 'General affiliation scope'}
+                    {/* Meta Tags Bar */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 dark:text-slate-500 pt-1">
+                      <span className="flex items-center gap-1">
+                        <Hash size={12} className="text-slate-300 dark:text-slate-700" />
+                        <span className="font-mono text-[10px] uppercase tracking-wider">
+                          {c.id.substring(0, 10).toUpperCase()}
+                        </span>
                       </span>
-                    </div>
 
-                    {/* Column 2: Performance */}
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Survey Audit Volume</span>
-                      <span className="text-slate-600 dark:text-slate-300 font-semibold">
-                        {score.count} evaluation{score.count !== 1 ? 's' : ''} completed
+                      <span className="text-slate-200 dark:text-slate-800">|</span>
+
+                      <span className="flex items-center gap-1">
+                        <Calendar size={12} className="text-slate-300 dark:text-slate-700" />
+                        <span>Registered: <strong className="text-slate-600 dark:text-slate-400 font-semibold">{formatDate(c.registeredAt || c.createdAt)}</strong></span>
                       </span>
                     </div>
                   </div>
 
-                  {/* Arrow Indicator on Hover */}
-                  <div className="mt-4 flex items-center justify-between text-xs text-slate-400 group-hover:text-[#0063a9] dark:group-hover:text-blue-300 transition">
-                    <span className="italic text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">Click to manage reminders & details</span>
-                    <ChevronRight size={14} className="transform group-hover:translate-x-1 transition-transform" />
+                  {/* Badge Status */}
+                  <div className="shrink-0">
+                    {c.isArchived ? (
+                      <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">Archived</span>
+                    ) : statusTab === 'Expired' ? (
+                      <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-950 dark:text-rose-400 dark:border-rose-900 animate-pulse">Expired</span>
+                    ) : isExpiringSoon ? (
+                      <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-900 animate-pulse">Expiring Soon</span>
+                    ) : (
+                      <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-900">Active</span>
+                    )}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+
+                {/* Lifespan Dates Box */}
+                <div className="mt-5 p-3 bg-slate-50/60 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800/80 grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-slate-400 font-medium block">Last Contract Renewal</span>
+                    <strong className="text-slate-700 dark:text-slate-300 font-semibold">{formatDate(c.renewedAt || c.registeredAt || c.createdAt)}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-medium block">Contract Expiration</span>
+                    <strong className={`font-bold block ${statusTab === 'Expired' ? 'text-rose-600' : isExpiringSoon ? 'text-amber-600' : 'text-slate-700 dark:text-slate-300'}`}>
+                      {formatDate(c.expirationDate)}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Multi-column specs details grid */}
+                <div className="mt-4 grid grid-cols-2 gap-4 pt-3 border-t border-slate-100 dark:border-slate-800/60 text-xs">
+                  {/* Column 1: Scope */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Specialization Scope</span>
+                    <span className="text-slate-600 dark:text-slate-300 font-medium line-clamp-1">
+                      {c.affiliation || 'General affiliation scope'}
+                    </span>
+                  </div>
+
+                  {/* Column 2: Performance */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Survey Audit Volume</span>
+                    <span className="text-slate-600 dark:text-slate-300 font-semibold">
+                      {score.count} evaluation{score.count !== 1 ? 's' : ''} completed
+                    </span>
+                  </div>
+                </div>
+
+                {/* Arrow Indicator on Hover */}
+                <div className="mt-4 flex items-center justify-between text-xs text-slate-400 group-hover:text-[#0063a9] dark:group-hover:text-blue-300 transition-colors">
+                  <span className="italic text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">Click to manage reminders & details</span>
+                  <ChevronRight size={14} className="transform group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* PARTNER DETAILS & CONTRACT CONFIGURATION DRAWER/MODAL */}
       {selectedCompany && (

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
-import { BarChart3, Bell, FileText, LayoutDashboard, Moon, Search, Sun, Table2, FilePlus, ClipboardCheck, ArrowLeft, LogOut, ShieldAlert, Users, Presentation, Archive, Database, UserCog, Mail } from 'lucide-react';
+import { BarChart3, Bell, FileText, LayoutDashboard, Moon, Search, Sun, Table2, FilePlus, ClipboardCheck, ArrowLeft, LogOut, ShieldAlert, Users, Presentation, Archive, Database, UserCog, Mail, MessageSquare } from 'lucide-react';
 import { AccountMenu } from './components/AccountMenu';
 import { NotificationBell } from './components/NotificationBell';
 import { EmployeeNotificationBell } from './components/EmployeeNotificationBell';
@@ -20,6 +20,9 @@ import { PresentPage } from './pages/PresentPage';
 import { ArchivePage } from './pages/ArchivePage';
 import { SimulatorPage } from './pages/SimulatorPage';
 import { AccountManagementPage } from './pages/AccountManagementPage';
+import { LiveChatPage } from './pages/LiveChatPage';
+import { AdminChatWidget } from './components/AdminChatWidget';
+import { initializeSystemChats, getChatUnreadCount } from './utils/chatService';
 import { useSurveyData } from './hooks/useSurveyData';
 import { applyFilters, initialFilters } from './utils/analytics';
 import { FilterState, SurveyType, CustomForm } from './types/survey';
@@ -166,7 +169,7 @@ const DEFAULT_ACCOUNTS: AccountProfile[] = [
   }
 ];
 
-type PageKey = 'dashboard' | 'partner-companies' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator';
+type PageKey = 'dashboard' | 'partner-companies' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'live-chat';
 
 const adminPages = [
   { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
@@ -211,58 +214,6 @@ export default function App() {
     localStorage.setItem('survey_accounts_v1', JSON.stringify(newAccounts));
   };
 
-  const {
-    responses,
-    archivedResponses,
-    archiveResponsesForSurveys,
-    restoreResponseGroup,
-    restoreResponsesForSurvey,
-    deleteArchivedResponseGroups,
-    restoreArchivedResponseGroups,
-    surveys,
-    questions,
-    companies,
-    partnerCompanies,
-    addPartnerCompany,
-    updatePartnerCompany,
-    removePartnerCompany,
-    isLoading,
-    error,
-    notifications,
-    unreadCount,
-    markNotificationsRead,
-    createSurvey,
-    updateSurvey,
-    updateSurveysBulk,
-    deleteSurvey,
-    submitResponse,
-    resetAllData,
-    isFullDatasetActive,
-    clearResponses,
-    addEvaluations,
-    resetSimulation,
-  } = useSurveyData(accounts);
-
-  const [activePage, setActivePage] = useState<PageKey>('dashboard');
-  const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
-  const surveyFillerRef = useRef<SurveyFillerHandle>(null);
-
-  // Any navigation away from the survey-filling page (sidebar Home logo, a
-  // top-level nav item, or picking a different survey from the sidebar
-  // dropdown) should go through this, so an in-progress evaluation can warn
-  // the respondent and offer to save a draft instead of silently discarding
-  // their answers.
-  const navigateFrom = (targetPage: PageKey, run: () => void) => {
-    if (activePage === 'fill-form' && targetPage !== 'fill-form' && surveyFillerRef.current) {
-      surveyFillerRef.current.attemptExit(run);
-    } else {
-      run();
-    }
-  };
-  const [editingSurveyId, setEditingSurveyId] = useState<string | null>(null);
-  const [filters, setFilters] = useState<FilterState>(initialFilters);
-  const [darkMode, setDarkMode] = useState(false);
-
   const getUserProfile = (email: string | null) => {
     if (!email) return null;
     const normalized = email.trim().toLowerCase();
@@ -301,6 +252,81 @@ export default function App() {
   }, [profile]);
 
   const isAdmin = profile?.role === 'Admin' || userPermissions.pages.includes('account-management');
+
+  const {
+    responses,
+    archivedResponses,
+    archiveResponsesForSurveys,
+    restoreResponseGroup,
+    restoreResponsesForSurvey,
+    deleteArchivedResponseGroups,
+    restoreArchivedResponseGroups,
+    surveys,
+    questions,
+    companies,
+    partnerCompanies,
+    addPartnerCompany,
+    updatePartnerCompany,
+    removePartnerCompany,
+    isLoading,
+    error,
+    notifications,
+    unreadCount,
+    markNotificationsRead,
+    createSurvey,
+    updateSurvey,
+    updateSurveysBulk,
+    deleteSurvey,
+    submitResponse,
+    resetAllData,
+    isFullDatasetActive,
+    clearResponses,
+    addEvaluations,
+    resetSimulation,
+  } = useSurveyData(accounts, account, isAdmin);
+
+  const [activePage, setActivePage] = useState<PageKey>('dashboard');
+  const [chatUnread, setChatUnread] = useState(0);
+
+  // Initialize live system chats for all employees with admins
+  useEffect(() => {
+    if (accounts && accounts.length > 0) {
+      initializeSystemChats(accounts);
+    }
+  }, [accounts]);
+
+  // Keep chat unread counts in sync
+  useEffect(() => {
+    const handleUnreadUpdate = () => {
+      if (account) {
+        setChatUnread(getChatUnreadCount(account, isAdmin));
+      }
+    };
+    handleUnreadUpdate();
+    window.addEventListener('chat-updated', handleUnreadUpdate);
+    return () => {
+      window.removeEventListener('chat-updated', handleUnreadUpdate);
+    };
+  }, [account, isAdmin]);
+
+  const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
+  const surveyFillerRef = useRef<SurveyFillerHandle>(null);
+
+  // Any navigation away from the survey-filling page (sidebar Home logo, a
+  // top-level nav item, or picking a different survey from the sidebar
+  // dropdown) should go through this, so an in-progress evaluation can warn
+  // the respondent and offer to save a draft instead of silently discarding
+  // their answers.
+  const navigateFrom = (targetPage: PageKey, run: () => void) => {
+    if (activePage === 'fill-form' && targetPage !== 'fill-form' && surveyFillerRef.current) {
+      surveyFillerRef.current.attemptExit(run);
+    } else {
+      run();
+    }
+  };
+  const [editingSurveyId, setEditingSurveyId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<FilterState>(initialFilters);
+  const [darkMode, setDarkMode] = useState(false);
 
   // A survey's own "Department / Role Access" checkboxes (set via Survey Forms > Modify)
   // are the source of truth for who can see & answer that specific form. If a survey has
@@ -421,7 +447,7 @@ export default function App() {
 
 
   const visiblePages = useMemo(() => {
-    return adminPages
+    const pages = adminPages
       .filter((page) => userPermissions.pages.includes(page.key as PageModuleKey))
       .map((page) => {
         if (page.key === 'notifications' && !isAdmin) {
@@ -429,7 +455,19 @@ export default function App() {
         }
         return page;
       });
-  }, [userPermissions.pages, isAdmin]);
+
+    if (!isAdmin) {
+      pages.push({
+        key: 'live-chat',
+        label: 'Live Chat Support',
+        icon: MessageSquare,
+        section: 'Support',
+        badgeCount: chatUnread
+      } as any);
+    }
+
+    return pages;
+  }, [userPermissions.pages, isAdmin, chatUnread]);
 
   const activeTitle = useMemo(() => {
     if (activePage === 'dashboard') {
@@ -462,6 +500,7 @@ export default function App() {
   // Safe routing guard redirecting users to permitted views
   useEffect(() => {
     if (!account) return;
+    if (activePage === 'live-chat' && !isAdmin) return; // Allow employee access to live-chat
     const currentIsAllowed = hasPageAccess(userPermissions.pages, activePage, isAdmin);
     if (!currentIsAllowed) {
       const fallback = visiblePages[0]?.key || 'dashboard';
@@ -679,6 +718,13 @@ export default function App() {
         onResetSimulation={resetSimulation}
       />
     ),
+    'live-chat': profile && (
+      <LiveChatPage
+        currentUser={profile}
+        isAdmin={isAdmin}
+        accounts={accounts}
+      />
+    ),
   }[activePage];
 
   // Content shown when the "Survey Forms" nav item's dropdown toggle is expanded:
@@ -822,6 +868,10 @@ export default function App() {
                 Reset System Database
               </button>
             </div>
+          )}
+
+          {isAdmin && profile && (
+            <AdminChatWidget currentUser={profile} accounts={accounts} />
           )}
         </div>
       </Shell>
