@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Shield, Search, Plus, UserCog, Mail, Briefcase, Trash2, Edit2, AlertCircle, RotateCcw, Check, CheckSquare, Square } from 'lucide-react';
 import { AccountProfile } from '../App';
-import { PageModuleKey, getDefaultPermissions } from '../utils/rbac';
+import { PageModuleKey, getDefaultPermissions, getDepartmentDefaultPermissions } from '../utils/rbac';
 import { SurveyType } from '../types/survey';
 
 interface AccountManagementPageProps {
@@ -9,6 +9,8 @@ interface AccountManagementPageProps {
   onUpdateAccounts: (accounts: AccountProfile[]) => void;
   isAdmin: boolean;
   currentUserEmail: string;
+  departmentPermissions: Record<string, { pages: PageModuleKey[]; surveyTypes: SurveyType[] }>;
+  onUpdateDepartmentPermissions: (perms: Record<string, { pages: PageModuleKey[]; surveyTypes: SurveyType[] }>) => void;
 }
 
 const DESIGNATION_OPTIONS = ['Rank & File', 'Supervisory', 'Managerial', 'Director', 'Executive'];
@@ -34,7 +36,14 @@ const SURVEY_TYPES: { key: SurveyType; label: string; description: string }[] = 
   { key: 'Subcontractor', label: 'Subcontractor Performance', description: 'On-site subcontractor compliance and execution' },
 ];
 
-export function AccountManagementPage({ accounts, onUpdateAccounts, isAdmin, currentUserEmail }: AccountManagementPageProps) {
+export function AccountManagementPage({ 
+  accounts, 
+  onUpdateAccounts, 
+  isAdmin, 
+  currentUserEmail,
+  departmentPermissions,
+  onUpdateDepartmentPermissions
+}: AccountManagementPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
@@ -48,6 +57,71 @@ export function AccountManagementPage({ accounts, onUpdateAccounts, isAdmin, cur
   // Custom permissions overrides state in the form
   const [selectedPages, setSelectedPages] = useState<PageModuleKey[]>([]);
   const [selectedSurveyTypes, setSelectedSurveyTypes] = useState<SurveyType[]>([]);
+
+  // Department Access Modal State
+  const [isDeptOpen, setIsDeptOpen] = useState(false);
+  const [selectedDept, setSelectedDept] = useState(DEPARTMENT_OPTIONS[0]);
+  const [deptPages, setDeptPages] = useState<PageModuleKey[]>([]);
+  const [deptSurveyTypes, setDeptSurveyTypes] = useState<SurveyType[]>([]);
+
+  // Load selected department permissions into modal state
+  useEffect(() => {
+    if (isDeptOpen && selectedDept) {
+      const current = departmentPermissions?.[selectedDept];
+      if (current) {
+        setDeptPages(current.pages);
+        setDeptSurveyTypes(current.surveyTypes);
+      } else {
+        // Load the system standard default permissions for this department
+        const defaults = getDepartmentDefaultPermissions(selectedDept);
+        setDeptPages(defaults.pages);
+        setDeptSurveyTypes(defaults.surveyTypes);
+      }
+    }
+  }, [selectedDept, isDeptOpen, departmentPermissions]);
+
+  const handleOpenDepartmentAccess = () => {
+    setSelectedDept(DEPARTMENT_OPTIONS[0]);
+    setIsDeptOpen(true);
+  };
+
+  const handleSaveDeptAccess = () => {
+    const updated = { ...departmentPermissions };
+    updated[selectedDept] = {
+      pages: deptPages,
+      surveyTypes: deptSurveyTypes
+    };
+    onUpdateDepartmentPermissions(updated);
+    alert(`Successfully updated department-level access controls for "${selectedDept}". This will immediately affect all users in this department.`);
+    setIsDeptOpen(false);
+  };
+
+  const handleResetDeptAccess = () => {
+    if (window.confirm(`Are you sure you want to restore "${selectedDept}" department access back to its system standard default?`)) {
+      const updated = { ...departmentPermissions };
+      delete updated[selectedDept];
+      onUpdateDepartmentPermissions(updated);
+      
+      // Reset local modal state to show standard defaults
+      const defaults = getDepartmentDefaultPermissions(selectedDept);
+      setDeptPages(defaults.pages);
+      setDeptSurveyTypes(defaults.surveyTypes);
+      
+      alert(`Restored "${selectedDept}" department access back to system standard default.`);
+    }
+  };
+
+  const toggleDeptPageSelection = (key: PageModuleKey) => {
+    setDeptPages(current => 
+      current.includes(key) ? current.filter(p => p !== key) : [...current, key]
+    );
+  };
+
+  const toggleDeptSurveyTypeSelection = (key: SurveyType) => {
+    setDeptSurveyTypes(current => 
+      current.includes(key) ? current.filter(t => t !== key) : [...current, key]
+    );
+  };
 
   // The account currently signed in, used to prevent an admin from removing
   // their own account or another account that shares their access level.
@@ -232,6 +306,14 @@ export function AccountManagementPage({ accounts, onUpdateAccounts, isAdmin, cur
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleOpenDepartmentAccess}
+            className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-all duration-200"
+            type="button"
+          >
+            <Shield size={16} className="text-indigo-600 dark:text-indigo-400" />
+            Department Access
+          </button>
           <button
             onClick={handleOpenAdd}
             className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#0063a9] hover:bg-[#00528c] px-4 py-2 text-sm font-semibold text-white shadow-md transition-all duration-200"
@@ -556,6 +638,173 @@ export function AccountManagementPage({ accounts, onUpdateAccounts, isAdmin, cur
                 className="px-4 py-2 text-sm font-bold text-white bg-[#0063a9] hover:bg-[#00528c] rounded-xl transition cursor-pointer shadow-md"
               >
                 {editingEmail ? 'Save Permissions' : 'Add Account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Department Access Control Modal */}
+      {isDeptOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
+                  <Shield size={20} />
+                </span>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Department Access Control (RBAC)</h3>
+                  <p className="text-xs text-slate-500">Configure bulk system permissions on a per-department level</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetDeptAccess}
+                className="text-xs font-bold text-rose-500 hover:text-rose-600 hover:underline flex items-center gap-1 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50/20 cursor-pointer"
+                title="Restore active department back to system default"
+              >
+                <RotateCcw size={12} />
+                Restore Department Default
+              </button>
+            </div>
+
+            {/* Content area: Two Columns (Left: Departments, Right: Settings) */}
+            <div className="flex-1 flex overflow-hidden">
+              {/* Left Column: Department List */}
+              <div className="w-1/3 border-r border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 p-4 space-y-2 overflow-y-auto">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider px-2 mb-3">Departments</h4>
+                {DEPARTMENT_OPTIONS.map((dept) => {
+                  const isSelected = selectedDept === dept;
+                  const isModified = !!departmentPermissions?.[dept];
+                  return (
+                    <button
+                      key={dept}
+                      onClick={() => setSelectedDept(dept)}
+                      className={`w-full flex items-center justify-between text-left px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                        isSelected
+                          ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 shadow-sm border border-indigo-100 dark:border-indigo-900/30'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 border border-transparent'
+                      }`}
+                      type="button"
+                    >
+                      <span className="truncate">{dept}</span>
+                      {isModified && (
+                        <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0 ml-2" title="Has custom department permissions" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Right Column: Permission Settings */}
+              <div className="w-2/3 p-6 overflow-y-auto space-y-6">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Access Settings for:</span>
+                    <span className="inline-flex items-center rounded-md bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50 px-2.5 py-0.5 text-xs font-bold">
+                      {selectedDept}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Define the maximum boundaries of what members of this department can access. Unchecking a permission will revoke access for all members, even those who have individual overrides.
+                  </p>
+                </div>
+
+                {/* Survey Type Access */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider pb-1.5 border-b border-slate-100 dark:border-slate-800">
+                    Survey Data Access
+                  </h4>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {SURVEY_TYPES.map(type => {
+                      const isChecked = deptSurveyTypes.includes(type.key);
+                      return (
+                        <button
+                          key={type.key}
+                          type="button"
+                          onClick={() => toggleDeptSurveyTypeSelection(type.key)}
+                          className={`flex items-start gap-3 w-full p-2.5 rounded-xl border text-left transition-all ${
+                            isChecked 
+                              ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/10' 
+                              : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                          }`}
+                        >
+                          <div className="pt-0.5">
+                            {isChecked ? (
+                              <div className="h-4.5 w-4.5 rounded flex items-center justify-center bg-indigo-600 text-white">
+                                <Check size={12} strokeWidth={3} />
+                              </div>
+                            ) : (
+                              <div className="h-4.5 w-4.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{type.label}</div>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400">{type.description}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Navigation Modules */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider pb-1.5 border-b border-slate-100 dark:border-slate-800">
+                    Permitted Navigation Modules
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {PAGE_MODULES.map(module => {
+                      const isChecked = deptPages.includes(module.key);
+                      return (
+                        <button
+                          key={module.key}
+                          type="button"
+                          onClick={() => toggleDeptPageSelection(module.key)}
+                          className={`flex items-start gap-3 p-2.5 rounded-xl border text-left transition-all ${
+                            isChecked 
+                              ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/10' 
+                              : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                          }`}
+                        >
+                          <div className="pt-0.5">
+                            {isChecked ? (
+                              <div className="h-4.5 w-4.5 rounded flex items-center justify-center bg-indigo-600 text-white">
+                                <Check size={12} strokeWidth={3} />
+                              </div>
+                            ) : (
+                              <div className="h-4.5 w-4.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{module.label}</div>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400">{module.description}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsDeptOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDeptAccess}
+                className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition cursor-pointer shadow-md"
+              >
+                Save Department Access
               </button>
             </div>
           </div>

@@ -26,26 +26,8 @@ export function getDefaultPermissions(designation: string, department: string): 
   const dept = department.trim();
 
   // 1. Survey Types (Operational Data)
-  // Director, Executive, and Admin get company-wide data by default.
-  // Other ranks are department-specific.
-  let surveyTypes: SurveyType[] = [];
-  if (
-    rank === 'Executive' || 
-    rank === 'Director' || 
-    dept === 'Executive Office' || 
-    dept === 'Business Solutions Manager' || 
-    dept === 'Accounts Payable - Trade'
-  ) {
-    surveyTypes = ['Courier', 'Supplier', 'Subcontractor'];
-  } else if (dept === 'Procurement Group') {
-    surveyTypes = ['Supplier'];
-  } else if (dept === 'Logistics') {
-    surveyTypes = ['Courier'];
-  } else if (dept === 'TASS') {
-    surveyTypes = ['Subcontractor'];
-  } else {
-    surveyTypes = ['Courier', 'Supplier', 'Subcontractor'];
-  }
+  // Default to all survey types for all departments as the standard
+  const surveyTypes: SurveyType[] = ['Courier', 'Supplier', 'Subcontractor'];
 
   // 2. Page Modules based on Rank/Designation
   let pages: PageModuleKey[] = [];
@@ -96,6 +78,48 @@ export function getDefaultPermissions(designation: string, department: string): 
       'archive', 
       'simulator'
     ];
+  }
+
+  return { pages, surveyTypes };
+}
+
+/**
+ * Resolves standard default department permissions.
+ */
+export function getDepartmentDefaultPermissions(department: string): UserPermissions {
+  const dept = department.trim();
+  const surveyTypes: SurveyType[] = ['Courier', 'Supplier', 'Subcontractor'];
+
+  let pages: PageModuleKey[] = [];
+  if (dept === 'Executive Office') {
+    pages = ['dashboard', 'analytics', 'reports', 'present', 'notifications'];
+  } else if (dept === 'Business Solutions Manager') {
+    pages = [
+      'dashboard', 
+      'survey-forms', 
+      'explorer', 
+      'analytics', 
+      'reports', 
+      'present', 
+      'partner-companies', 
+      'notifications', 
+      'archive'
+    ];
+  } else {
+    // AP - Trade, Logistics, Procurement Group, TASS
+    pages = [
+      'dashboard', 
+      'analytics', 
+      'survey-forms', 
+      'partner-companies', 
+      'explorer', 
+      'reports', 
+      'present', 
+      'notifications'
+    ];
+    if (dept === 'TASS') {
+      pages.push('archive');
+    }
   }
 
   return { pages, surveyTypes };

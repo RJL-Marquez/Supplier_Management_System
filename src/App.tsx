@@ -26,7 +26,7 @@ import { initializeSystemChats, getChatUnreadCount } from './utils/chatService';
 import { useSurveyData } from './hooks/useSurveyData';
 import { applyFilters, initialFilters } from './utils/analytics';
 import { FilterState, SurveyType, CustomForm } from './types/survey';
-import { PageModuleKey, getDefaultPermissions, hasPageAccess } from './utils/rbac';
+import { PageModuleKey, getDefaultPermissions, hasPageAccess, getDepartmentDefaultPermissions } from './utils/rbac';
 
 export interface AccountProfile {
   email: string;
@@ -214,6 +214,23 @@ export default function App() {
     localStorage.setItem('survey_accounts_v1', JSON.stringify(newAccounts));
   };
 
+  const [departmentPermissions, setDepartmentPermissions] = useState<Record<string, { pages: PageModuleKey[]; surveyTypes: SurveyType[] }>>(() => {
+    const saved = localStorage.getItem('survey_department_permissions_v1');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return {};
+      }
+    }
+    return {};
+  });
+
+  const saveDepartmentPermissions = (newPerms: Record<string, { pages: PageModuleKey[]; surveyTypes: SurveyType[] }>) => {
+    setDepartmentPermissions(newPerms);
+    localStorage.setItem('survey_department_permissions_v1', JSON.stringify(newPerms));
+  };
+
   const getUserProfile = (email: string | null) => {
     if (!email) return null;
     const normalized = email.trim().toLowerCase();
@@ -245,11 +262,15 @@ export default function App() {
     }
 
     const defaults = getDefaultPermissions(profile.designation, profile.department);
+    const userPages = (profile.permissions?.pages ?? defaults.pages) as PageModuleKey[];
+    const userSurveyTypes = (profile.permissions?.surveyTypes ?? defaults.surveyTypes) as SurveyType[];
+
+    const deptPerms = departmentPermissions[profile.department] || getDepartmentDefaultPermissions(profile.department);
     return {
-      pages: (profile.permissions?.pages ?? defaults.pages) as PageModuleKey[],
-      surveyTypes: (profile.permissions?.surveyTypes ?? defaults.surveyTypes) as SurveyType[]
+      pages: userPages.filter(p => deptPerms.pages.includes(p)) as PageModuleKey[],
+      surveyTypes: userSurveyTypes.filter(t => deptPerms.surveyTypes.includes(t)) as SurveyType[]
     };
-  }, [profile]);
+  }, [profile, departmentPermissions]);
 
   const isAdmin = profile?.role === 'Admin' || userPermissions.pages.includes('account-management');
 
@@ -564,6 +585,8 @@ export default function App() {
         onUpdateAccounts={saveAccounts}
         isAdmin={isAdmin}
         currentUserEmail={account || ''}
+        departmentPermissions={departmentPermissions}
+        onUpdateDepartmentPermissions={saveDepartmentPermissions}
       />
     ),
     'survey-forms': (
