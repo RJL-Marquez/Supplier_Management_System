@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Download, FileBarChart, FileSpreadsheet, FileText, Printer, Table2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, FileBarChart, FileSpreadsheet, FileText, Table2 } from 'lucide-react';
 import { PartnerCompany, SurveyResponse } from '../types/survey';
-import { averageBySurveyType, formatNumber, getCompanyPerformance, getKpiSummary, questionPerformance } from '../utils/analytics';
+import { formatNumber, getCompanyPerformance, getKpiSummary, questionPerformance, averageBySurveyType } from '../utils/analytics';
 import { ExportTable, exportTablesAsCSV, exportTablesAsExcel, exportTablesAsPDF } from '../utils/exporters';
 import { CompanyReportBuilderPage } from './CompanyReportBuilderPage';
+import { QuestionReportBuilderPage } from './QuestionReportBuilderPage';
+import { SummaryReportBuilderPage } from './SummaryReportBuilderPage';
+import { ExecutiveSummaryReportBuilderPage } from './ExecutiveSummaryReportBuilderPage';
 
 interface ReportsPageProps {
   responses: SurveyResponse[];
   partnerCompanies?: PartnerCompany[];
-  isAdmin?: boolean;
-  isAllCompanies?: boolean;
   canExport?: boolean;
 }
 
@@ -21,12 +22,14 @@ function runExport(format: ExportFormat, reportTitle: string, tables: ExportTabl
   else exportTablesAsPDF(reportTitle, tables, filenameBase);
 }
 
-export function ReportsPage({ responses, partnerCompanies = [], isAdmin, isAllCompanies, canExport = false }: ReportsPageProps) {
+export function ReportsPage({ responses, partnerCompanies = [], canExport = false }: ReportsPageProps) {
+  const [showSummaryBuilder, setShowSummaryBuilder] = useState(false);
   const [showCompanyBuilder, setShowCompanyBuilder] = useState(false);
+  const [showQuestionBuilder, setShowQuestionBuilder] = useState(false);
+  const [showExecutiveBuilder, setShowExecutiveBuilder] = useState(false);
   const summary = getKpiSummary(responses);
   const allQuestionRows = questionPerformance(responses);
   const questionRows = allQuestionRows.slice(0, 5);
-  const surveyRows = averageBySurveyType(responses);
   const companyPerformance = getCompanyPerformance(responses);
   
   const splitCount = Math.min(10, Math.floor(companyPerformance.length / 2));
@@ -46,6 +49,12 @@ export function ReportsPage({ responses, partnerCompanies = [], isAdmin, isAllCo
       ['Highest Rated Question', summary.highestRatedQuestion],
       ['Lowest Rated Question', summary.lowestRatedQuestion],
     ],
+  };
+
+  const surveyReportTable: ExportTable = {
+    title: 'Survey Performance Summary',
+    columns: ['Survey Type', 'Average Rating (%)', 'Responses'],
+    rows: averageBySurveyType(responses).map((row) => [row.surveyType, `${formatNumber(row.average)}%`, row.responses]),
   };
 
   const topCompaniesTable: ExportTable = {
@@ -72,24 +81,38 @@ export function ReportsPage({ responses, partnerCompanies = [], isAdmin, isAllCo
     rows: allQuestionRows.map((row) => [row.question, formatNumber(row.average), row.responses]),
   };
 
-  const surveyReportTable: ExportTable = {
-    title: 'Survey Report',
-    columns: ['Survey Type', 'Average Rating', 'Responses'],
-    rows: surveyRows.map((row) => [row.surveyType, formatNumber(row.average), row.responses]),
-  };
-
   const handleExecutiveExport = (format: ExportFormat) => {
     const tables = [summaryTable, topCompaniesTable, leastRatedCompaniesTable, questionHighlightsTable];
-    if (isAllCompanies) tables.push(surveyReportTable);
     runExport(format, 'Executive Summary', tables, 'executive_summary');
   };
 
   const handleCardExport = (format: ExportFormat, card: 'summary' | 'question' | 'survey' | 'companies') => {
-    if (card === 'summary') runExport(format, 'Summary Report', [summaryTable], 'summary_report');
+    if (card === 'summary') runExport(format, 'Summary Report', [summaryTable, surveyReportTable], 'summary_report');
     else if (card === 'question') runExport(format, 'Question Report', [questionReportTable], 'question_report');
     else if (card === 'companies') runExport(format, 'Companies Performance Report', [topCompaniesTable, leastRatedCompaniesTable], 'companies_report');
-    else if (isAllCompanies) runExport(format, 'Survey Report', [surveyReportTable], 'survey_report');
   };
+
+  if (showSummaryBuilder) {
+    return (
+      <SummaryReportBuilderPage
+        responses={responses}
+        partnerCompanies={partnerCompanies}
+        canExport={canExport}
+        onBack={() => setShowSummaryBuilder(false)}
+      />
+    );
+  }
+
+  if (showExecutiveBuilder) {
+    return (
+      <ExecutiveSummaryReportBuilderPage
+        responses={responses}
+        partnerCompanies={partnerCompanies}
+        canExport={canExport}
+        onBack={() => setShowExecutiveBuilder(false)}
+      />
+    );
+  }
 
   if (showCompanyBuilder) {
     return (
@@ -102,15 +125,27 @@ export function ReportsPage({ responses, partnerCompanies = [], isAdmin, isAllCo
     );
   }
 
+  if (showQuestionBuilder) {
+    return (
+      <QuestionReportBuilderPage
+        responses={responses}
+        partnerCompanies={partnerCompanies}
+        canExport={canExport}
+        onBack={() => setShowQuestionBuilder(false)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-5">
-      <section className={`grid gap-4 ${isAllCompanies ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+      <section className="grid gap-4 md:grid-cols-3">
         <ReportCard
           title="Summary Report"
           detail={`${summary.totalResponses} submitted evaluations, ${formatNumber(summary.averageRating)} average rating`}
           icon={FileBarChart}
           canExport={canExport}
           onExport={(format) => handleCardExport(format, 'summary')}
+          onOpenBuilder={() => setShowSummaryBuilder(true)}
         />
         <ReportCard
           title="Companies Report"
@@ -126,69 +161,49 @@ export function ReportsPage({ responses, partnerCompanies = [], isAdmin, isAllCo
           icon={FileSpreadsheet}
           canExport={canExport}
           onExport={(format) => handleCardExport(format, 'question')}
+          onOpenBuilder={() => setShowQuestionBuilder(true)}
         />
-        {isAllCompanies && (
-          <ReportCard
-            title="Survey Report"
-            detail="Courier, Supplier, and Subcontractor comparison"
-            icon={Printer}
-            canExport={canExport}
-            onExport={(format) => handleCardExport(format, 'survey')}
-          />
-        )}
       </section>
 
-      <section className="panel">
+      <section className="panel border-t-4 border-[#0063a9] bg-gradient-to-br from-white to-blue-50/20 dark:from-slate-950 dark:to-slate-950">
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h3 className="text-base font-semibold">Executive Summary</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Prototype report view for stakeholder briefings.</p>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-2 w-2 rounded-full bg-[#0063a9] animate-pulse" />
+              <h3 className="text-base font-bold text-slate-800 dark:text-white">Executive Summary Dossier</h3>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Complete, integrated performance briefing combining summary KPIs and critical question diagnostics.</p>
           </div>
-          <div className="flex gap-2">
-            {canExport ? (
-              <>
-                <button className="primary-button" type="button" onClick={() => handleExecutiveExport('pdf')}>
-                  <Download size={16} />
-                  Export PDF
-                </button>
-                <button className="secondary-button" type="button" onClick={() => handleExecutiveExport('csv')}>
-                  <Download size={16} />
-                  Export CSV
-                </button>
-                <button className="secondary-button" type="button" onClick={() => handleExecutiveExport('excel')}>
-                  <Download size={16} />
-                  Export Excel
-                </button>
-              </>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-100 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/30 px-3 py-2 rounded-lg">
-                ⚠️ Exporting restricted to Supervisor and above
-              </span>
-            )}
+          <div className="flex flex-wrap gap-2">
+            <button className="primary-button inline-flex items-center gap-1.5" type="button" onClick={() => setShowExecutiveBuilder(true)}>
+              <span>Build Executive Report</span>
+              <ChevronRight size={14} />
+            </button>
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-            <h4 className="font-semibold">Question Highlights</h4>
-            <div className="mt-3 space-y-3">
+          <div className="rounded-xl border border-slate-200/60 bg-white/50 p-4 dark:border-slate-800/60 dark:bg-slate-900/40">
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Question Rating Highlights</h4>
+            <div className="space-y-2.5">
               {questionRows.map((row) => (
-                <div key={row.question} className="flex items-center justify-between gap-4 text-sm">
-                  <span className="text-slate-600 dark:text-slate-300">{row.question}</span>
-                  <span className="badge">{formatNumber(row.average)}</span>
+                <div key={row.question} className="flex items-center justify-between gap-4 text-xs">
+                  <span className="text-slate-600 dark:text-slate-300 truncate max-w-[280px]" title={row.question}>{row.question}</span>
+                  <span className="font-mono font-bold text-[#0063a9] bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.5 rounded text-[10px]">{formatNumber(row.average)}%</span>
                 </div>
               ))}
             </div>
           </div>
-          <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-            <h4 className="font-semibold">Survey Summary</h4>
-            <div className="mt-3 space-y-3">
-              {surveyRows.map((row) => (
-                <div key={row.surveyType} className="flex items-center justify-between gap-4 text-sm">
-                  <span className="text-slate-600 dark:text-slate-300">{row.surveyType}</span>
-                  <span className="text-slate-500 dark:text-slate-400">{row.responses} responses, {formatNumber(row.average)} avg</span>
-                </div>
-              ))}
+          <div className="rounded-xl border border-slate-200/60 bg-white/50 p-4 dark:border-slate-800/60 dark:bg-slate-900/40 flex flex-col justify-between">
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Interactive Briefing Benefits</h4>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                Unlock strategic compliance highlights. Filter down evaluating questions below an adjustable critical percentage threshold, review automatically calculated strategic alerts, and add custom executive notes to compile a polished, presentation-ready briefing deck.
+              </p>
             </div>
+            <button className="text-xs font-semibold text-[#0063a9] hover:underline inline-flex items-center gap-1 mt-3 self-start" onClick={() => setShowExecutiveBuilder(true)}>
+              Configure custom executive comments & threshold
+              <ChevronRight size={12} />
+            </button>
           </div>
         </div>
       </section>

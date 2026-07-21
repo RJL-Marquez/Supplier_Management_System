@@ -174,6 +174,116 @@ export interface SimulatableAccount {
   department: string;
 }
 
+interface CompressedSubmission {
+  i: string; // responseId
+  t: SurveyType; // surveyType
+  r: string; // respondentType
+  s: string; // submissionDate
+  c: string; // company
+  d?: string; // department
+  ad?: string; // address
+  e?: string; // respondentEmail
+  ar?: boolean; // archived
+  aat?: string; // archivedAt
+  asi?: string; // archivedBySurveyId
+  ast?: string; // archivedBySurveyTitle
+  a: { // answers
+    q: string; // questionId
+    n: number; // questionNumber
+    x: string; // question
+    g: string; // questionCategory
+    v: Rating; // rating
+    m: string; // comment
+  }[];
+}
+
+function safeSetItem(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.error(`Failed to save key "${key}" to localStorage:`, error);
+    return false;
+  }
+}
+
+function compressResponses(responses: SurveyResponse[]): CompressedSubmission[] {
+  const map = new Map<string, CompressedSubmission>();
+  
+  for (const resp of responses) {
+    let comp = map.get(resp.responseId);
+    if (!comp) {
+      comp = {
+        i: resp.responseId,
+        t: resp.surveyType,
+        r: resp.respondentType,
+        s: resp.submissionDate,
+        c: resp.company,
+        a: []
+      };
+      if (resp.department !== undefined) comp.d = resp.department;
+      if (resp.address !== undefined) comp.ad = resp.address;
+      if (resp.respondentEmail !== undefined) comp.e = resp.respondentEmail;
+      if (resp.archived !== undefined) comp.ar = resp.archived;
+      if (resp.archivedAt !== undefined) comp.aat = resp.archivedAt;
+      if (resp.archivedBySurveyId !== undefined) comp.asi = resp.archivedBySurveyId;
+      if (resp.archivedBySurveyTitle !== undefined) comp.ast = resp.archivedBySurveyTitle;
+      
+      map.set(resp.responseId, comp);
+    }
+    comp.a.push({
+      q: resp.questionId,
+      n: resp.questionNumber,
+      x: resp.question,
+      g: resp.questionCategory,
+      v: resp.rating,
+      m: resp.comment
+    });
+  }
+  
+  return Array.from(map.values());
+}
+
+function decompressResponses(compressed: any[]): SurveyResponse[] {
+  if (!Array.isArray(compressed)) return [];
+  if (compressed.length === 0) return [];
+  
+  // If the elements are in the old uncompressed format, return them directly
+  if ('responseId' in compressed[0]) {
+    return compressed as SurveyResponse[];
+  }
+  
+  const responses: SurveyResponse[] = [];
+  for (const item of compressed as CompressedSubmission[]) {
+    for (const ans of item.a) {
+      const resp: SurveyResponse = {
+        responseId: item.i,
+        surveyType: item.t,
+        respondentType: item.r,
+        submissionDate: item.s,
+        company: item.c,
+        questionId: ans.q,
+        questionNumber: ans.n,
+        question: ans.x,
+        questionCategory: ans.g,
+        rating: ans.v,
+        comment: ans.m
+      };
+      if (item.d !== undefined) resp.department = item.d;
+      if (item.ad !== undefined) resp.address = item.ad;
+      if (item.e !== undefined) resp.respondentEmail = item.e;
+      if (item.ar !== undefined) resp.archived = item.ar;
+      if (item.aat !== undefined) resp.archivedAt = item.aat;
+      if (item.asi !== undefined) resp.archivedBySurveyId = item.asi;
+      if (item.ast !== undefined) resp.archivedBySurveyTitle = item.ast;
+      
+      responses.push(resp);
+    }
+  }
+  
+  return responses;
+}
+
 export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEmail?: string | null, isAdmin?: boolean) {
   const [responses, setResponses] = useState<SurveyResponse[]>([]);
   const [surveys, setSurveys] = useState<CustomForm[]>([]);
@@ -1069,14 +1179,14 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
         } catch (e) {}
 
         if (savedResponses && parsedResponses.length > 0) {
-          loadedResponses = parsedResponses.map(normalizeSurveyResponse);
-          localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(loadedResponses));
+          loadedResponses = decompressResponses(parsedResponses).map(normalizeSurveyResponse);
+          safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(loadedResponses)));
         } else {
           // Start with zero submissions instead of auto-seeding a mock dataset.
           // Admins can still populate synthetic data on demand via the
           // Database Simulator's "Add Evaluation" tool (addEvaluations below).
           loadedResponses = [];
-          localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(loadedResponses));
+          safeSetItem('survey_analytics_responses_v6', JSON.stringify([]));
         }
 
         if (isMountedRef.current) {
@@ -1189,7 +1299,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
 
     const updatedResponses = [...responses, ...newResponses];
     setResponses(updatedResponses);
-    localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(updatedResponses));
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
 
     // Add notification
     const notification = toNotification(newResponses);
@@ -1229,7 +1339,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     });
     const updated = [...partnerCompanies, newCompany];
     setPartnerCompanies(updated);
-    localStorage.setItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
+    safeSetItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
     return newCompany;
   };
 
@@ -1238,7 +1348,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     const normalizedCompany = normalizePartnerCompany(updatedCompany);
     setPartnerCompanies((currentCompanies) => {
       const updated = currentCompanies.map((c) => c.id === normalizedCompany.id ? normalizedCompany : c);
-      localStorage.setItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
+      safeSetItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
       return updated;
     });
     return normalizedCompany;
@@ -1248,7 +1358,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
   const removePartnerCompany = (id: string) => {
     const updated = partnerCompanies.filter((c) => c.id !== id);
     setPartnerCompanies(updated);
-    localStorage.setItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
+    safeSetItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
   };
 
   // Reset to initial mock data state
@@ -1290,13 +1400,13 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     if (mode === 'complete') {
       const fullRows = generateAllMockResponses(surveys, partnerCompanies, NON_ADMIN_USERS);
       setResponses(fullRows);
-      localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(fullRows));
+      safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(fullRows)));
 
       const groupedNotifs = groupResponsesToNotifications(fullRows);
       setNotifications(groupedNotifs.slice(0, NOTIFICATION_HISTORY_LIMIT));
       setUnreadCount(0);
       setIsFullDatasetActive(true);
-      localStorage.setItem('survey_analytics_full_dataset_active', 'true');
+      safeSetItem('survey_analytics_full_dataset_active', 'true');
       return;
     }
 
@@ -1309,9 +1419,9 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
 
     const updated = [...responses, ...newRows];
     setResponses(updated);
-    localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(updated));
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updated)));
     setIsFullDatasetActive(false);
-    localStorage.setItem('survey_analytics_full_dataset_active', 'false');
+    safeSetItem('survey_analytics_full_dataset_active', 'false');
 
     const newNotifications = groupResponsesToNotifications(newRows);
     if (newNotifications.length > 0) {
@@ -1324,9 +1434,9 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     setResponses([]);
     setNotifications([]);
     setUnreadCount(0);
-    localStorage.setItem('survey_analytics_responses_v6', JSON.stringify([]));
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify([]));
     setIsFullDatasetActive(false);
-    localStorage.setItem('survey_analytics_full_dataset_active', 'false');
+    safeSetItem('survey_analytics_full_dataset_active', 'false');
     window.location.reload();
   };
 
@@ -1338,9 +1448,9 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
       
     const filtered = responses.filter(r => !isSimulated(r.responseId));
     setResponses(filtered);
-    localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(filtered));
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(filtered)));
     setIsFullDatasetActive(false);
-    localStorage.setItem('survey_analytics_full_dataset_active', 'false');
+    safeSetItem('survey_analytics_full_dataset_active', 'false');
 
     const remainingSimulated = filtered.filter(r => isSimulated(r.responseId));
     const groupedNotifs = groupResponsesToNotifications(filtered);
@@ -1401,7 +1511,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     });
 
     setResponses(updatedResponses);
-    localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(updatedResponses));
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
   };
 
   const restoreResponseGroup = (responseId: string) => {
@@ -1413,7 +1523,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     });
 
     setResponses(updatedResponses);
-    localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(updatedResponses));
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
   };
 
   const restoreResponsesForSurvey = (surveyId: string) => {
@@ -1435,7 +1545,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     });
 
     setResponses(updatedResponses);
-    localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(updatedResponses));
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
   };
 
   const deleteArchivedResponseGroups = (groupIds: { archivedAt: string; surveyId: string }[]) => {
@@ -1445,7 +1555,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
       return !match;
     });
     setResponses(updatedResponses);
-    localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(updatedResponses));
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
   };
 
   const restoreArchivedResponseGroups = (groupIds: { archivedAt: string; surveyId: string }[]) => {
@@ -1458,7 +1568,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
       return r;
     });
     setResponses(updatedResponses);
-    localStorage.setItem('survey_analytics_responses_v6', JSON.stringify(updatedResponses));
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
   };
 
   // Derive unique active survey types (Courier, Supplier, Subcontractor)

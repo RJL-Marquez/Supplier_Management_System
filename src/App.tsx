@@ -626,9 +626,7 @@ export default function App() {
       <ReportsPage
         responses={filteredResponses}
         partnerCompanies={userAccessiblePartnerCompanies}
-        isAdmin={isAdmin}
         canExport={canExport}
-        isAllCompanies={!filters.company}
       />
     ),
     notifications: isAdmin ? (
