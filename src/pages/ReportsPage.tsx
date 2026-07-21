@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Download, FileBarChart, FileSpreadsheet, FileText, Table2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, FileBarChart, FileSpreadsheet, FileText, Table2, Handshake, Search } from 'lucide-react';
 import { PartnerCompany, SurveyResponse } from '../types/survey';
 import { formatNumber, getCompanyPerformance, getKpiSummary, questionPerformance, averageBySurveyType } from '../utils/analytics';
 import { ExportTable, exportTablesAsCSV, exportTablesAsExcel, exportTablesAsPDF } from '../utils/exporters';
@@ -141,7 +141,6 @@ export function ReportsPage({ responses, partnerCompanies = [], canExport = fals
       <section className="grid gap-4 md:grid-cols-3">
         <ReportCard
           title="Summary Report"
-          detail={`${summary.totalResponses} submitted evaluations, ${formatNumber(summary.averageRating)} average rating`}
           icon={FileBarChart}
           canExport={canExport}
           onExport={(format) => handleCardExport(format, 'summary')}
@@ -149,16 +148,14 @@ export function ReportsPage({ responses, partnerCompanies = [], canExport = fals
         />
         <ReportCard
           title="Companies Report"
-          detail={`${companyPerformance.length} companies ranked by performance`}
-          icon={Table2}
+          icon={Handshake}
           canExport={canExport}
           onExport={(format) => handleCardExport(format, 'companies')}
           onOpenBuilder={() => setShowCompanyBuilder(true)}
         />
         <ReportCard
           title="Question Report"
-          detail={`${allQuestionRows.length} ranked question groups`}
-          icon={FileSpreadsheet}
+          icon={Search}
           canExport={canExport}
           onExport={(format) => handleCardExport(format, 'question')}
           onOpenBuilder={() => setShowQuestionBuilder(true)}
@@ -213,14 +210,12 @@ export function ReportsPage({ responses, partnerCompanies = [], canExport = fals
 
 function ReportCard({
   title,
-  detail,
   icon: Icon,
   canExport,
   onExport,
   onOpenBuilder,
 }: {
   title: string;
-  detail: string;
   icon: typeof FileBarChart;
   canExport?: boolean;
   onExport: (format: ExportFormat) => void;
@@ -238,13 +233,12 @@ function ReportCard({
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') onOpenBuilder();
         }}
-        className="panel cursor-pointer transition-colors hover:border-[#0063a9]/40 hover:bg-blue-50/40 dark:hover:bg-blue-950/20"
+        className="panel cursor-pointer transition-colors hover:border-[#0063a9]/40 hover:bg-blue-50/40 dark:hover:bg-blue-950/20 flex flex-col items-center text-center"
       >
-        <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-azure dark:bg-blue-950/60">
-          <Icon size={20} />
+        <div className="mb-6 flex h-28 w-28 items-center justify-center rounded-2xl bg-blue-50/80 dark:bg-blue-950/40">
+          <Icon size={64} strokeWidth={1.5} className="text-blue-500 dark:text-blue-400" />
         </div>
         <h3 className="font-semibold">{title}</h3>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{detail}</p>
         <span className="ghost-button mt-4 inline-flex">
           Build report
           <ChevronRight size={14} />
@@ -254,12 +248,11 @@ function ReportCard({
   }
 
   return (
-    <article className="panel">
-      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-azure dark:bg-blue-950/60">
-        <Icon size={20} />
+    <article className="panel flex flex-col items-center text-center">
+      <div className="mb-6 flex h-28 w-28 items-center justify-center rounded-2xl bg-blue-50/80 dark:bg-blue-950/40">
+        <Icon size={64} strokeWidth={1.5} className="text-blue-500 dark:text-blue-400" />
       </div>
       <h3 className="font-semibold">{title}</h3>
-      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{detail}</p>
       {canExport ? (
         <ExportMenu onExport={onExport} />
       ) : (
