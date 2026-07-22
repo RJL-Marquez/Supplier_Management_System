@@ -236,7 +236,7 @@ export function SendToPartnerWizard({
       .filter((c) => !c.isArchived)
       .map((c) => {
         const compSurvey = surveys.find((s) => s.surveyType === c.type);
-        const compComposite = compSurvey ? computeCompanyComposite(c.name, c.type, responses) : null;
+        const compComposite = compSurvey ? computeCompanyComposite(c.name, c.type as SurveyType, responses) : null;
         const ratingCount = compComposite ? compComposite.evaluationCount : 0;
         const avgScore = compComposite ? compComposite.compositeScore : 0;
 

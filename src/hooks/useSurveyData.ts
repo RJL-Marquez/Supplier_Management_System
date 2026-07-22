@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { sharePointService } from '../services/sharepointService';
-import { QuestionDefinition, ResponseNotification, SurveyResponse, SurveyType, CustomForm, Rating, PartnerCompany } from '../types/survey';
+import { QuestionDefinition, ResponseNotification, SurveyResponse, SurveyType, CustomForm, Rating, PartnerCompany, PartnerCompanyType, BranchRecord } from '../types/survey';
 import { surveyQuestions } from '../data/questions';
 import { generateMockResponses, generateAllMockResponses, generateSingleMockResponse, generateBulkMockResponses } from '../data/mockResponses';
 
@@ -61,6 +61,12 @@ function normalizeCustomForm(form: CustomForm): CustomForm {
   return ensureOverallFeedbackQuestion(normForm);
 }
 
+function normalizePartnerCompanyType(value: unknown): PartnerCompanyType {
+  if (value === 'Contractor') return 'Courier';
+  if (value === 'Courier' || value === 'Supplier' || value === 'Subcontractor' || value === 'Uncategorized') return value;
+  return 'Courier';
+}
+
 function normalizePartnerCompany(company: PartnerCompany): PartnerCompany {
   const defaultRegisteredAt = company.createdAt ? company.createdAt.split('T')[0] : '2025-01-15';
   
@@ -73,6 +79,17 @@ function normalizePartnerCompany(company: PartnerCompany): PartnerCompany {
   else if (company.id === 'pc-22') defaultExpirationDate = '2026-05-20'; // Expired
   else if (company.id === 'pc-23') defaultExpirationDate = '2026-08-18'; // Expiring soon (Warning)
 
+  const normalizedType = normalizePartnerCompanyType(company.type);
+
+  // Every company gets at least one branch record so downstream UI (branch
+  // list, compliance documents) never has to special-case "hasn't been
+  // migrated yet". A company that already has branches (e.g. from a future
+  // master-list import) keeps them as-is.
+  const defaultBranches: BranchRecord[] =
+    company.branches && company.branches.length > 0
+      ? company.branches
+      : [{ id: `${company.id}-branch-1`, bpCode: '' }];
+
   return {
     registeredAt: defaultRegisteredAt,
     renewedAt: defaultRegisteredAt,
@@ -80,8 +97,16 @@ function normalizePartnerCompany(company: PartnerCompany): PartnerCompany {
     reminderFirstThresholdMonths: 1,
     reminderFrequency: 'weekly',
     isArchived: false,
+    // Existing/seeded companies are already-registered partners, so default
+    // them to Accredited; a real import can override this per row.
+    accreditationStatus: 'Accredited',
+    // Only Suppliers carry a Local/Foreign origin. Legacy seeded suppliers
+    // predate this distinction, so default them to Local (all known to be
+    // local vendors) unless already set.
+    supplierOrigin: normalizedType === 'Supplier' ? 'Local' : undefined,
     ...company,
-    type: normalizeSurveyType(company.type),
+    type: normalizedType,
+    branches: defaultBranches,
   };
 }
 
@@ -1164,7 +1189,8 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
             { id: 'pc-39', name: 'Versatech International Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
             { id: 'pc-40', name: 'Sencolink Technologies Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
             { id: 'pc-41', name: 'PAX8 Philippines Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-          ];
+          ] as PartnerCompany[];
+          loadedCompanies = loadedCompanies.map(normalizePartnerCompany);
           localStorage.setItem('survey_analytics_partner_companies_v6', JSON.stringify(loadedCompanies));
         }
 
@@ -1628,7 +1654,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
         list.push({
           id: `contract-expired-${c.id}`,
           company: c.name,
-          surveyType: c.type,
+          surveyType: c.type as SurveyType,
           respondentType: "Contract Expired",
           submissionDate: new Date(exp.getTime() + 12 * 60 * 60 * 1000).toISOString(),
           questionCount: 0,
@@ -1644,7 +1670,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
           list.push({
             id: `contract-warning-${c.id}`,
             company: c.name,
-            surveyType: c.type,
+            surveyType: c.type as SurveyType,
             respondentType: `Contract Warning`,
             submissionDate: new Date(currentDate.getTime() - 2 * 60 * 60 * 1000).toISOString(), // slightly in the past
             questionCount: 0,

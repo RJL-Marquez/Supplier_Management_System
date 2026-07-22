@@ -460,7 +460,9 @@ export default function App() {
   }, [surveys, effectiveSurveyTypes, profile]);
 
   const userAccessiblePartnerCompanies = useMemo(() => {
-    return partnerCompanies.filter(c => effectiveSurveyTypes.includes(c.type));
+    // Uncategorized companies (pending review, no assigned survey type) are
+    // never accessible here — same behavior as before this type existed.
+    return partnerCompanies.filter(c => effectiveSurveyTypes.some(t => t === c.type));
   }, [partnerCompanies, effectiveSurveyTypes]);
 
   const filteredResponses = useMemo(() => applyFilters(userAccessibleResponses, filters), [userAccessibleResponses, filters]);

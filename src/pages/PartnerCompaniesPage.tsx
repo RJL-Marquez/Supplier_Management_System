@@ -27,7 +27,7 @@ import {
   Truck,
   Package
 } from 'lucide-react';
-import { PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
+import { PartnerCompany, PartnerCompanyType, SurveyResponse, SurveyType } from '../types/survey';
 import { getMaxRatingForResponses } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
 
@@ -152,7 +152,10 @@ export function PartnerCompaniesPage({
     return stats;
   }, [responses]);
 
-  const getCompanyScoreDetails = (companyName: string, companyType: SurveyType) => {
+  const getCompanyScoreDetails = (companyName: string, companyType: PartnerCompanyType) => {
+    if (companyType === 'Uncategorized') {
+      return { rating: 'N/A', pct: 0, count: 0, label: 'Unrated', hex: '#94a3b8' };
+    }
     const composite = computeCompanyComposite(companyName, companyType, responses);
     if (!composite) {
       return { rating: 'N/A', pct: 0, count: 0, label: 'Unrated', hex: '#94a3b8' };

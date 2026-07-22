@@ -199,7 +199,9 @@ const ALL_SURVEY_TYPES: SurveyType[] = ['Courier', 'Supplier', 'Subcontractor'];
  */
 function computeTopPerformers(responses: SurveyResponse[], partnerCompanies: PartnerCompany[]) {
   const typeMap = new Map<string, SurveyType>();
-  partnerCompanies.forEach((c) => typeMap.set(c.name, c.type));
+  partnerCompanies.forEach((c) => {
+    if (c.type !== 'Uncategorized') typeMap.set(c.name, c.type);
+  });
 
   const companyMap = new Map<string, { name: string; sum: number; count: number; type: SurveyType }>();
   submissionScores(responses).forEach((submission) => {

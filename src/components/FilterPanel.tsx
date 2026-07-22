@@ -42,7 +42,7 @@ export function FilterPanel({
       const selectedCompanyData = partnerCompanies.find(c => c.name === filters.company);
       if (selectedCompanyData) {
         // If the newly selected types are not empty AND the selected company's type is NOT in the selected types
-        if (next.length > 0 && !next.includes(selectedCompanyData.type)) {
+        if (next.length > 0 && !next.some((t) => t === selectedCompanyData.type)) {
             // Company doesn't match the new survey type filter, so clear the selected company
             onChange({ ...filters, surveyType: next, company: '' });
             return;
@@ -54,9 +54,9 @@ export function FilterPanel({
 
   const filteredCompanies = useMemo(() => {
     // Filter first by allowed survey types
-    const allowedCompanies = partnerCompanies.filter(c => allowedSurveyTypes.includes(c.type));
+    const allowedCompanies = partnerCompanies.filter(c => allowedSurveyTypes.some((t) => t === c.type));
     if (filters.surveyType.length === 0) return allowedCompanies;
-    return allowedCompanies.filter(c => filters.surveyType.includes(c.type));
+    return allowedCompanies.filter(c => filters.surveyType.some((t) => t === c.type));
   }, [partnerCompanies, filters.surveyType, allowedSurveyTypes]);
 
   return (
@@ -85,7 +85,7 @@ export function FilterPanel({
                 // Clear company if it doesn't match new filter
                 if (filters.company) {
                    const cData = partnerCompanies.find(c => c.name === filters.company);
-                   if (cData && nextSurveyType.length > 0 && !nextSurveyType.includes(cData.type)) {
+                   if (cData && nextSurveyType.length > 0 && !nextSurveyType.some((t) => t === cData.type)) {
                        onChange({ ...filters, surveyType: nextSurveyType, company: '' });
                        return;
                    }

@@ -166,7 +166,7 @@ export function SurveyFormsPage({
 
     evaluableCompanies.forEach((company) => {
       const isEvaluated = userEvaluations.has(company.name.trim().toLowerCase());
-      if (!isEvaluated) {
+      if (!isEvaluated && company.type !== 'Uncategorized') {
         if (pending[company.type]) {
           pending[company.type].push(company);
         }
