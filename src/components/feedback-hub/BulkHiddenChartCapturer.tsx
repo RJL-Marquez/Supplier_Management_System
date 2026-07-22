@@ -7,7 +7,7 @@ import { SurveyResponse } from '../../types/survey';
 
 const PRIMARY_COLOR = '#0063a9';
 const PEER_COLOR = '#b91c1c';
-const PEER_LABEL = 'Peer Average';
+const PEER_LABEL = 'Peer average';
 
 // Each survey type stores its overall-feedback comment under its own question
 // ID (Courier/Supplier/Subcontractor each differ). This must be derived from
@@ -27,8 +27,6 @@ const formatMonthLabel = (mStr: string) => {
   const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1);
   return d.toLocaleDateString('en-US', { month: 'short' }) + ' ' + parts[0].slice(2);
 };
-const radarTickFormatter = (value: string) => value.split(' ').map(w => w.substring(0, 3)).join(' ');
-
 interface BulkHiddenChartCapturerProps {
   item: any;
   responses: SurveyResponse[];
@@ -74,6 +72,18 @@ export function BulkHiddenChartCapturer({
     const scores = sectionChartData.flatMap((d) => [d[companyName], d[PEER_LABEL]]);
     return getScoreAxisDomain(scores);
   }, [sectionChartData, companyName]);
+
+  // Matches CompanyReportBuilderPage's radar formatter exactly: full section
+  // name plus both scores inline, instead of an abbreviated 3-letter label.
+  const radarTickFormatter = (value: string) => {
+    const row = sectionChartData.find((r) => r.section === value);
+    if (!row) return value;
+    const companyVal = row[companyName];
+    const peerVal = row[PEER_LABEL];
+    const companyStr = typeof companyVal === 'number' ? companyVal.toFixed(1) : '0.0';
+    const peerStr = typeof peerVal === 'number' ? peerVal.toFixed(1) : '0.0';
+    return `${value} (${companyStr} / ${peerStr})`;
+  };
 
   const trendChartData = useMemo(() => trend.map((t) => ({
     month: t.month,
@@ -167,9 +177,25 @@ export function BulkHiddenChartCapturer({
   if (!composite) return null;
 
   return (
-    <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none w-[800px] h-[800px] overflow-hidden">
-      <div ref={barRef} className="bg-white p-3 h-[210px] w-[500px]">
-        <BarChart width={500} height={210} data={sectionChartData} margin={{ top: 24, right: 10, bottom: 5, left: -8 }}>
+    <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none w-[900px] h-[900px] overflow-hidden">
+      {/* Container width (544px) matches CompanyReportBuilderPage's PagedSheet
+          content width (640px page - 2x48px padding) so long section labels
+          (e.g. Supplier's "Price/Cost Effectiveness") get the same room and
+          don't clip/overlap the way a narrower fixed-width capture would. */}
+      <div ref={barRef} className="bg-white p-5 rounded-lg w-[544px]">
+        {/* HTML legend placed vertically on the left, above the chart - matches
+            CompanyReportBuilderPage exactly (the bar chart has no recharts Legend). */}
+        <div className="mb-4 block text-left text-[11px] pl-2">
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: PRIMARY_COLOR }} />
+            <span className="font-semibold text-slate-700">{companyName}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: PEER_COLOR }} />
+            <span className="font-semibold text-slate-500">{PEER_LABEL}</span>
+          </div>
+        </div>
+        <BarChart width={544} height={210} data={sectionChartData} margin={{ top: 24, right: 10, bottom: 5, left: -8 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="section" tick={{ fontSize: 9.5 }} interval={0} height={24} />
           <YAxis domain={sectionAxisDomain} tick={{ fontSize: 10 }} />
@@ -182,8 +208,8 @@ export function BulkHiddenChartCapturer({
           </Bar>
         </BarChart>
       </div>
-      <div ref={radarRef} className="h-[265px] w-[500px] bg-white">
-        <RadarChart width={500} height={265} data={sectionChartData} outerRadius="90%" margin={{ top: 20, right: 10, bottom: 0, left: 10 }}>
+      <div ref={radarRef} className="h-[265px] w-[544px] bg-white">
+        <RadarChart width={544} height={265} data={sectionChartData} outerRadius="90%" margin={{ top: 20, right: 10, bottom: 0, left: 10 }}>
           <PolarGrid />
           <PolarAngleAxis dataKey="section" tick={{ fontSize: 10 }} tickFormatter={radarTickFormatter} />
           <PolarRadiusAxis domain={sectionAxisDomain} tick={{ fontSize: 9 }} />
@@ -197,8 +223,8 @@ export function BulkHiddenChartCapturer({
           <Tooltip />
         </RadarChart>
       </div>
-      <div ref={trendRef} className="h-48 w-[500px] bg-white">
-        <LineChart width={500} height={192} data={trendChartData} margin={{ top: 20, right: 16, bottom: 5, left: -10 }}>
+      <div ref={trendRef} className="h-48 w-[544px] bg-white">
+        <LineChart width={544} height={192} data={trendChartData} margin={{ top: 20, right: 16, bottom: 5, left: -10 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="label" tick={{ fontSize: 9 }} tickLine={false} />
           <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} tickLine={false} width={30} />
