@@ -6,7 +6,7 @@ import { getScoreAxisDomain, questionPerformance } from '../../utils/analytics';
 import { SurveyResponse } from '../../types/survey';
 
 const PRIMARY_COLOR = '#0063a9';
-const PEER_COLOR = '#94a3b8';
+const PEER_COLOR = '#b91c1c';
 const PEER_LABEL = 'Peer Average';
 
 const formatMonthLabel = (mStr: string) => {
