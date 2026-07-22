@@ -110,7 +110,7 @@ export function generateMockResponses(
     companiesToUse = customCompanies;
   } else {
     try {
-      const saved = localStorage.getItem('survey_analytics_partner_companies_v6');
+      const saved = localStorage.getItem('survey_analytics_partner_companies_v7');
       if (saved) companiesToUse = JSON.parse(saved);
     } catch (_) {}
   }

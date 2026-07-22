@@ -4,6 +4,14 @@ import { QuestionDefinition, ResponseNotification, SurveyResponse, SurveyType, C
 import { surveyQuestions } from '../data/questions';
 import { generateMockResponses, generateAllMockResponses, generateSingleMockResponse, generateBulkMockResponses } from '../data/mockResponses';
 import { importMasterListFromFile, ImportResult } from '../utils/masterListImport';
+import { seedPartnerCompanies } from '../data/partnerCompaniesSeed';
+
+// Bumped from _v6: the baseline registry changed from a 41-company hand-typed
+// demo list to the full Master List snapshot (partnerCompaniesSeed.ts, ~1129
+// companies). Any browser without existing _v7 data starts from that snapshot;
+// once loaded, admin edits (add/update/archive/import) persist under _v7
+// exactly like before - this only changes what day-one state looks like.
+const PARTNER_COMPANIES_STORAGE_KEY = 'survey_analytics_partner_companies_v7';
 
 const NOTIFICATION_HISTORY_LIMIT = 200;
 const INITIAL_NOTIFICATION_SEED = 15;
@@ -106,55 +114,6 @@ function normalizePartnerCompany(company: PartnerCompany): PartnerCompany {
     type: normalizedType,
     branches: defaultBranches,
   };
-}
-
-// One-time correction of pre-Master-List demo data, run once per install
-// (guarded by DEMO_CLEANUP_FLAG below): the original 41 seeded companies had
-// fake per-ID expiration dates hardcoded purely to showcase Active/Expiring/
-// Expired UI states, plus a handful of names that don't correspond to any
-// real accredited company in the Master List. Neither should keep counting
-// toward the "real" registry once the Master List is the source of truth.
-const DEMO_CLEANUP_FLAG = 'survey_analytics_v6_demo_cleanup_v1';
-
-const DEMO_ONLY_COMPANY_NAMES = new Set([
-  'Aimvest Electrical Services',
-  'Cgalz Enterprises',
-  'L-Gertrude Construction Services',
-  'Bridge Distribution, Inc',
-  'Softwareone Philippines Corporation',
-  'AptSecure Technologies Inc',
-  'Westcon Group Philippines',
-  'M-Security Tech Philippines, Inc',
-  'Banbros Commercial, Incorporated',
-  'Westcon Solutions Philippines Inc',
-  'Ardent Networks Inc',
-  'Mec Computer Corporation',
-  'Streamline Works Inc',
-  'Wyntech Corp',
-  'Apuma, March Maanap',
-  'PAX8 Philippines Inc',
-].map((n) => n.toLowerCase()));
-
-// These 6 seed IDs got hardcoded fake expiration dates (see the old
-// normalizePartnerCompany logic) that don't reflect anything real - clearing
-// them lets the neutral default apply so real, accredited companies don't
-// show up as bogus Expired/Expiring Soon.
-const DEMO_FAKE_EXPIRY_IDS = new Set(['pc-1', 'pc-2', 'pc-3', 'pc-9', 'pc-22', 'pc-23']);
-
-function applyOneTimeDemoDataCleanup(companies: PartnerCompany[]): PartnerCompany[] {
-  if (localStorage.getItem(DEMO_CLEANUP_FLAG) === 'true') return companies;
-  localStorage.setItem(DEMO_CLEANUP_FLAG, 'true');
-
-  return companies.map((c) => {
-    let updated = c;
-    if (DEMO_ONLY_COMPANY_NAMES.has(c.name.trim().toLowerCase())) {
-      updated = { ...updated, isArchived: true, accreditationStatus: 'Unaccredited' };
-    }
-    if (DEMO_FAKE_EXPIRY_IDS.has(c.id)) {
-      updated = { ...updated, expirationDate: undefined, registeredAt: undefined, renewedAt: undefined };
-    }
-    return updated;
-  });
 }
 
 function normalizeSurveyResponse(response: SurveyResponse): SurveyResponse {
@@ -1186,60 +1145,16 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
 
         // 2. Handle Partner Companies
         let loadedCompanies: PartnerCompany[] = [];
-        const savedCompanies = localStorage.getItem('survey_analytics_partner_companies_v6');
+        const savedCompanies = localStorage.getItem(PARTNER_COMPANIES_STORAGE_KEY);
         if (savedCompanies) {
-          const rawCompanies = applyOneTimeDemoDataCleanup(JSON.parse(savedCompanies));
-          loadedCompanies = rawCompanies.map(normalizePartnerCompany);
-          localStorage.setItem('survey_analytics_partner_companies_v6', JSON.stringify(loadedCompanies));
+          loadedCompanies = JSON.parse(savedCompanies).map(normalizePartnerCompany);
+          localStorage.setItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(loadedCompanies));
         } else {
-          loadedCompanies = [
-            // Courier
-            { id: 'pc-1', name: 'Airspeed International Corp', type: 'Courier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-2', name: 'Alphacon Logistics International Corp', type: 'Courier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-3', name: 'Cloverxpress Freight Inc', type: 'Courier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-4', name: 'Lite Xpress International Inc', type: 'Courier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-5', name: 'Lucky Charm Express Movers Inc', type: 'Courier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-6', name: 'Road2go Trucking Services OPC', type: 'Courier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-7', name: 'RZ1 Freight Express Corporation', type: 'Courier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-8', name: 'Yello X Supply Chain Solutions', type: 'Courier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            // Subcontractor
-            { id: 'pc-9', name: 'Aimvest Electrical Services', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-10', name: 'Cara Electrical and Network Solutions Inc', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-11', name: 'Cgalz Enterprises', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-12', name: 'Datalec Technology Corporation', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-13', name: 'Glimpse-DC Electronics Industries Inc', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-14', name: 'J & C Obenita Construction OPC', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-15', name: 'L-Gertrude Construction Services', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-16', name: 'MTeknik Technologies Solutions, Inc', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-17', name: 'Paragon Electromech Development Corporation', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-18', name: 'Skyconvergence Inc', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-19', name: 'Technivision ICT Solutions, Inc', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-20', name: 'Unikkon Network Philippines Inc', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-21', name: 'ZIMOSystem Solutions Inc', type: 'Subcontractor', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            // Supplier
-            { id: 'pc-22', name: 'VSTECS Phils. Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-23', name: 'Wordtext Systems, Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-24', name: 'Exclusive Networks-Ph Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-25', name: 'Touchstream Digital, Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-26', name: 'Bridge Distribution, Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-27', name: 'Softwareone Philippines Corporation', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-28', name: 'AptSecure Technologies Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-29', name: 'Westcon Group Philippines', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-30', name: 'M-Security Tech Philippines, Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-31', name: 'Banbros Commercial, Incorporated', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-32', name: 'Westcon Solutions Philippines Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-33', name: 'Ardent Networks Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-34', name: 'Mec Computer Corporation', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-35', name: 'Streamline Works Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-36', name: 'Wyntech Corp', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-37', name: 'ACW Distribution (Phils), Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-38', name: 'Apuma, March Maanap', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-39', name: 'Versatech International Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-40', name: 'Sencolink Technologies Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-            { id: 'pc-41', name: 'PAX8 Philippines Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
-          ] as PartnerCompany[];
-          loadedCompanies = applyOneTimeDemoDataCleanup(loadedCompanies).map(normalizePartnerCompany);
-          localStorage.setItem('survey_analytics_partner_companies_v6', JSON.stringify(loadedCompanies));
+          // Baseline registry for any browser with no partner-company data yet:
+          // the full Master List snapshot (see partnerCompaniesSeed.ts) rather
+          // than a small hand-typed demo list.
+          loadedCompanies = seedPartnerCompanies.map(normalizePartnerCompany);
+          localStorage.setItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(loadedCompanies));
         }
 
         // 3. Handle Responses
@@ -1420,7 +1335,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     });
     const updated = [...partnerCompanies, newCompany];
     setPartnerCompanies(updated);
-    safeSetItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
+    safeSetItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(updated));
     return newCompany;
   };
 
@@ -1429,7 +1344,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     const normalizedCompany = normalizePartnerCompany(updatedCompany);
     setPartnerCompanies((currentCompanies) => {
       const updated = currentCompanies.map((c) => c.id === normalizedCompany.id ? normalizedCompany : c);
-      safeSetItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
+      safeSetItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
     return normalizedCompany;
@@ -1443,7 +1358,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     const result = await importMasterListFromFile(file, partnerCompanies);
     const normalized = result.companies.map(normalizePartnerCompany);
     setPartnerCompanies(normalized);
-    safeSetItem('survey_analytics_partner_companies_v6', JSON.stringify(normalized));
+    safeSetItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(normalized));
     return result;
   };
 
@@ -1451,7 +1366,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
   const removePartnerCompany = (id: string) => {
     const updated = partnerCompanies.filter((c) => c.id !== id);
     setPartnerCompanies(updated);
-    safeSetItem('survey_analytics_partner_companies_v6', JSON.stringify(updated));
+    safeSetItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(updated));
   };
 
   // Reset to initial mock data state
@@ -1467,6 +1382,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     localStorage.removeItem('survey_analytics_partner_companies_v4');
     localStorage.removeItem('survey_analytics_partner_companies_v5');
     localStorage.removeItem('survey_analytics_partner_companies_v6');
+    localStorage.removeItem(PARTNER_COMPANIES_STORAGE_KEY);
     localStorage.removeItem('survey_analytics_full_dataset_active');
     window.location.reload();
   };
