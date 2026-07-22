@@ -1102,6 +1102,13 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
               questions: subcontractorQuestions as any,
             },
           ];
+          // Run default surveys through the same normalization as saved ones,
+          // so they also get the "Overall Comments & Feedback" question
+          // injected (ensureOverallFeedbackQuestion). Without this, a fresh
+          // install's default question sets have no such question at all,
+          // so simulated responses can never produce a stakeholder comment
+          // for any company using an untouched default survey.
+          loadedSurveys = loadedSurveys.map(normalizeCustomForm);
           localStorage.setItem('survey_analytics_surveys_v6', JSON.stringify(loadedSurveys));
         }
 
