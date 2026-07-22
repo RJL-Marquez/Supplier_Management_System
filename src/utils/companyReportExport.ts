@@ -104,7 +104,7 @@ async function fetchLogoDataUrl(): Promise<string | null> {
 /* PDF export                                                          */
 /* ------------------------------------------------------------------ */
 
-export async function exportCompanyReportAsPDF(data: CompanyReportData, customFilename?: string) {
+export async function exportCompanyReportAsPDF(data: CompanyReportData, customFilename?: string, previewOnly?: boolean): Promise<string | undefined> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const marginLeft = 48;
   const pageWidth = doc.internal.pageSize.width;
@@ -232,7 +232,7 @@ export async function exportCompanyReportAsPDF(data: CompanyReportData, customFi
   if (data.graphs?.trend) await addImageSection('Score Trend', data.chartImages?.trend, 0.9);
 
   if (data.graphs?.perQuestion) {
-    ensureSpace(56);
+    ensureSpace(180);
     doc.setFontSize(11.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(20, 20, 20);
@@ -254,7 +254,7 @@ export async function exportCompanyReportAsPDF(data: CompanyReportData, customFi
 
   if (data.includeComments) {
     const comments = data.selectedCommentsList || [];
-    ensureSpace(56);
+    ensureSpace(150);
     doc.setFontSize(11.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(20, 20, 20);
@@ -306,6 +306,11 @@ export async function exportCompanyReportAsPDF(data: CompanyReportData, customFi
   const companyClean = data.company.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   const dateStr = new Date().toISOString().slice(0, 10);
   const filename = customFilename || `${companyClean}_Feedback_Report_${dateStr}.pdf`;
+  if (previewOnly) {
+    const blob = doc.output('blob');
+    const blobUrl = URL.createObjectURL(blob);
+    return blobUrl;
+  }
   doc.save(filename);
 }
 

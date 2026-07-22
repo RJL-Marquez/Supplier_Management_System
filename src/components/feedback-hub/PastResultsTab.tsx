@@ -4,6 +4,7 @@ import { QueuedReportEmail } from '../../types/feedbackHub';
 import { Search, Filter, Download, Send, BarChart3, CheckCircle2, Clock, AlertTriangle, FileText } from 'lucide-react';
 import { exportTablesAsPDF, ExportTable } from '../../utils/exporters';
 import { SurveyDetailModal } from './SurveyDetailModal';
+import { submissionScores } from '../../utils/analytics';
 
 interface PastResultsTabProps {
   surveys: CustomForm[];
@@ -37,10 +38,11 @@ export function PastResultsTab({
     const surveyResponses = responses.filter(
       (r) => r.surveyType === survey.surveyType && !r.archived
     );
-    const count = surveyResponses.length || 10;
-    const ratings = surveyResponses.map((r) => (typeof r.rating === 'number' ? r.rating : 5));
-    const avg = ratings.length ? ratings.reduce((a, b) => a + b, 0) / ratings.length : 4.5;
-    const scorePct = Math.round((avg / 5) * 100);
+    const subScores = submissionScores(surveyResponses);
+    const count = subScores.length;
+    const satisfactionScore = count > 0
+      ? Number((subScores.reduce((sum, s) => sum + s.score, 0) / count).toFixed(1))
+      : 0;
 
     const tables: ExportTable[] = [
       {
@@ -51,7 +53,7 @@ export function PastResultsTab({
           ['Survey Type', survey.surveyType],
           ['Completion Date', new Date(survey.createdAt).toLocaleDateString()],
           ['Total Submissions', String(count)],
-          ['Overall Score', `${scorePct}%`],
+          ['Overall Score', `${satisfactionScore}%`],
         ],
       },
     ];
@@ -66,15 +68,16 @@ export function PastResultsTab({
   return (
     <div className="space-y-6">
       {/* Filters Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 dark:border-slate-800 dark:bg-slate-950">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
+      <div className="flex flex-col sm:flex-row-reverse sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 dark:border-slate-800 dark:bg-slate-950">
+        <div className="relative flex-1 max-w-md w-full">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter past survey results by title or company..."
-            className="field pl-9 text-xs"
+            className="field text-xs !mt-0"
+            style={{ paddingLeft: '2.75rem' }}
           />
         </div>
 
@@ -112,7 +115,7 @@ export function PastResultsTab({
                 const surveyResponses = responses.filter(
                   (r) => r.surveyType === survey.surveyType && !r.archived
                 );
-                const count = new Set(surveyResponses.map((r) => r.responseId)).size;
+                const count = submissionScores(surveyResponses).length;
                 const targetQuota = 10;
                 const completionPct = Math.min(100, Math.round((count / targetQuota) * 100));
 

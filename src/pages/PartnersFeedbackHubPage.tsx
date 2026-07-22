@@ -17,9 +17,9 @@ import {
 import { CurrentFormsTab } from '../components/feedback-hub/CurrentFormsTab';
 import { PastResultsTab } from '../components/feedback-hub/PastResultsTab';
 import { SentReportsTab } from '../components/feedback-hub/SentReportsTab';
-import { SendToPartnerModal } from '../components/feedback-hub/SendToPartnerModal';
+import { SendToPartnerWizard } from '../components/feedback-hub/SendToPartnerWizard';
 
-import { FileText, Archive, Send, Clock, ShieldAlert, Sparkles } from 'lucide-react';
+import { FileText, Archive, Send, Clock, ShieldAlert, Sparkles, SendToBack } from 'lucide-react';
 
 interface PartnersFeedbackHubPageProps {
   surveys: CustomForm[];
@@ -47,8 +47,9 @@ export function PartnersFeedbackHubPage({
   const [sentReports, setSentReports] = useState<QueuedReportEmail[]>(() => getSentReports());
   const [settings, setSettings] = useState<FeedbackHubSettings>(() => getFeedbackHubSettings());
 
-  // Modal Send Flow State
-  const [isSendModalOpen, setIsSendModalOpen] = useState(false);
+  // Dispatch Flow Inline State
+  const [isDispatchWizardOpen, setIsDispatchWizardOpen] = useState(false);
+  const [dispatchWizardBulkMode, setDispatchWizardBulkMode] = useState(false);
   const [sendInitialSurveyId, setSendInitialSurveyId] = useState<string | undefined>();
   const [sendInitialCompanyId, setSendInitialCompanyId] = useState<string | undefined>();
   const [revisionReport, setRevisionReport] = useState<QueuedReportEmail | null>(null);
@@ -77,19 +78,21 @@ export function PartnersFeedbackHubPage({
     saveFeedbackHubSettings(newSettings);
   };
 
-  // Open Send Modal for survey
+  // Open Send Wizard for survey (single mode)
   const handleOpenSendToPartner = (survey?: CustomForm, company?: PartnerCompany) => {
     setSendInitialSurveyId(survey?.id);
     setSendInitialCompanyId(company?.id);
     setRevisionReport(null);
-    setIsSendModalOpen(true);
+    setDispatchWizardBulkMode(false);
+    setIsDispatchWizardOpen(true);
   };
 
-  // Open Send Modal for Revision or Resend
+  // Open Send Wizard for Revision or Resend (single mode)
   const handleOpenRevisionOrResend = (report: QueuedReportEmail) => {
     setRevisionReport(report);
     setSendInitialSurveyId(report.surveyId);
-    setIsSendModalOpen(true);
+    setDispatchWizardBulkMode(false);
+    setIsDispatchWizardOpen(true);
   };
 
   // Queue report action
@@ -253,41 +256,49 @@ export function PartnersFeedbackHubPage({
 
   const queuedCount = sentReports.filter((r) => r.status === 'Queued').length;
 
+  // Check if all active surveys are completed to enable Bulk Sending
+  const activeSurveys = surveys.filter((s) => s.status !== 'Archived');
+  const hasOngoingSurveys = activeSurveys.some((s) => {
+    const surveyResponses = responses.filter(
+      (r) => r.surveyType === s.surveyType && !r.archived
+    );
+    const responseCount = new Set(surveyResponses.map((r) => r.responseId)).size;
+    const companiesForType = partnerCompanies.filter((c) => c.type === s.surveyType && !c.isArchived);
+    const targetResponses = Math.max(companiesForType.length, responseCount, 10);
+    const isCompleted =
+      s.status === 'Completed' ||
+      responseCount >= targetResponses ||
+      (s.deadlineDate && new Date(s.deadlineDate) < new Date());
+    return !isCompleted;
+  });
+  const areAllSurveysCompleted = !hasOngoingSurveys;
+
+  // If Dispatch Wizard is open, render it inline (whole page experience!)
+  if (isDispatchWizardOpen) {
+    return (
+      <div className="animate-fadeIn pb-12">
+        <SendToPartnerWizard
+          surveys={surveys}
+          responses={responses}
+          partnerCompanies={partnerCompanies}
+          contacts={contacts}
+          initialSurveyId={sendInitialSurveyId}
+          initialCompanyId={sendInitialCompanyId}
+          revisionReport={revisionReport}
+          defaultTimerMinutes={settings.defaultTimerMinutes}
+          userEmail={currentUser?.email || 'admin@mgenesis.com'}
+          onClose={() => setIsDispatchWizardOpen(false)}
+          onQueueReport={handleQueueReport}
+          bulkMode={dispatchWizardBulkMode}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5 dark:border-slate-800">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center rounded-md bg-[#0063a9]/10 px-2.5 py-1 text-xs font-bold text-[#0063a9] dark:bg-blue-950 dark:text-blue-300">
-              Management Portal
-            </span>
-            {queuedCount > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2.5 py-1 text-xs font-extrabold text-amber-800 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700 animate-pulse">
-                <Clock size={12} />
-                {queuedCount} Report Email{queuedCount > 1 ? 's' : ''} Queued
-              </span>
-            )}
-          </div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white mt-1">
-            Partners Feedback Hub
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Centralized hub for managing active surveys, archived performance analytics, PDF report exports, and controlled review queue dispatches.
-          </p>
-        </div>
-
-        <button
-          onClick={() => handleOpenSendToPartner()}
-          className="primary-button text-xs gap-2 bg-[#0063a9] hover:bg-blue-800 self-start md:self-auto shrink-0 py-2.5 px-4 shadow-md"
-        >
-          <Send size={15} />
-          Send Report to Partner
-        </button>
-      </div>
-
-      {/* Tabs Navigation */}
-      <div className="border-b border-slate-200 dark:border-slate-800">
+      {/* Tabs Navigation & Bulk Sending Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-1 sm:pb-0 gap-4">
         <nav className="-mb-px flex space-x-8 overflow-x-auto">
           <button
             onClick={() => setActiveTab('current-forms')}
@@ -337,6 +348,41 @@ export function PartnersFeedbackHubPage({
             )}
           </button>
         </nav>
+
+        {/* Relocated Bulk Sending Button - Rightmost position */}
+        <div className="flex items-center gap-2.5 pb-2 sm:pb-0 shrink-0 self-end sm:self-auto">
+          {queuedCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2.5 py-1 text-[10px] font-extrabold text-amber-800 dark:bg-amber-950 dark:text-amber-200 border border-amber-200 dark:border-amber-800 animate-pulse">
+              <Clock size={11} />
+              {queuedCount} Queued
+            </span>
+          )}
+          <button
+            onClick={() => {
+              setDispatchWizardBulkMode(true);
+              setIsDispatchWizardOpen(true);
+            }}
+            disabled={!areAllSurveysCompleted}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold transition-all shrink-0 ${
+              areAllSurveysCompleted
+                ? 'bg-[#0063a9] hover:bg-blue-800 text-white shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200 dark:border-slate-700'
+            }`}
+            title={
+              areAllSurveysCompleted
+                ? 'Queue reports for all completed companies in bulk'
+                : 'Bulk Sending is locked until all active surveys are Completed'
+            }
+          >
+            <Send size={13} />
+            Bulk Sending
+          </button>
+          {!areAllSurveysCompleted && (
+            <span className="text-[10px] text-slate-400 font-semibold max-w-[150px] leading-tight">
+              Needs all active surveys <strong>Completed</strong>
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Tab Contents */}
@@ -372,23 +418,6 @@ export function PartnersFeedbackHubPage({
           onUpdateTimerSettings={(min) => handleUpdateSettings({ ...settings, defaultTimerMinutes: min })}
           currentTimerMinutes={settings.defaultTimerMinutes}
           userEmail={currentUser?.email || 'admin@mgenesis.com'}
-        />
-      )}
-
-      {/* Send to Partner Dispatch Modal */}
-      {isSendModalOpen && (
-        <SendToPartnerModal
-          surveys={surveys}
-          responses={responses}
-          partnerCompanies={partnerCompanies}
-          contacts={contacts}
-          initialSurveyId={sendInitialSurveyId}
-          initialCompanyId={sendInitialCompanyId}
-          revisionReport={revisionReport}
-          defaultTimerMinutes={settings.defaultTimerMinutes}
-          userEmail={currentUser?.email || 'admin@mgenesis.com'}
-          onClose={() => setIsSendModalOpen(false)}
-          onQueueReport={handleQueueReport}
         />
       )}
     </div>

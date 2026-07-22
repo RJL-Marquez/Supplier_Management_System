@@ -72,15 +72,16 @@ export function SentReportsTab({
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 dark:border-slate-800 dark:bg-slate-950">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
+      <div className="flex flex-col sm:flex-row-reverse sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 dark:border-slate-800 dark:bg-slate-950">
+        <div className="relative flex-1 max-w-md w-full">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search email log by company, survey title, or recipient..."
-            className="field pl-9 text-xs"
+            className="field text-xs !mt-0"
+            style={{ paddingLeft: '2.75rem' }}
           />
         </div>
 

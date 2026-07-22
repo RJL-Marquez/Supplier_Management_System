@@ -74,9 +74,13 @@ export function getSentReports(): QueuedReportEmail[] {
   try {
     const data = localStorage.getItem(REPORTS_STORAGE_KEY);
     if (data) {
-      const reports: QueuedReportEmail[] = JSON.parse(data);
-      // Auto-check expired timers on load
-      return autoCheckAndSendExpired(reports);
+      let reports: QueuedReportEmail[] = JSON.parse(data);
+      // Clean up legacy mocked reports if they exist
+      const cleaned = reports.filter(r => !['rpt-queued-001', 'rpt-sent-002', 'rpt-returned-003'].includes(r.id));
+      if (cleaned.length !== reports.length) {
+        localStorage.setItem(REPORTS_STORAGE_KEY, JSON.stringify(cleaned));
+      }
+      return autoCheckAndSendExpired(cleaned);
     }
   } catch (e) {
     console.error('Error reading sent reports', e);

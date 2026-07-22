@@ -176,7 +176,13 @@ export function CompanyReportBuilderPage({ responses, partnerCompanies, canExpor
 
   const anyGraphSelected = graphs.bar || graphs.radar || graphs.trend || graphs.perQuestion || includeComments;
   const canRunExport = Boolean(canExport && composite && anyGraphSelected && !isExporting);
-  const contentPageCount = graphs.trend || graphs.perQuestion || includeComments ? 2 : 1;
+
+  const extraPages: ('trend' | 'perQuestion' | 'comments')[] = [];
+  if (graphs.trend) extraPages.push('trend');
+  if (graphs.perQuestion) extraPages.push('perQuestion');
+  if (includeComments) extraPages.push('comments');
+
+  const contentPageCount = 1 + extraPages.length;
 
   const handleExport = async (format: 'pdf' | 'docx') => {
     if (!composite || !selectedCompany) return;
@@ -451,91 +457,108 @@ export function CompanyReportBuilderPage({ responses, partnerCompanies, canExpor
                   )}
                 </PagedSheet>
 
-                {/* Page 3 — Score trend, per-question table, comments */}
-                {(graphs.trend || graphs.perQuestion || includeComments) && (
-                  <PagedSheet pageLabel="Page 3" footerRight={`Page 2 of ${contentPageCount}`}>
-                    <ReportPageHeader company={composite.company} />
+                {/* Dynamic Extra Pages (Score Trend, Per-Question, Comments) */}
+                {extraPages.map((pageType, idx) => {
+                  const displayPageNum = 3 + idx;
+                  const contentPageNum = 2 + idx;
+                  const footerText = `Page ${contentPageNum} of ${contentPageCount}`;
 
-                    {graphs.trend && (
-                      <div className="mt-6">
-                        <h4 className="mb-2 font-semibold text-slate-700 dark:text-slate-200">Score Trend</h4>
-                        <div ref={trendRef} className="h-48 w-full bg-white dark:bg-slate-900">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={trendChartData} margin={{ top: 20, right: 16, bottom: 5, left: -10 }}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                              <XAxis dataKey="label" tick={{ fontSize: 9 }} tickLine={false} />
-                              <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} tickLine={false} width={30} />
-                              <Tooltip />
-                              <Legend verticalAlign="top" align="left" layout="horizontal" iconSize={10} wrapperStyle={{ fontSize: 10, paddingBottom: 10, left: 0 }} />
-                              <Line type="monotone" dataKey="score" name={composite.company} stroke={PRIMARY_COLOR} strokeWidth={2} dot={{ r: 3 }} connectNulls isAnimationActive={false}>
-                                <LabelList dataKey="score" position="top" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 13, fill: PRIMARY_COLOR, fontWeight: 'bold' }} />
-                              </Line>
-                            </LineChart>
-                          </ResponsiveContainer>
+                  if (pageType === 'trend') {
+                    return (
+                      <PagedSheet key="trend-page" pageLabel={`Page ${displayPageNum}`} footerRight={footerText}>
+                        <ReportPageHeader company={composite.company} />
+                        <div className="mt-6">
+                          <h4 className="mb-2 font-semibold text-slate-700 dark:text-slate-200">Score Trend</h4>
+                          <div ref={trendRef} className="h-48 w-full bg-white dark:bg-slate-900">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={trendChartData} margin={{ top: 20, right: 16, bottom: 5, left: -10 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="label" tick={{ fontSize: 9 }} tickLine={false} />
+                                <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} tickLine={false} width={30} />
+                                <Tooltip />
+                                <Legend verticalAlign="top" align="left" layout="horizontal" iconSize={10} wrapperStyle={{ fontSize: 10, paddingBottom: 10, left: 0 }} />
+                                <Line type="monotone" dataKey="score" name={composite.company} stroke={PRIMARY_COLOR} strokeWidth={2} dot={{ r: 3 }} connectNulls isAnimationActive={false}>
+                                  <LabelList dataKey="score" position="top" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 13, fill: PRIMARY_COLOR, fontWeight: 'bold' }} />
+                                </Line>
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                          {trendChartData.length === 0 && (
+                            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">Not enough dated submissions yet to plot a trend.</p>
+                          )}
                         </div>
-                        {trendChartData.length === 0 && (
-                          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">Not enough dated submissions yet to plot a trend.</p>
-                        )}
-                      </div>
-                    )}
+                      </PagedSheet>
+                    );
+                  }
 
-                    {graphs.perQuestion && (
-                      <div className="mt-6">
-                        <h4 className="mb-2 text-base font-bold text-slate-800 dark:text-slate-100">Per-Question Average Rating</h4>
-                        <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
-                          <table className="w-full text-left text-sm sm:text-base">
-                            <thead className="bg-[#0063a9] text-white">
-                              <tr>
-                                <th className="px-3 py-2 font-semibold">Question</th>
-                                <th className="px-3 py-2 font-semibold">Average Rating</th>
-                                <th className="px-3 py-2 font-semibold">Responses</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {questionRows.map((row, idx) => (
-                                <tr key={row.question} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
-                                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.question}</td>
-                                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{formatNumber(row.average)}</td>
-                                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.responses}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {includeComments && (
-                      <div className="mt-6">
-                        <h4 className="mb-2 text-base font-bold text-slate-800 dark:text-slate-100">Stakeholder Comments</h4>
-                        {selectedCommentsList.length === 0 ? (
-                          <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm italic text-slate-400 dark:border-slate-700 dark:text-slate-500">
-                            No stakeholder comments selected for display. Click "Review Stakeholder Remarks" to select comments.
-                          </p>
-                        ) : (
+                  if (pageType === 'perQuestion') {
+                    return (
+                      <PagedSheet key="per-question-page" pageLabel={`Page ${displayPageNum}`} footerRight={footerText}>
+                        <ReportPageHeader company={composite.company} />
+                        <div className="mt-6">
+                          <h4 className="mb-2 text-base font-bold text-slate-800 dark:text-slate-100">Per-Question Average Rating</h4>
                           <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
                             <table className="w-full text-left text-sm sm:text-base">
                               <thead className="bg-[#0063a9] text-white">
                                 <tr>
-                                  <th className="px-3 py-2 font-semibold w-12">#</th>
-                                  <th className="px-3 py-2 font-semibold">Feedback / Comments</th>
+                                  <th className="px-3 py-2 font-semibold">Question</th>
+                                  <th className="px-3 py-2 font-semibold">Average Rating</th>
+                                  <th className="px-3 py-2 font-semibold">Responses</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {selectedCommentsList.map((c, idx) => (
-                                  <tr key={c.responseId} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
-                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-medium">{idx + 1}</td>
-                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300 italic">"{c.comment}"</td>
+                                {questionRows.map((row, idx) => (
+                                  <tr key={row.question} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
+                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.question}</td>
+                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{formatNumber(row.average)}</td>
+                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.responses}</td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
                           </div>
-                        )}
-                      </div>
-                    )}
-                  </PagedSheet>
-                )}
+                        </div>
+                      </PagedSheet>
+                    );
+                  }
+
+                  if (pageType === 'comments') {
+                    return (
+                      <PagedSheet key="comments-page" pageLabel={`Page ${displayPageNum}`} footerRight={footerText}>
+                        <ReportPageHeader company={composite.company} />
+                        <div className="mt-6">
+                          <h4 className="mb-2 text-base font-bold text-slate-800 dark:text-slate-100">Stakeholder Comments</h4>
+                          {selectedCommentsList.length === 0 ? (
+                            <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm italic text-slate-400 dark:border-slate-700 dark:text-slate-500">
+                              No stakeholder comments selected for display. Click "Review Stakeholder Remarks" to select comments.
+                            </p>
+                          ) : (
+                            <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                              <table className="w-full text-left text-sm sm:text-base">
+                                <thead className="bg-[#0063a9] text-white">
+                                  <tr>
+                                    <th className="px-3 py-2 font-semibold w-12">#</th>
+                                    <th className="px-3 py-2 font-semibold">Feedback / Comments</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {selectedCommentsList.map((c, idx) => (
+                                    <tr key={c.responseId} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
+                                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-medium">{idx + 1}</td>
+                                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300 italic">"{c.comment}"</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </PagedSheet>
+                    );
+                  }
+
+                  return null;
+                })}
               </div>
             )}
           </div>

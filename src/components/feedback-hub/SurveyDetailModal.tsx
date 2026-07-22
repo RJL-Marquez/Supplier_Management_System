@@ -2,6 +2,8 @@ import React from 'react';
 import { X, CheckCircle2, Download, Send, BarChart3, Users, FileText, Award, Calendar } from 'lucide-react';
 import { CustomForm, PartnerCompany, SurveyResponse } from '../../types/survey';
 import { exportTablesAsPDF, ExportTable } from '../../utils/exporters';
+import { submissionScores } from '../../utils/analytics';
+import { getQuestionMaxPoints } from '../../data/questionWeights';
 
 interface SurveyDetailModalProps {
   survey: CustomForm;
@@ -26,37 +28,38 @@ export function SurveyDetailModal({
   );
 
   // Ratings calculation
-  const numericRatings = surveyResponses
-    .map((r) => (typeof r.rating === 'number' ? r.rating : null))
-    .filter((r): r is number => r !== null);
-  
-  const totalResponsesCount = surveyResponses.length;
-  const rawAvgRating = numericRatings.length
-    ? numericRatings.reduce((a, b) => a + b, 0) / numericRatings.length
+  const subScores = submissionScores(surveyResponses);
+  const totalResponsesCount = subScores.length;
+  const satisfactionScore = totalResponsesCount > 0
+    ? Number((subScores.reduce((sum, s) => sum + s.score, 0) / totalResponsesCount).toFixed(1))
     : 0;
-  const avgRating = Math.min(5.0, Math.max(0, rawAvgRating));
-  const satisfactionScore = Math.min(100.0, Math.max(0, (avgRating / 5) * 100));
+  const avgRating = (satisfactionScore / 100) * 5;
 
   // Category breakdown
-  const categoryMap = new Map<string, number[]>();
+  const categoryEarnedMap = new Map<string, { earned: number; possible: number; count: number }>();
+  
   surveyResponses.forEach((r) => {
-    if (typeof r.rating === 'number') {
+    const val = typeof r.rating === 'number' ? r.rating : null;
+    if (val !== null) {
       const cat = r.questionCategory || 'General Performance';
-      const arr = categoryMap.get(cat) || [];
-      arr.push(r.rating);
-      categoryMap.set(cat, arr);
+      const maxPoints = getQuestionMaxPoints(survey.surveyType, r.questionId) || 100;
+      
+      const current = categoryEarnedMap.get(cat) ?? { earned: 0, possible: 0, count: 0 };
+      current.earned += val;
+      current.possible += maxPoints;
+      current.count += 1;
+      categoryEarnedMap.set(cat, current);
     }
   });
 
-  const categoryScores = Array.from(categoryMap.entries()).map(([cat, ratings]) => {
-    const rawAvg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
-    const avgClamped = Math.min(5.0, Math.max(0, rawAvg));
-    const scorePctClamped = Math.min(100.0, Math.max(0, (avgClamped / 5) * 100));
+  const categoryScores = Array.from(categoryEarnedMap.entries()).map(([cat, v]) => {
+    const scorePct = v.possible > 0 ? (v.earned / v.possible) * 100 : 0;
+    const average = (scorePct / 100) * 5;
     return {
       category: cat,
-      average: avgClamped,
-      scorePct: scorePctClamped,
-      count: ratings.length,
+      average,
+      scorePct,
+      count: v.count,
     };
   });
 
@@ -163,7 +166,7 @@ export function SurveyDetailModal({
                 <Users size={16} className="text-blue-500" />
               </div>
               <div className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">
-                {uniqueRespondentsMap.size}
+                {totalResponsesCount}
               </div>
               <p className="mt-1 text-[11px] text-slate-500">Completed Submissions</p>
             </div>

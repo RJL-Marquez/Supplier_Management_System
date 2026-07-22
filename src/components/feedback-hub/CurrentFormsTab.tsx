@@ -4,6 +4,7 @@ import { QueuedReportEmail } from '../../types/feedbackHub';
 import { Clock, CheckCircle2, Send, Users, ChevronRight, AlertCircle, Sparkles, Filter, Search } from 'lucide-react';
 import { SurveyProgressModal } from './SurveyProgressModal';
 import { SurveyDetailModal } from './SurveyDetailModal';
+import { submissionScores } from '../../utils/analytics';
 
 interface CurrentFormsTabProps {
   surveys: CustomForm[];
@@ -44,15 +45,16 @@ export function CurrentFormsTab({
   return (
     <div className="space-y-6">
       {/* Search & Category Filter Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 dark:border-slate-800 dark:bg-slate-950">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
+      <div className="flex flex-col sm:flex-row-reverse sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 dark:border-slate-800 dark:bg-slate-950">
+        <div className="relative flex-1 max-w-md w-full">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search active survey forms..."
-            className="field pl-9 text-xs"
+            className="field text-xs !mt-0"
+            style={{ paddingLeft: '2.75rem' }}
           />
         </div>
 
@@ -85,8 +87,8 @@ export function CurrentFormsTab({
               (r) => r.surveyType === survey.surveyType && !r.archived
             );
 
-            // Response count (unique submission IDs)
-            const responseCount = new Set(surveyResponses.map((r) => r.responseId)).size;
+            // Response count (unique submission keys: company + respondent + date)
+            const responseCount = submissionScores(surveyResponses).length;
             const companiesForType = partnerCompanies.filter((c) => c.type === survey.surveyType && !c.isArchived);
             const targetResponses = Math.max(companiesForType.length, responseCount, 10);
             const progressPct = Math.min(100, Math.round((responseCount / targetResponses) * 100));

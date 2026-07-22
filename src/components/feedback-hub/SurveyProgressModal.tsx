@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Clock, AlertTriangle, Users, BarChart3, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { CustomForm, SurveyResponse } from '../../types/survey';
+import { submissionScores } from '../../utils/analytics';
 
 interface SurveyProgressModalProps {
   survey: CustomForm;
@@ -36,7 +37,8 @@ export function SurveyProgressModal({
   });
 
   const respondentsList = Array.from(uniqueRespondentsMap.values());
-  const totalCount = surveyResponses.length ? uniqueRespondentsMap.size : 0;
+  const subScores = submissionScores(surveyResponses);
+  const totalCount = subScores.length;
   const targetResponses = 10; // Target standard quota
   const progressPercent = Math.min(100, Math.round((totalCount / targetResponses) * 100));
 
@@ -44,11 +46,9 @@ export function SurveyProgressModal({
   const numericRatings = surveyResponses
     .map((r) => (typeof r.rating === 'number' ? r.rating : null))
     .filter((r): r is number => r !== null);
-  const rawAvgRating = numericRatings.length
-    ? numericRatings.reduce((a, b) => a + b, 0) / numericRatings.length
+  const partialScore = totalCount > 0
+    ? subScores.reduce((sum, s) => sum + s.score, 0) / totalCount
     : 0;
-  const avgRating = Math.min(5.0, Math.max(0, rawAvgRating));
-  const partialScore = Math.min(100.0, Math.max(0, (avgRating / 5) * 100));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm animate-fadeIn">

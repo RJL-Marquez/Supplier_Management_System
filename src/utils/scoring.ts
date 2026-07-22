@@ -17,7 +17,7 @@ export interface CompanyComposite {
   band: ScoreBand;
   sections: SectionScore[];
   ratedQuestionCount: number; // individual question ratings counted (excludes N/A)
-  evaluationCount: number; // distinct evaluation submissions rolled into this score
+  evaluationCount: number; // total question ratings (submissions) rolled into this score
   stdDev: number; // population std dev of per-question percent scores - consistency signal
   naRate: number; // % of applicable questions marked N/A
 }
