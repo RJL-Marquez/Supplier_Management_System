@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   X,
   CheckCircle2,
@@ -159,6 +159,13 @@ export function SendToPartnerWizard({
   const [tempBulkComments, setTempBulkComments] = useState<Record<string, boolean>>({});
   const [bulkPreviewItem, setBulkPreviewItem] = useState<any>(null);
   const [bulkPreviewWindow, setBulkPreviewWindow] = useState<Window | null>(null);
+
+  // Stable identity across re-renders (e.g. the page-level 5s sentReports poll)
+  // so it's safe to depend on inside BulkHiddenChartCapturer's effect.
+  const handleBulkPreviewComplete = useCallback(() => {
+    setBulkPreviewItem(null);
+    setBulkPreviewWindow(null);
+  }, []);
 
   const overallFeedbackQuestionId = useMemo(() => {
     return sType === 'Courier' ? 'Q-CON-OVERALL-FEEDBACK' :
@@ -1642,10 +1649,7 @@ export function SendToPartnerWizard({
           includeComments={includeComments}
           overallFeedbackQuestionId={overallFeedbackQuestionId}
           previewWindow={bulkPreviewWindow}
-          onComplete={() => {
-            setBulkPreviewItem(null);
-            setBulkPreviewWindow(null);
-          }}
+          onComplete={handleBulkPreviewComplete}
         />
       )}
     </div>

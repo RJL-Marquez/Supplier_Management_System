@@ -142,7 +142,16 @@ export function BulkHiddenChartCapturer({
     };
     if (composite) run();
     return () => { isMounted = false; };
-  }, [composite, graphs, onComplete]); // dependencies
+    // Intentionally run once on mount only. This component is mounted fresh for
+    // each preview request and unmounted when done (see SendToPartnerWizard),
+    // so `item`/`graphs`/`composite` are stable for its whole lifetime.
+    // Including `onComplete` (a new function identity on every parent re-render,
+    // e.g. from the 5s sentReports polling interval in PartnersFeedbackHubPage)
+    // here previously caused the effect to tear down and restart PDF generation
+    // from scratch every few seconds - which is why the preview tab could hang
+    // "Generating PDF preview..." indefinitely.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!composite) return null;
 
