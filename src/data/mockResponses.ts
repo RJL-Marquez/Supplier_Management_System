@@ -126,7 +126,7 @@ export function generateMockResponses(
   // Let's generate mock evaluations
   surveysToUse.forEach((survey) => {
     // Filter companies matching this survey's type
-    const matchingCompanies = companiesToUse.filter((c) => c.type === survey.surveyType);
+    const matchingCompanies = companiesToUse.filter((c) => c.type === survey.surveyType && !c.isArchived);
     
     matchingCompanies.forEach((company, compIdx) => {
       // Create 2-3 evaluations per company, from different users (avoid duplicate user evaluations for same company)
@@ -266,7 +266,7 @@ export function generateAllMockResponses(
   let submissionCounter = 0;
 
   surveysToUse.forEach((survey) => {
-    const matchingCompanies = companiesToUse.filter((c) => c.type === survey.surveyType);
+    const matchingCompanies = companiesToUse.filter((c) => c.type === survey.surveyType && !c.isArchived);
     matchingCompanies.forEach((company, compIdx) => {
       usersToUse.forEach((user, userIdx) => {
         submissionCounter++;
@@ -403,7 +403,7 @@ export function generateSingleMockResponse(
   const survey = surveysToUse[Math.floor(Math.random() * surveysToUse.length)];
 
   // Pick a random company of that survey's type
-  const matchingCompanies = companiesToUse.filter((c) => c.type === survey.surveyType);
+  const matchingCompanies = companiesToUse.filter((c) => c.type === survey.surveyType && !c.isArchived);
   if (matchingCompanies.length === 0) {
     return [];
   }

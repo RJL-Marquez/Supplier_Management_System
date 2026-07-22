@@ -363,7 +363,10 @@ export function SurveyFormsPage({
         // Partner Registry automatically (the standard default); otherwise
         // store the explicit custom selection.
         if (!isSelectMode) {
-          const allIdsOfType = partnerCompanies.filter((c) => c.type === survey.surveyType).map((c) => c.id);
+          const allIdsOfType = getSurveyEvaluationCompanies(
+            { surveyType: survey.surveyType, evaluationCompanyIds: undefined },
+            partnerCompanies
+          ).map((c) => c.id);
           const isFullSelection =
             evaluationCompanyIds.length === allIdsOfType.length &&
             allIdsOfType.every((id) => evaluationCompanyIds.includes(id));

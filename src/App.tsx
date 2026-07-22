@@ -463,7 +463,12 @@ export default function App() {
   const userAccessiblePartnerCompanies = useMemo(() => {
     // Uncategorized companies (pending review, no assigned survey type) are
     // never accessible here — same behavior as before this type existed.
-    return partnerCompanies.filter(c => effectiveSurveyTypes.some(t => t === c.type));
+    // Archived companies (demo-only entries with no real Master List match,
+    // or anything an admin has archived) are excluded too: every page fed by
+    // this list (dashboard stats, reports, presentation, feedback hub) should
+    // only ever see the live registry, matching the Partner Registry's own
+    // Active tab.
+    return partnerCompanies.filter(c => !c.isArchived && effectiveSurveyTypes.some(t => t === c.type));
   }, [partnerCompanies, effectiveSurveyTypes]);
 
   const filteredResponses = useMemo(() => applyFilters(userAccessibleResponses, filters), [userAccessibleResponses, filters]);

@@ -96,6 +96,7 @@ export function PartnerCompaniesPage({
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'general' | 'simplified'>('general');
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [registerModalTab, setRegisterModalTab] = useState<'manual' | 'upload'>('manual');
 
   // Detail Modal State
   const [selectedCompany, setSelectedCompany] = useState<PartnerCompany | null>(null);
@@ -275,6 +276,7 @@ export function PartnerCompaniesPage({
     try {
       const result = await onImportMasterList(file);
       setImportResult(result);
+      setIsRegisterOpen(false);
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Failed to import the Master List file.');
     } finally {
@@ -550,33 +552,22 @@ export function PartnerCompaniesPage({
           />
         </div>
 
-        {/* Register / Import Buttons (admin only) */}
+        {/* Register Button (admin only) - opens a modal with Manual Entry / Upload Excel tabs */}
         {isAdmin && (
           <div className="flex items-center gap-2">
             {onImportMasterList && (
-              <>
-                <input
-                  ref={importFileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  className="hidden"
-                  onChange={handleImportFileSelected}
-                />
-                <button
-                  onClick={() => importFileInputRef.current?.click()}
-                  disabled={isImporting}
-                  className="bg-white hover:bg-slate-50 dark:bg-slate-950 dark:hover:bg-slate-900 text-[#0063a9] border border-[#0063a9]/30 flex items-center justify-center gap-1.5 py-2.5 px-5 text-xs font-bold rounded-lg shadow-xs transition duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
-                  type="button"
-                  title="Import companies from the Master List Excel file"
-                >
-                  {isImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                  <span>{isImporting ? 'Importing…' : 'Import Master List'}</span>
-                </button>
-              </>
+              <input
+                ref={importFileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleImportFileSelected}
+              />
             )}
             <button
               onClick={() => {
                 setErrorMessage('');
+                setRegisterModalTab('manual');
                 setIsRegisterOpen(true);
               }}
               className="bg-[#0063a9] hover:bg-[#00528c] text-white flex items-center justify-center gap-1.5 py-2.5 px-5 text-xs font-bold rounded-lg shadow-xs transition duration-150 cursor-pointer"
@@ -1423,10 +1414,68 @@ export function PartnerCompaniesPage({
               </div>
               <div>
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">Register Partner Company</h3>
-                <p className="text-xs text-slate-500">Add a new courier, supplier, or subcontractor with contract dates</p>
+                <p className="text-xs text-slate-500">Add a single company, or upload the Master List to refresh the whole registry</p>
               </div>
             </div>
 
+            {/* Manual Entry / Upload Excel tabs */}
+            <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-900/50 mt-5">
+              <button
+                type="button"
+                onClick={() => setRegisterModalTab('manual')}
+                className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-bold transition-all duration-150 cursor-pointer ${
+                  registerModalTab === 'manual'
+                    ? 'bg-white dark:bg-slate-950 text-[#0063a9] shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <Plus size={14} />
+                <span>Manual Entry</span>
+              </button>
+              {onImportMasterList && (
+                <button
+                  type="button"
+                  onClick={() => setRegisterModalTab('upload')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-bold transition-all duration-150 cursor-pointer ${
+                    registerModalTab === 'upload'
+                      ? 'bg-white dark:bg-slate-950 text-[#0063a9] shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Upload size={14} />
+                  <span>Upload Master List</span>
+                </button>
+              )}
+            </div>
+
+            {registerModalTab === 'upload' && onImportMasterList ? (
+              <div className="mt-6 space-y-4">
+                <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 rounded-xl p-4 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Upload the latest Master List Excel file to refresh the registry. Companies are matched to existing
+                  records by name (fuzzy matching handles minor spelling/casing differences), so re-uploading a
+                  refreshed file is safe: matches are merged as an extra branch/BP Code rather than duplicated, and
+                  only genuinely new or newly-accredited companies are added.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => importFileInputRef.current?.click()}
+                  disabled={isImporting}
+                  className="w-full bg-[#0063a9] hover:bg-[#00528c] text-white flex items-center justify-center gap-2 py-3 px-4 text-xs font-bold rounded-lg shadow-xs transition duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                >
+                  {isImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                  <span>{isImporting ? 'Importing…' : 'Choose Excel File (.xlsx)'}</span>
+                </button>
+                <div className="flex items-center justify-end border-t border-slate-100 dark:border-slate-800 pt-4">
+                  <button
+                    onClick={() => setIsRegisterOpen(false)}
+                    className="secondary-button py-2 px-4 text-xs"
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
             <form onSubmit={handleAdd} className="space-y-4 mt-6">
               <div>
                 <label htmlFor="modal-reg-name" className="field-label">Company Name *</label>
@@ -1544,6 +1593,7 @@ export function PartnerCompaniesPage({
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}
