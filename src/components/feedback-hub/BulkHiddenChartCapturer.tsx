@@ -9,6 +9,18 @@ const PRIMARY_COLOR = '#0063a9';
 const PEER_COLOR = '#b91c1c';
 const PEER_LABEL = 'Peer Average';
 
+// Each survey type stores its overall-feedback comment under its own question
+// ID (Courier/Supplier/Subcontractor each differ). This must be derived from
+// THIS item's own survey type, not passed in from the wizard, since the
+// wizard's own ID reflects only whichever single survey it happened to be
+// opened from - using that here caused every item of a different survey type
+// to always show 0 comments in the generated PDF, even when comments existed.
+function getOverallFeedbackQuestionId(surveyType: string): string {
+  return surveyType === 'Courier' ? 'Q-CON-OVERALL-FEEDBACK' :
+         surveyType === 'Supplier' ? 'Q-SUP-OVERALL-FEEDBACK' :
+         'Q-SUB-OVERALL-FEEDBACK';
+}
+
 const formatMonthLabel = (mStr: string) => {
   const parts = mStr.split('-');
   if (parts.length !== 2) return mStr;
@@ -22,7 +34,6 @@ interface BulkHiddenChartCapturerProps {
   responses: SurveyResponse[];
   graphs: { bar: boolean; radar: boolean; trend: boolean; perQuestion: boolean };
   includeComments: boolean;
-  overallFeedbackQuestionId: string;
   previewWindow: Window | null;
   onComplete: () => void;
 }
@@ -32,7 +43,6 @@ export function BulkHiddenChartCapturer({
   responses,
   graphs,
   includeComments,
-  overallFeedbackQuestionId,
   previewWindow,
   onComplete
 }: BulkHiddenChartCapturerProps) {
@@ -42,6 +52,7 @@ export function BulkHiddenChartCapturer({
 
   const companyName = item.company.name;
   const sType = item.survey.surveyType;
+  const overallFeedbackQuestionId = getOverallFeedbackQuestionId(sType);
 
   const composite = useMemo(() => computeCompanyComposite(companyName, sType, responses), [companyName, sType, responses]);
   const peerAverages = useMemo(() => getSectionPeerAverages(responses, sType), [responses, sType]);

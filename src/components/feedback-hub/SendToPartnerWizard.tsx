@@ -56,6 +56,18 @@ const PRIMARY_COLOR = '#0063a9';
 const PEER_COLOR = '#b91c1c';
 const PEER_LABEL = 'Peer average';
 
+// Each survey type stores its overall-feedback comment under its own question
+// ID. The wizard's `sType` reflects only the single survey it was opened
+// from, but bulk mode lists companies across ALL survey types at once - so
+// per-item comment lookups must resolve the ID from that item's own survey
+// type, not the wizard-wide one, or companies of the "wrong" type always
+// show 0 comments even when they have some.
+function getOverallFeedbackQuestionId(surveyType: SurveyType): string {
+  return surveyType === 'Courier' ? 'Q-CON-OVERALL-FEEDBACK' :
+         surveyType === 'Supplier' ? 'Q-SUP-OVERALL-FEEDBACK' :
+         'Q-SUB-OVERALL-FEEDBACK';
+}
+
 interface SendToPartnerWizardProps {
   surveys: CustomForm[];
   responses: SurveyResponse[];
@@ -729,7 +741,7 @@ export function SendToPartnerWizard({
                              const surv = item.survey;
                              if (!surv) return;
                              const compComments = responses.filter(
-                               (r) => r.company === item.company.name && r.surveyType === surv.surveyType && r.questionId === overallFeedbackQuestionId && r.comment && r.comment.trim() !== ''
+                               (r) => r.company === item.company.name && r.surveyType === surv.surveyType && r.questionId === getOverallFeedbackQuestionId(surv.surveyType) && r.comment && r.comment.trim() !== ''
                              );
                              const key = `selected_comments_${surv.surveyType}_${item.company.name}`;
                              const saved = localStorage.getItem(key);
@@ -1562,8 +1574,9 @@ export function SendToPartnerWizard({
             </div>
             <div className="p-5 overflow-y-auto space-y-3 flex-1 bg-slate-50/50 dark:bg-slate-900">
               {(() => {
+                 const modalSurveyType = bulkList.find((i) => i.company.name === bulkCommentsModalCompany)?.survey?.surveyType ?? sType;
                  const compComments = responses.filter(
-                   (r) => r.company === bulkCommentsModalCompany && r.questionId === overallFeedbackQuestionId && r.comment && r.comment.trim() !== ''
+                   (r) => r.company === bulkCommentsModalCompany && r.questionId === getOverallFeedbackQuestionId(modalSurveyType) && r.comment && r.comment.trim() !== ''
                  );
                  if (compComments.length === 0) return <p className="text-sm text-center text-slate-500">No stakeholder comments found.</p>;
                  return compComments.map((c) => (
@@ -1647,7 +1660,6 @@ export function SendToPartnerWizard({
           responses={responses}
           graphs={graphs}
           includeComments={includeComments}
-          overallFeedbackQuestionId={overallFeedbackQuestionId}
           previewWindow={bulkPreviewWindow}
           onComplete={handleBulkPreviewComplete}
         />
