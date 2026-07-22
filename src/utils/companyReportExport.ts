@@ -47,10 +47,10 @@ export interface CompanyReportData {
   surveyType: SurveyType;
   composite: CompanyComposite;
   generatedOn: string;
-  graphs: CompanyReportGraphSelection;
+  graphs?: CompanyReportGraphSelection;
   includeComments: boolean;
   questionRows: CompanyReportQuestionRow[];
-  chartImages: CompanyReportChartImages;
+  chartImages?: CompanyReportChartImages;
   selectedCommentsList?: { responseId: string; comment: string; respondentType: string; department?: string; submissionDate: string }[];
 }
 
@@ -104,7 +104,7 @@ async function fetchLogoDataUrl(): Promise<string | null> {
 /* PDF export                                                          */
 /* ------------------------------------------------------------------ */
 
-export async function exportCompanyReportAsPDF(data: CompanyReportData) {
+export async function exportCompanyReportAsPDF(data: CompanyReportData, customFilename?: string) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const marginLeft = 48;
   const pageWidth = doc.internal.pageSize.width;
@@ -227,11 +227,11 @@ export async function exportCompanyReportAsPDF(data: CompanyReportData) {
 
   // Bar/radar: compact, roughly half the content width so both sit comfortably on one A4 page.
   // Trend: wider and shorter, spanning most of the content width so the x-axis has room to breathe.
-  if (data.graphs.bar) await addImageSection('Section Scores \u2014 Bar Graph', data.chartImages.bar, 0.9);
-  if (data.graphs.radar) await addImageSection('Section Scores \u2014 Radar Graph', data.chartImages.radar, 0.9);
-  if (data.graphs.trend) await addImageSection('Score Trend', data.chartImages.trend, 0.9);
+  if (data.graphs?.bar) await addImageSection('Section Scores \u2014 Bar Graph', data.chartImages?.bar, 0.9);
+  if (data.graphs?.radar) await addImageSection('Section Scores \u2014 Radar Graph', data.chartImages?.radar, 0.9);
+  if (data.graphs?.trend) await addImageSection('Score Trend', data.chartImages?.trend, 0.9);
 
-  if (data.graphs.perQuestion) {
+  if (data.graphs?.perQuestion) {
     ensureSpace(56);
     doc.setFontSize(11.5);
     doc.setFont('helvetica', 'bold');
@@ -303,8 +303,10 @@ export async function exportCompanyReportAsPDF(data: CompanyReportData) {
     doc.text(`Page ${i - 1} of ${pageCount - 1}`, pageWidth - marginLeft, pageHeight - 20, { align: 'right' });
   }
 
-  const filenameSafe = data.company.replace(/[^a-z0-9]+/gi, '_').toLowerCase();
-  doc.save(`company_report_${filenameSafe}_${new Date().toISOString().slice(0, 10)}.pdf`);
+  const companyClean = data.company.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const filename = customFilename || `${companyClean}_Feedback_Report_${dateStr}.pdf`;
+  doc.save(filename);
 }
 
 /* ------------------------------------------------------------------ */
@@ -484,11 +486,11 @@ export async function exportCompanyReportAsDocx(data: CompanyReportData) {
 
   // Bar/radar: compact (~45% of the ~624px content width) so both fit cleanly on one page.
   // Trend: wider (~80%) with a short, wide aspect so the x-axis has room, mirroring the dashboard view.
-  if (data.graphs.bar) bodyBlocks.push(...(await imageParagraph(data.chartImages.bar, 'Section Scores \u2014 Bar Graph', 500)));
-  if (data.graphs.radar) bodyBlocks.push(...(await imageParagraph(data.chartImages.radar, 'Section Scores \u2014 Radar Graph', 500)));
-  if (data.graphs.trend) bodyBlocks.push(...(await imageParagraph(data.chartImages.trend, 'Score Trend', 500)));
+  if (data.graphs?.bar) bodyBlocks.push(...(await imageParagraph(data.chartImages?.bar, 'Section Scores \u2014 Bar Graph', 500)));
+  if (data.graphs?.radar) bodyBlocks.push(...(await imageParagraph(data.chartImages?.radar, 'Section Scores \u2014 Radar Graph', 500)));
+  if (data.graphs?.trend) bodyBlocks.push(...(await imageParagraph(data.chartImages?.trend, 'Score Trend', 500)));
 
-  if (data.graphs.perQuestion) {
+  if (data.graphs?.perQuestion) {
     bodyBlocks.push(
       new Paragraph({
         children: [new TextRun({ text: 'Per-Question Average Rating', bold: true, size: 24, color: INK_HEX })],

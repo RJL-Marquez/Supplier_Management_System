@@ -6,6 +6,7 @@ export interface PartnerCompany {
   id: string;
   name: string;
   type: SurveyType;
+  email?: string;
   affiliation?: string;
   createdAt: string;
   registeredAt?: string;

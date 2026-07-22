@@ -788,7 +788,24 @@ export function PartnerCompaniesPage({
                 </h4>
 
                 <div className="space-y-3 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                  <div className="flex justify-between items-center text-xs">
+                  <div>
+                    <label className="field-label text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Target Company Primary Email
+                    </label>
+                    <input
+                      type="email"
+                      value={selectedCompany.email || ''}
+                      onChange={(e) => {
+                        const updated = { ...selectedCompany, email: e.target.value };
+                        setSelectedCompany(updated);
+                        onUpdateCompany(updated);
+                      }}
+                      placeholder="e.g. contact@partnercompany.com"
+                      className="field text-xs py-1.5"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Used automatically when dispatching evaluation feedback reports to this partner.</p>
+                  </div>
+                  <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-200 dark:border-slate-800">
                     <span className="text-slate-400 font-medium">Registration Date:</span>
                     <strong className="text-slate-700 dark:text-slate-200">{formatDate(selectedCompany.registeredAt || selectedCompany.createdAt)}</strong>
                   </div>

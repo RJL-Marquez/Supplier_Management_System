@@ -117,15 +117,16 @@ export function computeCompanyComposite(
       section,
       earned: Number(v.earned.toFixed(1)),
       possible: v.possible,
-      percent: v.possible ? Number(((v.earned / v.possible) * 100).toFixed(1)) : 0,
+      percent: v.possible ? Number(Math.min(100, Math.max(0, (v.earned / v.possible) * 100)).toFixed(1)) : 0,
       responses: v.responses,
     };
   });
 
   const normalizedSubmissionScores = submissionScores(companyResponses);
-  const compositeScore = normalizedSubmissionScores.length
-    ? Number((normalizedSubmissionScores.reduce((sum, item) => sum + item.score, 0) / normalizedSubmissionScores.length).toFixed(1))
+  const rawComposite = normalizedSubmissionScores.length
+    ? normalizedSubmissionScores.reduce((sum, item) => sum + item.score, 0) / normalizedSubmissionScores.length
     : 0;
+  const compositeScore = Number(Math.min(100, Math.max(0, rawComposite)).toFixed(1));
 
   const mean = percentScores.length ? percentScores.reduce((a, b) => a + b, 0) / percentScores.length : 0;
   const variance = percentScores.length

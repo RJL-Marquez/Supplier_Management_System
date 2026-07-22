@@ -20,6 +20,7 @@ import { PresentPage } from './pages/PresentPage';
 import { ArchivePage } from './pages/ArchivePage';
 import { SimulatorPage } from './pages/SimulatorPage';
 import { AccountManagementPage } from './pages/AccountManagementPage';
+import { PartnersFeedbackHubPage } from './pages/PartnersFeedbackHubPage';
 import { LiveChatPage } from './pages/LiveChatPage';
 import { AdminChatWidget } from './components/AdminChatWidget';
 import { initializeSystemChats, getChatUnreadCount } from './utils/chatService';
@@ -169,7 +170,7 @@ const DEFAULT_ACCOUNTS: AccountProfile[] = [
   }
 ];
 
-type PageKey = 'dashboard' | 'partner-companies' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'live-chat';
+type PageKey = 'dashboard' | 'partner-companies' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'live-chat';
 
 const adminPages = [
   { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
@@ -182,6 +183,7 @@ const adminPages = [
   { key: 'present' as const, label: 'Present', icon: Presentation, section: 'Analytics' },
 
   { key: 'partner-companies' as const, label: 'Partner Companies', icon: Users, section: 'Management' },
+  { key: 'partners-feedback-hub' as const, label: 'Partners Feedback Hub', icon: Mail, section: 'Management' },
   { key: 'account-management' as const, label: 'Account Management', icon: UserCog, section: 'Management' },
 
   { key: 'notifications' as const, label: 'Notification Logs', icon: Bell, section: 'System' },
@@ -255,7 +257,7 @@ export default function App() {
       return {
         pages: [
           'dashboard', 'survey-forms', 'explorer', 'analytics', 'reports', 'present', 
-          'partner-companies', 'account-management', 'notifications', 'archive', 'simulator'
+          'partner-companies', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'simulator'
         ] as PageModuleKey[],
         surveyTypes: ['Courier', 'Supplier', 'Subcontractor'] as SurveyType[]
       };
@@ -577,6 +579,16 @@ export default function App() {
         onRemoveCompany={removePartnerCompany}
         onUpdateCompany={updatePartnerCompany}
         isAdmin={isAdmin}
+      />
+    ),
+    'partners-feedback-hub': (
+      <PartnersFeedbackHubPage
+        surveys={userAccessibleSurveys}
+        responses={userAccessibleResponses}
+        partnerCompanies={userAccessiblePartnerCompanies}
+        currentUser={profile}
+        onNavigatePage={(p) => setActivePage(p as PageKey)}
+        onMarkSurveyComplete={(id) => updateSurvey(id, { status: 'Completed' })}
       />
     ),
     'account-management': (

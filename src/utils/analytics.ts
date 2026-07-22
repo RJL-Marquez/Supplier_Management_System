@@ -165,7 +165,8 @@ export function getSurveyTotalPoints(surveyType: SurveyType): number {
 
 export function normalizeScoreTo100(score: number, surveyType: SurveyType): number {
   const totalPoints = getSurveyTotalPoints(surveyType);
-  return totalPoints > 0 ? (score / totalPoints) * 100 : 0;
+  if (totalPoints <= 0) return 0;
+  return Math.min(100, Math.max(0, (score / totalPoints) * 100));
 }
 
 function getSubmissionKey(response: SurveyResponse) {

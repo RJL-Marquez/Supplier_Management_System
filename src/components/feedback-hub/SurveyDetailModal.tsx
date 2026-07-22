@@ -1,0 +1,235 @@
+import React from 'react';
+import { X, CheckCircle2, Download, Send, BarChart3, Users, FileText, Award, Calendar } from 'lucide-react';
+import { CustomForm, PartnerCompany, SurveyResponse } from '../../types/survey';
+import { exportTablesAsPDF, ExportTable } from '../../utils/exporters';
+
+interface SurveyDetailModalProps {
+  survey: CustomForm;
+  responses: SurveyResponse[];
+  partnerCompanies: PartnerCompany[];
+  onClose: () => void;
+  onSendToPartner: (survey: CustomForm, partnerCompany?: PartnerCompany) => void;
+  reportSentStatus?: { isSent: boolean; isQueued: boolean; statusText?: string };
+}
+
+export function SurveyDetailModal({
+  survey,
+  responses,
+  partnerCompanies,
+  onClose,
+  onSendToPartner,
+  reportSentStatus,
+}: SurveyDetailModalProps) {
+  // Filter survey responses
+  const surveyResponses = responses.filter(
+    (r) => r.surveyType === survey.surveyType && !r.archived
+  );
+
+  // Ratings calculation
+  const numericRatings = surveyResponses
+    .map((r) => (typeof r.rating === 'number' ? r.rating : null))
+    .filter((r): r is number => r !== null);
+  
+  const totalResponsesCount = surveyResponses.length;
+  const rawAvgRating = numericRatings.length
+    ? numericRatings.reduce((a, b) => a + b, 0) / numericRatings.length
+    : 0;
+  const avgRating = Math.min(5.0, Math.max(0, rawAvgRating));
+  const satisfactionScore = Math.min(100.0, Math.max(0, (avgRating / 5) * 100));
+
+  // Category breakdown
+  const categoryMap = new Map<string, number[]>();
+  surveyResponses.forEach((r) => {
+    if (typeof r.rating === 'number') {
+      const cat = r.questionCategory || 'General Performance';
+      const arr = categoryMap.get(cat) || [];
+      arr.push(r.rating);
+      categoryMap.set(cat, arr);
+    }
+  });
+
+  const categoryScores = Array.from(categoryMap.entries()).map(([cat, ratings]) => {
+    const rawAvg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+    const avgClamped = Math.min(5.0, Math.max(0, rawAvg));
+    const scorePctClamped = Math.min(100.0, Math.max(0, (avgClamped / 5) * 100));
+    return {
+      category: cat,
+      average: avgClamped,
+      scorePct: scorePctClamped,
+      count: ratings.length,
+    };
+  });
+
+  // Respondent list
+  const uniqueRespondentsMap = new Map<string, { email: string; department?: string; date: string }>();
+  surveyResponses.forEach((r) => {
+    const key = r.respondentEmail || `${r.department || 'General'}-${r.submissionDate}`;
+    if (!uniqueRespondentsMap.has(key)) {
+      uniqueRespondentsMap.set(key, {
+        email: r.respondentEmail || 'Anonymous Respondent',
+        department: r.department || 'General',
+        date: r.submissionDate,
+      });
+    }
+  });
+  const respondentsList = Array.from(uniqueRespondentsMap.values());
+
+  // Find matching partner company
+  const matchingPartner = partnerCompanies.find((c) => c.type === survey.surveyType);
+
+  // PDF Export trigger
+  const handleExportPdf = () => {
+    const tables: ExportTable[] = [
+      {
+        title: 'KPI Executive Summary',
+        columns: ['Metric', 'Value'],
+        rows: [
+          ['Survey Title', survey.title],
+          ['Survey Category', survey.surveyType],
+          ['Total Submissions', String(totalResponsesCount)],
+          ['Overall Satisfaction Score', `${satisfactionScore.toFixed(1)}%`],
+          ['Average Rating', `${avgRating.toFixed(2)} / 5.0`],
+        ],
+      },
+      {
+        title: 'Category Score Breakdown',
+        columns: ['Category', 'Average Rating', 'Score %'],
+        rows: categoryScores.map((c) => [c.category, c.average.toFixed(2), `${c.scorePct.toFixed(1)}%`]),
+      },
+    ];
+
+    exportTablesAsPDF(
+      `${survey.title} - Performance Report`,
+      tables,
+      `${survey.surveyType}_Survey_Report`
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm animate-fadeIn">
+      <div className="w-full max-w-3xl rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+              <CheckCircle2 size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700">
+                  Completed Survey
+                </span>
+                <span className="text-xs font-medium text-slate-500">{survey.surveyType} Survey</span>
+                {reportSentStatus?.isSent && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800 dark:bg-blue-900/60 dark:text-blue-200">
+                    Report Sent ✓
+                  </span>
+                )}
+                {reportSentStatus?.isQueued && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 animate-pulse">
+                    Queued ⏳
+                  </span>
+                )}
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">{survey.title}</h3>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+          {/* KPI Stats Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="rounded-lg border border-slate-200 p-4 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
+              <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
+                <span>Overall Score</span>
+                <Award size={16} className="text-emerald-500" />
+              </div>
+              <div className="mt-2 text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">
+                {satisfactionScore.toFixed(1)}%
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">Average: {avgRating.toFixed(2)} / 5.0</p>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-4 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
+              <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
+                <span>Total Responses</span>
+                <Users size={16} className="text-blue-500" />
+              </div>
+              <div className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">
+                {uniqueRespondentsMap.size}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">Completed Submissions</p>
+            </div>
+          </div>
+
+          {/* Category Performance Breakdown */}
+          <div>
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3 flex items-center justify-between">
+              <span>Category Performance Breakdown</span>
+              <BarChart3 size={16} className="text-slate-400" />
+            </h4>
+            <div className="space-y-2.5 rounded-lg border border-slate-200 p-4 dark:border-slate-800 bg-white dark:bg-slate-900">
+              {categoryScores.map((c, i) => (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="text-slate-700 dark:text-slate-300">{c.category}</span>
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      {c.average.toFixed(1)} / 5.0 ({c.scorePct.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div
+                      className="h-full bg-azure rounded-full transition-all duration-300"
+                      style={{ width: `${c.scorePct}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Respondents Summary */}
+          <div>
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">
+              Respondent Records ({respondentsList.length})
+            </h4>
+            <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+              {respondentsList.map((resp, idx) => (
+                <div key={idx} className="flex items-center justify-between p-2.5">
+                  <div>
+                    <span className="font-medium text-slate-800 dark:text-slate-200">{resp.email}</span>
+                    <span className="ml-2 text-slate-500">({resp.department})</span>
+                  </div>
+                  <span className="text-slate-400">{resp.date}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Actions */}
+        <div className="flex items-center justify-end border-t border-slate-200 px-6 py-4 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                onSendToPartner(survey, matchingPartner);
+                onClose();
+              }}
+              className="primary-button text-xs gap-1.5 bg-[#0063a9] hover:bg-blue-800 text-white"
+            >
+              <Send size={14} />
+              Send Report to Partner
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

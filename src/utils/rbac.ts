@@ -8,6 +8,7 @@ export type PageModuleKey =
   | 'reports'
   | 'present'
   | 'partner-companies'
+  | 'partners-feedback-hub'
   | 'account-management'
   | 'notifications'
   | 'archive'
@@ -35,14 +36,15 @@ export function getDefaultPermissions(designation: string, department: string): 
   if (rank === 'Rank & File') {
     pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'notifications'];
   } else if (rank === 'Supervisory') {
-    // Supervisor gets Dashboard, Analytics, Survey Forms, Partner Companies, and optionally Reports for basic exports
-    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'reports', 'notifications'];
+    // Supervisor gets Dashboard, Analytics, Survey Forms, Partner Companies, Partners Feedback Hub, and optionally Reports for basic exports
+    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'partners-feedback-hub', 'reports', 'notifications'];
   } else if (rank === 'Managerial') {
     pages = [
       'dashboard', 
       'analytics', 
       'survey-forms', 
       'partner-companies', 
+      'partners-feedback-hub',
       'explorer', 
       'reports', 
       'present', 
@@ -55,6 +57,7 @@ export function getDefaultPermissions(designation: string, department: string): 
       'analytics', 
       'survey-forms', 
       'partner-companies', 
+      'partners-feedback-hub',
       'explorer', 
       'reports', 
       'present', 
@@ -73,6 +76,7 @@ export function getDefaultPermissions(designation: string, department: string): 
       'reports', 
       'present', 
       'partner-companies', 
+      'partners-feedback-hub',
       'account-management', 
       'notifications', 
       'archive', 
@@ -102,6 +106,7 @@ export function getDepartmentDefaultPermissions(department: string): UserPermiss
       'reports', 
       'present', 
       'partner-companies', 
+      'partners-feedback-hub',
       'notifications', 
       'archive'
     ];
@@ -112,6 +117,7 @@ export function getDepartmentDefaultPermissions(department: string): UserPermiss
       'analytics', 
       'survey-forms', 
       'partner-companies', 
+      'partners-feedback-hub',
       'explorer', 
       'reports', 
       'present', 
