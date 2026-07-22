@@ -693,8 +693,8 @@ export function SendToPartnerWizard({
 
               <div className="divide-y divide-slate-200 dark:divide-slate-800">
                 {bulkList.map((item, index) => (
-                  <div key={index} className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 text-xs">
-                    <div className="flex items-center gap-3">
+                  <div key={index} className="flex items-center p-4 bg-white dark:bg-slate-900 text-xs gap-6">
+                    <div className="flex items-center gap-3 w-72 shrink-0">
                       <input
                         type="checkbox"
                         checked={item.selected}
@@ -709,12 +709,12 @@ export function SendToPartnerWizard({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-6">
-                      <div className="text-right">
-                        <p className="text-[10px] text-slate-500">Overall Score</p>
-                        <p className="font-extrabold text-[#0063a9] text-sm">{item.overallScore}%</p>
-                      </div>
+                    <div className="w-24 shrink-0">
+                      <p className="text-[10px] text-slate-500">Overall Score</p>
+                      <p className="font-extrabold text-[#0063a9] text-sm">{item.overallScore}%</p>
+                    </div>
 
+                    <div className="flex items-center gap-6 ml-auto">
                       <div className="text-right max-w-xs truncate hidden sm:block">
                         <p className="text-[10px] text-slate-500">Recipient Email</p>
                         <p className="font-medium text-slate-700 dark:text-slate-300 truncate">
