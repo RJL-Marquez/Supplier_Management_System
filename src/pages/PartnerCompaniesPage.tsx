@@ -1,17 +1,17 @@
-import { useState, useMemo } from 'react';
-import { 
-  Plus, 
-  Trash, 
-  ShieldCheck, 
-  AlertCircle, 
-  Sparkles, 
-  Building, 
-  Info, 
-  Calendar, 
-  Hash, 
-  Briefcase, 
-  ClipboardList, 
-  Award, 
+import { useState, useMemo, useRef } from 'react';
+import {
+  Plus,
+  Trash,
+  ShieldCheck,
+  AlertCircle,
+  Sparkles,
+  Building,
+  Info,
+  Calendar,
+  Hash,
+  Briefcase,
+  ClipboardList,
+  Award,
   X,
   List,
   LayoutGrid,
@@ -25,11 +25,39 @@ import {
   Check,
   ChevronRight,
   Truck,
-  Package
+  Package,
+  Upload,
+  Loader2,
+  Search,
+  Globe,
+  MapPin,
+  HelpCircle
 } from 'lucide-react';
-import { PartnerCompany, PartnerCompanyType, SurveyResponse, SurveyType } from '../types/survey';
+import { BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SurveyResponse, SurveyType } from '../types/survey';
 import { getMaxRatingForResponses } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
+import { computeDocumentStatus } from '../utils/compliance';
+import { ImportResult } from '../utils/masterListImport';
+
+function typeBadgeClasses(type: PartnerCompanyType): string {
+  switch (type) {
+    case 'Courier':
+      return 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-950/20 dark:text-blue-400';
+    case 'Supplier':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400';
+    case 'Subcontractor':
+      return 'bg-orange-50 text-orange-700 border-orange-100 dark:bg-orange-950/20 dark:text-orange-400';
+    default:
+      return 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700';
+  }
+}
+
+const DOCUMENT_STATUS_STYLES: Record<DocumentStatus, string> = {
+  Current: 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40',
+  'Expiring Soon': 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/40',
+  Expired: 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900/40',
+  Missing: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700',
+};
 
 interface PartnerCompaniesPageProps {
   partnerCompanies: PartnerCompany[];
@@ -46,6 +74,7 @@ interface PartnerCompaniesPageProps {
   ) => void;
   onRemoveCompany: (id: string) => void;
   onUpdateCompany: (company: PartnerCompany) => void;
+  onImportMasterList?: (file: File) => Promise<ImportResult>;
   isAdmin?: boolean;
 }
 
@@ -55,12 +84,16 @@ export function PartnerCompaniesPage({
   onAddCompany,
   onRemoveCompany,
   onUpdateCompany,
+  onImportMasterList,
   isAdmin,
 }: PartnerCompaniesPageProps) {
   // Tabs: Active, Expired, Archived
   const [statusTab, setStatusTab] = useState<'Active' | 'Expired' | 'Archived'>('Active');
   // Affiliation filter
-  const [activeTab, setActiveTab] = useState<SurveyType | 'All'>('All');
+  const [activeTab, setActiveTab] = useState<PartnerCompanyType | 'All'>('All');
+  // Local/Foreign sub-filter, only meaningful while activeTab === 'Supplier'
+  const [originFilter, setOriginFilter] = useState<'All' | 'Local' | 'Foreign'>('All');
+  const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'general' | 'simplified'>('general');
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
 
@@ -99,6 +132,12 @@ export function PartnerCompaniesPage({
   const [companyToDelete, setCompanyToDelete] = useState<PartnerCompany | null>(null);
   const [passcodeInput, setPasscodeInput] = useState('');
   const [passcodeError, setPasscodeError] = useState('');
+
+  // Master List import state
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState('');
 
   type SortKey = 'name' | 'type' | 'createdAt' | 'expirationDate';
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
@@ -225,6 +264,35 @@ export function PartnerCompaniesPage({
     setTimeout(() => setSuccessMessage(''), 4000);
   };
 
+  const handleImportFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file next time
+    if (!file || !onImportMasterList) return;
+
+    setIsImporting(true);
+    setImportError('');
+    setImportResult(null);
+    try {
+      const result = await onImportMasterList(file);
+      setImportResult(result);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Failed to import the Master List file.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const downloadImportLog = () => {
+    if (!importResult) return;
+    const blob = new Blob([JSON.stringify(importResult.log, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `master-list-import-log-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const startDelete = (company: PartnerCompany, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setCompanyToDelete(company);
@@ -279,7 +347,19 @@ export function PartnerCompaniesPage({
     if (activeTab !== 'All') {
       baseList = baseList.filter((c) => c.type === activeTab);
     }
-    
+
+    if (activeTab === 'Supplier' && originFilter !== 'All') {
+      baseList = baseList.filter((c) => (c.supplierOrigin ?? 'Local') === originFilter);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      baseList = baseList.filter((c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.branches ?? []).some((b) => b.bpCode?.toLowerCase().includes(q))
+      );
+    }
+
     if (sortConfig) {
       baseList = [...baseList].sort((a, b) => {
         const valA = a[sortConfig.key] || '';
@@ -294,7 +374,7 @@ export function PartnerCompaniesPage({
       });
     }
     return baseList;
-  }, [classifiedCompanies, statusTab, activeTab, sortConfig]);
+  }, [classifiedCompanies, statusTab, activeTab, originFilter, searchQuery, sortConfig]);
 
   // Click handler to open company details modal
   const handleCompanyClick = (company: PartnerCompany) => {
@@ -419,10 +499,10 @@ export function PartnerCompaniesPage({
       </div>
 
       {/* Secondary Filter Options Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-3">
         {/* Affiliation category tabs */}
-        <div className="flex flex-nowrap overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 dark:border-transparent dark:bg-slate-950 sm:max-w-md w-full sm:w-auto" style={{ scrollbarWidth: 'none' }}>
-          {(['All', 'Courier', 'Supplier', 'Subcontractor'] as const).map((tab) => (
+        <div className="flex flex-nowrap overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 dark:border-transparent dark:bg-slate-950 sm:max-w-lg w-full sm:w-auto" style={{ scrollbarWidth: 'none' }}>
+          {(['All', 'Courier', 'Supplier', 'Subcontractor', 'Uncategorized'] as const).map((tab) => (
             <button
               key={tab}
               className={`shrink-0 whitespace-nowrap rounded-md py-2 px-4 text-xs font-bold transition-all duration-150 cursor-pointer ${
@@ -432,26 +512,89 @@ export function PartnerCompaniesPage({
               }`}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === 'All' ? 'All categories' : `${tab}s`}
+              {tab === 'All' ? 'All categories' : tab === 'Uncategorized' ? 'Uncategorized' : `${tab}s`}
             </button>
           ))}
         </div>
 
-        {/* Register Button (admin only) */}
+        {/* Local/Foreign sub-filter - only meaningful for Suppliers */}
+        {activeTab === 'Supplier' && (
+          <div className="flex flex-nowrap rounded-lg border border-slate-200 bg-white p-1 dark:border-transparent dark:bg-slate-950">
+            {(['All', 'Local', 'Foreign'] as const).map((origin) => (
+              <button
+                key={origin}
+                className={`shrink-0 flex items-center gap-1 whitespace-nowrap rounded-md py-2 px-3 text-xs font-bold transition-all duration-150 cursor-pointer ${
+                  originFilter === origin
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+                onClick={() => setOriginFilter(origin)}
+              >
+                {origin === 'Foreign' && <Globe size={12} />}
+                {origin === 'Local' && <MapPin size={12} />}
+                <span>{origin}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Name / BP Code search */}
+        <div className="relative w-full sm:w-64">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search name or BP code..."
+            className="field text-xs py-2 pl-8"
+          />
+        </div>
+
+        {/* Register / Import Buttons (admin only) */}
         {isAdmin && (
-          <button
-            onClick={() => {
-              setErrorMessage('');
-              setIsRegisterOpen(true);
-            }}
-            className="bg-[#0063a9] hover:bg-[#00528c] text-white flex items-center justify-center gap-1.5 py-2.5 px-5 text-xs font-bold rounded-lg shadow-xs transition duration-150 cursor-pointer"
-            type="button"
-          >
-            <Plus size={16} />
-            <span>Register New Partner</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {onImportMasterList && (
+              <>
+                <input
+                  ref={importFileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleImportFileSelected}
+                />
+                <button
+                  onClick={() => importFileInputRef.current?.click()}
+                  disabled={isImporting}
+                  className="bg-white hover:bg-slate-50 dark:bg-slate-950 dark:hover:bg-slate-900 text-[#0063a9] border border-[#0063a9]/30 flex items-center justify-center gap-1.5 py-2.5 px-5 text-xs font-bold rounded-lg shadow-xs transition duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                  type="button"
+                  title="Import companies from the Master List Excel file"
+                >
+                  {isImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                  <span>{isImporting ? 'Importing…' : 'Import Master List'}</span>
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => {
+                setErrorMessage('');
+                setIsRegisterOpen(true);
+              }}
+              className="bg-[#0063a9] hover:bg-[#00528c] text-white flex items-center justify-center gap-1.5 py-2.5 px-5 text-xs font-bold rounded-lg shadow-xs transition duration-150 cursor-pointer"
+              type="button"
+            >
+              <Plus size={16} />
+              <span>Register New Partner</span>
+            </button>
+          </div>
         )}
       </div>
+
+      {importError && (
+        <div className="rounded-lg bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 text-xs font-semibold flex items-center gap-2 dark:bg-rose-950/20 dark:border-rose-900">
+          <AlertCircle size={16} />
+          <span>{importError}</span>
+        </div>
+      )}
 
       {/* Registry Header & Controls Block */}
       <div className="panel px-5 py-4 flex flex-wrap justify-between items-center gap-3">
@@ -558,15 +701,14 @@ export function PartnerCompaniesPage({
                         </div>
                       </td>
                       <td className="px-5 py-3">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                          c.type === 'Courier'
-                            ? 'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-950/20 dark:text-blue-400'
-                            : c.type === 'Supplier'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400'
-                            : 'bg-orange-50 text-orange-700 border border-orange-100 dark:bg-orange-950/20 dark:text-orange-400'
-                        }`}>
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${typeBadgeClasses(c.type)}`}>
                           {c.type}
                         </span>
+                        {c.type === 'Supplier' && c.supplierOrigin && (
+                          <span className="ml-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700">
+                            {c.supplierOrigin}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-xs">
                         {formatDate(c.registeredAt || c.createdAt)}
@@ -647,7 +789,7 @@ export function PartnerCompaniesPage({
                     </h4>
                     
                     {/* Highly Recognizable Category Tag with Icon */}
-                    <div className="pt-0.5">
+                    <div className="pt-0.5 flex flex-wrap items-center gap-1.5">
                       {c.type === 'Courier' && (
                         <span className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/30">
                           <Truck size={14} className="text-blue-600 dark:text-blue-400" />
@@ -664,6 +806,18 @@ export function PartnerCompaniesPage({
                         <span className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/30">
                           <Briefcase size={14} className="text-amber-600 dark:text-amber-400" />
                           <span>Subcontractor</span>
+                        </span>
+                      )}
+                      {c.type === 'Uncategorized' && (
+                        <span className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700">
+                          <HelpCircle size={14} className="text-slate-400" />
+                          <span>Uncategorized</span>
+                        </span>
+                      )}
+                      {c.type === 'Supplier' && c.supplierOrigin && (
+                        <span className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide bg-slate-50 text-slate-500 border border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700">
+                          {c.supplierOrigin === 'Foreign' ? <Globe size={12} /> : <MapPin size={12} />}
+                          <span>{c.supplierOrigin}</span>
                         </span>
                       )}
                     </div>
@@ -766,15 +920,24 @@ export function PartnerCompaniesPage({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-xl font-bold text-slate-900 dark:text-white truncate">{selectedCompany.name}</h3>
-                  <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                    selectedCompany.type === 'Courier'
-                      ? 'bg-blue-50 text-blue-700 border border-blue-100'
-                      : selectedCompany.type === 'Supplier'
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                      : 'bg-orange-50 text-orange-700 border border-orange-100'
-                  }`}>
+                  <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${typeBadgeClasses(selectedCompany.type)}`}>
                     {selectedCompany.type}
                   </span>
+                  {selectedCompany.type === 'Supplier' && selectedCompany.supplierOrigin && (
+                    <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700">
+                      {selectedCompany.supplierOrigin === 'Foreign' ? <Globe size={10} /> : <MapPin size={10} />}
+                      {selectedCompany.supplierOrigin}
+                    </span>
+                  )}
+                  {selectedCompany.accreditationStatus && (
+                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${
+                      selectedCompany.accreditationStatus === 'Accredited'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400'
+                        : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400'
+                    }`}>
+                      {selectedCompany.accreditationStatus}
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-slate-400 mt-1">ID: {selectedCompany.id} &bull; Scope: {selectedCompany.affiliation || 'General partnership'}</p>
               </div>
@@ -932,6 +1095,74 @@ export function PartnerCompaniesPage({
                 </p>
               </div>
             </div>
+
+            {/* Branches & Compliance Documents (from Master List import) */}
+            {(selectedCompany.branches ?? []).some((b) => b.bpCode || Object.keys(b.documents ?? {}).length > 0) && (
+              <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800">
+                <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                  <ClipboardList size={14} />
+                  <span>Branches &amp; Compliance Documents ({(selectedCompany.branches ?? []).length})</span>
+                </h4>
+
+                <div className="space-y-3">
+                  {(selectedCompany.branches ?? []).map((branch) => (
+                    <div key={branch.id} className="bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-200">
+                            {branch.bpCode || 'No BP Code'}
+                          </span>
+                          {branch.rawCategory && (
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wide">{branch.rawCategory}</span>
+                          )}
+                        </div>
+                        {branch.status && (
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${
+                            branch.status === 'Complete'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400'
+                              : branch.status === 'Outdated'
+                              ? 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/20 dark:text-amber-400'
+                              : 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/20 dark:text-rose-400'
+                          }`}>
+                            {branch.status}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                        {branch.address && <p className="truncate" title={branch.address}>{branch.address}</p>}
+                        {branch.contactPerson && <p>Contact: <span className="font-semibold text-slate-600 dark:text-slate-300">{branch.contactPerson}</span></p>}
+                        {branch.mobilePhone && <p>Mobile: {branch.mobilePhone}</p>}
+                        {branch.email && <p className="truncate">{branch.email}</p>}
+                        {branch.industry && <p>Industry: {branch.industry}</p>}
+                        {branch.dateAccredited && <p>Accredited: {formatDate(branch.dateAccredited)}</p>}
+                      </div>
+
+                      {Object.keys(branch.documents ?? {}).length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800">
+                          {Object.entries(branch.documents ?? {}).map(([docName, doc]) => {
+                            const { status } = computeDocumentStatus(doc as ComplianceDocument);
+                            return (
+                              <span
+                                key={docName}
+                                title={(doc as ComplianceDocument).expiryDate ? `Expires ${formatDate((doc as ComplianceDocument).expiryDate)}` : docName}
+                                className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold border ${DOCUMENT_STATUS_STYLES[status]}`}
+                              >
+                                {docName}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800">
+                          No compliance documents on file for this branch.
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Administrative Action Footer */}
             {isAdmin && (
@@ -1313,6 +1544,85 @@ export function PartnerCompaniesPage({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Master List Import Result Modal */}
+      {importResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-transparent dark:bg-slate-950 relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setImportResult(null)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
+              title="Close"
+              type="button"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-3 text-emerald-600">
+              <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 p-2">
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Master List Import Complete</h3>
+                <p className="text-xs text-slate-500">{importResult.stats.totalRows} rows processed</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-5 text-xs">
+              <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400 font-medium block">New companies created</span>
+                <strong className="text-slate-800 dark:text-slate-100 text-lg">{importResult.stats.createdCompanies}</strong>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400 font-medium block">Merged as branch</span>
+                <strong className="text-slate-800 dark:text-slate-100 text-lg">{importResult.stats.mergedAsBranch}</strong>
+              </div>
+              <div className="bg-emerald-50 dark:bg-emerald-950/20 p-3 rounded-lg border border-emerald-100 dark:border-emerald-900">
+                <span className="text-emerald-700 dark:text-emerald-400 font-medium block">Accredited (active)</span>
+                <strong className="text-emerald-800 dark:text-emerald-300 text-lg">{importResult.stats.accredited}</strong>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400 font-medium block">Uncategorized (archived)</span>
+                <strong className="text-slate-800 dark:text-slate-100 text-lg">{importResult.stats.uncategorized}</strong>
+              </div>
+              {importResult.stats.updatedBranches > 0 && (
+                <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                  <span className="text-slate-400 font-medium block">Branches updated (re-run)</span>
+                  <strong className="text-slate-800 dark:text-slate-100 text-lg">{importResult.stats.updatedBranches}</strong>
+                </div>
+              )}
+              {importResult.stats.skipped > 0 && (
+                <div className="bg-rose-50 dark:bg-rose-950/20 p-3 rounded-lg border border-rose-100 dark:border-rose-900">
+                  <span className="text-rose-600 font-medium block">Rows skipped</span>
+                  <strong className="text-rose-700 dark:text-rose-300 text-lg">{importResult.stats.skipped}</strong>
+                </div>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-400 mt-4 leading-relaxed">
+              Uncategorized companies are archived and excluded from surveys until manually classified. Download the full merge log below to audit exactly which rows matched which existing company.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 mt-6 border-t border-slate-100 pt-4 dark:border-slate-800">
+              <button
+                onClick={downloadImportLog}
+                className="secondary-button text-xs py-2 px-4 flex items-center gap-1.5"
+                type="button"
+              >
+                <FileText size={14} />
+                <span>Download Merge Log</span>
+              </button>
+              <button
+                onClick={() => setImportResult(null)}
+                className="bg-[#0063a9] hover:bg-[#00528c] text-white text-xs font-bold py-2 px-4 rounded-lg transition cursor-pointer"
+                type="button"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

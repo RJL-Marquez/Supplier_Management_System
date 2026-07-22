@@ -3,6 +3,7 @@ import { sharePointService } from '../services/sharepointService';
 import { QuestionDefinition, ResponseNotification, SurveyResponse, SurveyType, CustomForm, Rating, PartnerCompany, PartnerCompanyType, BranchRecord } from '../types/survey';
 import { surveyQuestions } from '../data/questions';
 import { generateMockResponses, generateAllMockResponses, generateSingleMockResponse, generateBulkMockResponses } from '../data/mockResponses';
+import { importMasterListFromFile, ImportResult } from '../utils/masterListImport';
 
 const NOTIFICATION_HISTORY_LIMIT = 200;
 const INITIAL_NOTIFICATION_SEED = 15;
@@ -69,15 +70,12 @@ function normalizePartnerCompanyType(value: unknown): PartnerCompanyType {
 
 function normalizePartnerCompany(company: PartnerCompany): PartnerCompany {
   const defaultRegisteredAt = company.createdAt ? company.createdAt.split('T')[0] : '2025-01-15';
-  
-  // Set interesting expirations to seed different statuses on first load (relative to '2026-07-19')
-  let defaultExpirationDate = '2027-04-15';
-  if (company.id === 'pc-1') defaultExpirationDate = '2026-06-15'; // Expired
-  else if (company.id === 'pc-2') defaultExpirationDate = '2026-08-10'; // Expiring soon (Warning in 22 days)
-  else if (company.id === 'pc-3') defaultExpirationDate = '2026-09-15'; // Expiring in 2 months (Warning)
-  else if (company.id === 'pc-9') defaultExpirationDate = '2026-07-01'; // Expired
-  else if (company.id === 'pc-22') defaultExpirationDate = '2026-05-20'; // Expired
-  else if (company.id === 'pc-23') defaultExpirationDate = '2026-08-18'; // Expiring soon (Warning)
+
+  // A neutral, non-expiring placeholder for companies with no real contract
+  // date on file yet - the Master List doesn't carry a "contract expiration"
+  // concept, so this only ever gets overridden once an admin does a real
+  // Renew Contract action.
+  const defaultExpirationDate = '2027-04-15';
 
   const normalizedType = normalizePartnerCompanyType(company.type);
 
@@ -108,6 +106,55 @@ function normalizePartnerCompany(company: PartnerCompany): PartnerCompany {
     type: normalizedType,
     branches: defaultBranches,
   };
+}
+
+// One-time correction of pre-Master-List demo data, run once per install
+// (guarded by DEMO_CLEANUP_FLAG below): the original 41 seeded companies had
+// fake per-ID expiration dates hardcoded purely to showcase Active/Expiring/
+// Expired UI states, plus a handful of names that don't correspond to any
+// real accredited company in the Master List. Neither should keep counting
+// toward the "real" registry once the Master List is the source of truth.
+const DEMO_CLEANUP_FLAG = 'survey_analytics_v6_demo_cleanup_v1';
+
+const DEMO_ONLY_COMPANY_NAMES = new Set([
+  'Aimvest Electrical Services',
+  'Cgalz Enterprises',
+  'L-Gertrude Construction Services',
+  'Bridge Distribution, Inc',
+  'Softwareone Philippines Corporation',
+  'AptSecure Technologies Inc',
+  'Westcon Group Philippines',
+  'M-Security Tech Philippines, Inc',
+  'Banbros Commercial, Incorporated',
+  'Westcon Solutions Philippines Inc',
+  'Ardent Networks Inc',
+  'Mec Computer Corporation',
+  'Streamline Works Inc',
+  'Wyntech Corp',
+  'Apuma, March Maanap',
+  'PAX8 Philippines Inc',
+].map((n) => n.toLowerCase()));
+
+// These 6 seed IDs got hardcoded fake expiration dates (see the old
+// normalizePartnerCompany logic) that don't reflect anything real - clearing
+// them lets the neutral default apply so real, accredited companies don't
+// show up as bogus Expired/Expiring Soon.
+const DEMO_FAKE_EXPIRY_IDS = new Set(['pc-1', 'pc-2', 'pc-3', 'pc-9', 'pc-22', 'pc-23']);
+
+function applyOneTimeDemoDataCleanup(companies: PartnerCompany[]): PartnerCompany[] {
+  if (localStorage.getItem(DEMO_CLEANUP_FLAG) === 'true') return companies;
+  localStorage.setItem(DEMO_CLEANUP_FLAG, 'true');
+
+  return companies.map((c) => {
+    let updated = c;
+    if (DEMO_ONLY_COMPANY_NAMES.has(c.name.trim().toLowerCase())) {
+      updated = { ...updated, isArchived: true, accreditationStatus: 'Unaccredited' };
+    }
+    if (DEMO_FAKE_EXPIRY_IDS.has(c.id)) {
+      updated = { ...updated, expirationDate: undefined, registeredAt: undefined, renewedAt: undefined };
+    }
+    return updated;
+  });
 }
 
 function normalizeSurveyResponse(response: SurveyResponse): SurveyResponse {
@@ -1141,7 +1188,8 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
         let loadedCompanies: PartnerCompany[] = [];
         const savedCompanies = localStorage.getItem('survey_analytics_partner_companies_v6');
         if (savedCompanies) {
-          loadedCompanies = JSON.parse(savedCompanies).map(normalizePartnerCompany);
+          const rawCompanies = applyOneTimeDemoDataCleanup(JSON.parse(savedCompanies));
+          loadedCompanies = rawCompanies.map(normalizePartnerCompany);
           localStorage.setItem('survey_analytics_partner_companies_v6', JSON.stringify(loadedCompanies));
         } else {
           loadedCompanies = [
@@ -1190,7 +1238,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
             { id: 'pc-40', name: 'Sencolink Technologies Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
             { id: 'pc-41', name: 'PAX8 Philippines Inc', type: 'Supplier', createdAt: new Date('2025-01-01T08:00:00Z').toISOString() },
           ] as PartnerCompany[];
-          loadedCompanies = loadedCompanies.map(normalizePartnerCompany);
+          loadedCompanies = applyOneTimeDemoDataCleanup(loadedCompanies).map(normalizePartnerCompany);
           localStorage.setItem('survey_analytics_partner_companies_v6', JSON.stringify(loadedCompanies));
         }
 
@@ -1385,6 +1433,18 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
       return updated;
     });
     return normalizedCompany;
+  };
+
+  // Import the Master List Excel: fuzzy-matches each row's BP Name against
+  // existing companies (merging as a branch when matched, creating a new
+  // company otherwise), then replaces the full partner company list in one
+  // shot. Returns the merge log/stats so the caller can show an audit trail.
+  const importMasterList = async (file: File): Promise<ImportResult> => {
+    const result = await importMasterListFromFile(file, partnerCompanies);
+    const normalized = result.companies.map(normalizePartnerCompany);
+    setPartnerCompanies(normalized);
+    safeSetItem('survey_analytics_partner_companies_v6', JSON.stringify(normalized));
+    return result;
   };
 
   // Remove a partner company
@@ -1725,6 +1785,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     addPartnerCompany,
     updatePartnerCompany,
     removePartnerCompany,
+    importMasterList,
     isLoading,
     error,
     notifications: combinedNotifications,

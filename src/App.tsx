@@ -291,6 +291,7 @@ export default function App() {
     addPartnerCompany,
     updatePartnerCompany,
     removePartnerCompany,
+    importMasterList,
     isLoading,
     error,
     notifications,
@@ -575,11 +576,16 @@ export default function App() {
     ),
     'partner-companies': (
       <PartnerCompaniesPage
-        partnerCompanies={userAccessiblePartnerCompanies}
+        // Unfiltered on purpose: this is the admin registry itself (Active/
+        // Expired/Archived tabs), so Uncategorized companies pending review
+        // must stay visible here even though they're excluded from every
+        // survey-scoped view via userAccessiblePartnerCompanies.
+        partnerCompanies={partnerCompanies}
         responses={userAccessibleResponses}
         onAddCompany={addPartnerCompany}
         onRemoveCompany={removePartnerCompany}
         onUpdateCompany={updatePartnerCompany}
+        onImportMasterList={importMasterList}
         isAdmin={isAdmin}
       />
     ),
