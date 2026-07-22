@@ -41,6 +41,8 @@ interface AnalyticsPageProps {
   activeSurveyTypes: SurveyType[];
   filters: FilterState;
   setFilters: (filters: FilterState) => void;
+  dataScope?: 'current' | 'all-time';
+  onChangeDataScope?: (scope: 'current' | 'all-time') => void;
 }
 
 const surveyTypeColors: Record<SurveyType, string> = {
@@ -203,7 +205,9 @@ export function AnalyticsPage({
   partnerCompanies = [],
   activeSurveyTypes,
   filters,
-  setFilters
+  setFilters,
+  dataScope = 'current',
+  onChangeDataScope
 }: AnalyticsPageProps) {
   const isMobile = useIsMobile();
   const [limit, setLimit] = useState<5 | 10>(5);
@@ -385,6 +389,26 @@ export function AnalyticsPage({
 
   return (
     <div className="space-y-5">
+      {onChangeDataScope && (
+        <div className="flex justify-end">
+          <div className="flex rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-1" title="Choose whether these analytics reflect only the current period or every archived period combined">
+            {(['current', 'all-time'] as const).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => onChangeDataScope(scope)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                  dataScope === scope
+                    ? 'bg-[#0063a9] text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                {scope === 'current' ? 'Current Period' : 'All-Time'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Prominent KPI Section: Overall Satisfaction */}
       <div className={`panel flex flex-col md:flex-row items-center justify-between p-6 md:p-8 border-2 border-slate-100 dark:border-slate-800/40 shadow-lg relative overflow-hidden bg-gradient-to-r from-white to-slate-50/50 dark:from-slate-950 dark:to-slate-900/40 gap-6 md:gap-10`}>
         

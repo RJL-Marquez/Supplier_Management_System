@@ -54,6 +54,15 @@ export interface DashboardWidget {
 interface DashboardPageProps {
   responses: SurveyResponse[];
   allResponses: SurveyResponse[];
+  // Same shape as allResponses, but reflecting whichever data scope is
+  // active (current period only, or every archived period combined too).
+  // Used only for the historical-style stats (Top Performing Partner,
+  // Stakeholder Group Comparison) - completion tracking always uses
+  // allResponses regardless, since "who still needs to answer this round"
+  // must never be affected by viewing All-Time history.
+  historyResponses?: SurveyResponse[];
+  dataScope?: 'current' | 'all-time';
+  onChangeDataScope?: (scope: 'current' | 'all-time') => void;
   partnerCompanies: PartnerCompany[];
   isLoading: boolean;
   error: string | null;
@@ -131,17 +140,21 @@ const badgeColors: Record<string, string> = {
 
 import { createPortal } from 'react-dom';
 
-export function DashboardPage({ 
-  responses = [], 
-  allResponses = [], 
-  partnerCompanies = [], 
-  isLoading, 
-  error, 
+export function DashboardPage({
+  responses = [],
+  allResponses = [],
+  historyResponses,
+  dataScope = 'current',
+  onChangeDataScope,
+  partnerCompanies = [],
+  isLoading,
+  error,
   surveyTypeFilter = [],
   surveys = [],
   isAdmin = false,
   userEmail = ''
 }: DashboardPageProps) {
+  const effectiveHistoryResponses = historyResponses ?? allResponses;
   
   const [widgets, setWidgets] = useState<DashboardWidget[]>([]);
   const [draftWidgets, setDraftWidgets] = useState<DashboardWidget[]>([]);
@@ -333,14 +346,14 @@ export function DashboardPage({
   
   // 1. Partner Company Averages (to find the Top Performing Partner)
   const companyAverages = useMemo(() => {
-    if (!allResponses.length || !partnerCompanies.length) return [];
-    
+    if (!effectiveHistoryResponses.length || !partnerCompanies.length) return [];
+
     const companyMap: Record<string, { name: string; sum: number; count: number; type: string }> = {};
-    
+
     const typeMap = new Map<string, string>();
     partnerCompanies.forEach((c) => typeMap.set(c.name, c.type));
 
-    submissionScores(allResponses).forEach((submission) => {
+    submissionScores(effectiveHistoryResponses).forEach((submission) => {
       if (!companyMap[submission.company]) {
         const type = typeMap.get(submission.company) || submission.surveyType;
         companyMap[submission.company] = { name: submission.company, sum: 0, count: 0, type };
@@ -368,7 +381,7 @@ export function DashboardPage({
       })
       .filter((c) => c.count > 0)
       .sort((a, b) => b.average - a.average);
-  }, [allResponses, partnerCompanies]);
+  }, [effectiveHistoryResponses, partnerCompanies]);
 
   const topPartner = useMemo(() => {
     return companyAverages[0] || null;
@@ -379,9 +392,9 @@ export function DashboardPage({
     const counts = { Courier: 0, Supplier: 0, Subcontractor: 0 };
     const averages = { Courier: 0, Supplier: 0, Subcontractor: 0 };
 
-    const contractorResponses = allResponses.filter(r => r.surveyType === 'Courier');
-    const supplierResponses = allResponses.filter(r => r.surveyType === 'Supplier');
-    const subcontractorResponses = allResponses.filter(r => r.surveyType === 'Subcontractor');
+    const contractorResponses = effectiveHistoryResponses.filter(r => r.surveyType === 'Courier');
+    const supplierResponses = effectiveHistoryResponses.filter(r => r.surveyType === 'Supplier');
+    const subcontractorResponses = effectiveHistoryResponses.filter(r => r.surveyType === 'Subcontractor');
 
     counts.Courier = submissionCount(contractorResponses);
     counts.Supplier = submissionCount(supplierResponses);
@@ -397,16 +410,16 @@ export function DashboardPage({
       Subcontractor: averages.Subcontractor,
       counts
     };
-  }, [allResponses]);
+  }, [effectiveHistoryResponses]);
 
   // 3. Question Performance rankings
   const questionAverages = useMemo(() => {
-    const list = questionPerformance(allResponses);
+    const list = questionPerformance(effectiveHistoryResponses);
     return {
       top: list[0] ? { text: list[0].question, average: list[0].average } : null,
       bottom: list[list.length - 1] ? { text: list[list.length - 1].question, average: list[list.length - 1].average } : null
     };
-  }, [allResponses]);
+  }, [effectiveHistoryResponses]);
 
   // 4. Submissions Feed
   const recentSubmissions = useMemo(() => {
@@ -430,6 +443,24 @@ export function DashboardPage({
           ---------------------------------------------------- */}
       {headerPortalTarget && createPortal(
         <div className="flex flex-wrap items-center gap-2.5 shrink-0 justify-end w-full sm:w-auto">
+          {onChangeDataScope && (
+            <div className="flex rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-1" title="Choose whether stats reflect only the current period or every archived period combined">
+              {(['current', 'all-time'] as const).map((scope) => (
+                <button
+                  key={scope}
+                  type="button"
+                  onClick={() => onChangeDataScope(scope)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                    dataScope === scope
+                      ? 'bg-[#0063a9] text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {scope === 'current' ? 'Current Period' : 'All-Time'}
+                </button>
+              ))}
+            </div>
+          )}
           {isCustomizing ? (
             <>
               <button
@@ -749,7 +780,7 @@ export function DashboardPage({
                         <div className="bg-slate-50/50 dark:bg-slate-900/40 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800">
                           <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total Feedback</span>
                           <span className="text-2xl font-light text-slate-800 dark:text-white mt-1 block">
-                            {submissionCount(allResponses)}
+                            {submissionCount(effectiveHistoryResponses)}
                           </span>
                           <span className="text-[10px] text-blue-500 mt-1 block font-medium">Submissions log</span>
                         </div>

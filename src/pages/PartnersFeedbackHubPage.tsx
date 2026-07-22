@@ -18,6 +18,8 @@ import { CurrentFormsTab } from '../components/feedback-hub/CurrentFormsTab';
 import { PastResultsTab } from '../components/feedback-hub/PastResultsTab';
 import { SentReportsTab } from '../components/feedback-hub/SentReportsTab';
 import { SendToPartnerWizard } from '../components/feedback-hub/SendToPartnerWizard';
+import { BulkHiddenChartCapturer } from '../components/feedback-hub/BulkHiddenChartCapturer';
+import { isMsalConfigured } from '../services/msalAuth';
 
 import { FileText, Archive, Send, Clock, ShieldAlert, Sparkles, SendToBack } from 'lucide-react';
 
@@ -46,6 +48,10 @@ export function PartnersFeedbackHubPage({
   const [contacts, setContacts] = useState<PartnerContact[]>(() => getPartnerContacts());
   const [sentReports, setSentReports] = useState<QueuedReportEmail[]>(() => getSentReports());
   const [settings, setSettings] = useState<FeedbackHubSettings>(() => getFeedbackHubSettings());
+  // Set while a real Microsoft Graph send (triggered by handleConfirmNow) is
+  // in flight - mounts the hidden chart capturer below just long enough to
+  // regenerate the PDF and email it, then clears once handleRealSendResult runs.
+  const [realSendReport, setRealSendReport] = useState<QueuedReportEmail | null>(null);
 
   // Dispatch Flow Inline State
   const [isDispatchWizardOpen, setIsDispatchWizardOpen] = useState(false);
@@ -180,8 +186,18 @@ export function PartnersFeedbackHubPage({
     setActiveTab('sent-reports');
   };
 
-  // Confirm Now action
+  // Confirm Now action. When Microsoft sign-in is configured, this actually
+  // regenerates the PDF and emails it via Microsoft Graph as the signed-in
+  // admin (see realSendReport below/BulkHiddenChartCapturer's sendVia mode);
+  // otherwise it falls back to the original simulated status flip so nothing
+  // breaks before the Azure AD app registration exists.
   const handleConfirmNow = (reportId: string) => {
+    if (isMsalConfigured()) {
+      const report = sentReports.find((r) => r.id === reportId);
+      if (report) setRealSendReport(report);
+      return;
+    }
+
     const nowIso = new Date().toISOString();
     const actor = currentUser?.email || 'admin@mgenesis.com';
 
@@ -205,6 +221,48 @@ export function PartnersFeedbackHubPage({
       return rpt;
     });
     handleUpdateSentReports(updated);
+  };
+
+  // Applies the outcome of a real Graph send (see the BulkHiddenChartCapturer
+  // mount below) to the report's status/history, then clears the mount.
+  const handleRealSendResult = (reportId: string, result: { success: boolean; error?: string }) => {
+    const nowIso = new Date().toISOString();
+    const actor = currentUser?.email || 'admin@mgenesis.com';
+
+    const updated = sentReports.map((rpt) => {
+      if (rpt.id !== reportId) return rpt;
+      if (result.success) {
+        return {
+          ...rpt,
+          status: 'Sent' as const,
+          sentAt: nowIso,
+          history: [
+            ...rpt.history,
+            {
+              action: 'Confirmed Immediately' as const,
+              timestamp: nowIso,
+              actor,
+              details: 'Admin manually confirmed dispatch. Email sent via Microsoft Graph to the partner.',
+            },
+          ],
+        };
+      }
+      return {
+        ...rpt,
+        status: 'Failed' as const,
+        history: [
+          ...rpt.history,
+          {
+            action: 'Confirmed Immediately' as const,
+            timestamp: nowIso,
+            actor,
+            details: `Send failed: ${result.error || 'Unknown error'}`,
+          },
+        ],
+      };
+    });
+    handleUpdateSentReports(updated);
+    setRealSendReport(null);
   };
 
   // Return Report action
@@ -418,6 +476,29 @@ export function PartnersFeedbackHubPage({
           onUpdateTimerSettings={(min) => handleUpdateSettings({ ...settings, defaultTimerMinutes: min })}
           currentTimerMinutes={settings.defaultTimerMinutes}
           userEmail={currentUser?.email || 'admin@mgenesis.com'}
+        />
+      )}
+
+      {/* Real Microsoft Graph send in flight (see handleConfirmNow). Reuses the
+          same off-screen chart-capture pipeline as bulk preview, but in "send"
+          mode: it emails the PDF instead of opening a preview window. Report-
+          level graph selections aren't persisted on QueuedReportEmail, so this
+          always attaches the full report (all graphs + comments). */}
+      {realSendReport && (
+        <BulkHiddenChartCapturer
+          item={{ company: { name: realSendReport.companyName }, survey: { surveyType: realSendReport.surveyType } }}
+          responses={responses}
+          graphs={{ bar: true, radar: true, trend: true, perQuestion: true }}
+          includeComments
+          previewWindow={null}
+          onComplete={() => {}}
+          sendVia={{
+            to: realSendReport.recipientEmail,
+            cc: realSendReport.ccEmails,
+            subject: realSendReport.subject,
+            htmlBody: realSendReport.body.replace(/\n/g, '<br/>'),
+          }}
+          onSendResult={(result) => handleRealSendResult(realSendReport.id, result)}
         />
       )}
     </div>

@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { Eye, EyeOff, LockKeyhole, Mail, Users } from 'lucide-react';
+import { isMsalConfigured, loginWithMicrosoft } from '../services/msalAuth';
 
 interface LoginPageProps {
   onLogin: (email: string) => void;
@@ -160,6 +161,27 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const msalReady = isMsalConfigured();
+  const [isMsSigningIn, setIsMsSigningIn] = useState(false);
+  const [msError, setMsError] = useState('');
+
+  async function handleMicrosoftSignIn() {
+    setMsError('');
+    setIsMsSigningIn(true);
+    try {
+      const result = await loginWithMicrosoft();
+      const normalized = result.email.trim().toLowerCase();
+      if (!normalized.endsWith('@mgenesis.com')) {
+        setMsError('Access is restricted to verified @mgenesis.com accounts.');
+        return;
+      }
+      onLogin(normalized);
+    } catch (err) {
+      setMsError(err instanceof Error ? err.message : 'Microsoft sign-in failed. Please try again.');
+    } finally {
+      setIsMsSigningIn(false);
+    }
+  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -292,6 +314,37 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               {isSubmitting ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+
+          {msalReady && (
+            <>
+              <div className="my-4 flex items-center gap-3 text-xs text-slate-400">
+                <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+                <span>or</span>
+                <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+              </div>
+
+              {msError && (
+                <p className="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose dark:bg-rose-950/30 dark:border-rose-900">
+                  {msError}
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleMicrosoftSignIn}
+                disabled={isMsSigningIn}
+                className="w-full flex items-center justify-center gap-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:opacity-70 cursor-pointer"
+              >
+                <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
+                  <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+                  <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+                  <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+                  <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+                </svg>
+                {isMsSigningIn ? 'Signing in…' : 'Sign in with Microsoft'}
+              </button>
+            </>
+          )}
         </div>
 
         {/* Quick Select Panel */}

@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
-import { Archive, ClipboardList, FileText, RefreshCw, Calendar, Building2, UserCheck, Trash2, ArrowLeft, Search } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Archive, ClipboardList, FileText, RefreshCw, Calendar, Building2, UserCheck, Trash2, ArrowLeft, Search, Download, Upload, Loader2, X, Sparkles } from 'lucide-react';
 import { CustomForm, SurveyResponse, SurveyType } from '../types/survey';
+import { exportArchivedResponsesAsExcel } from '../utils/archiveResponseTransfer';
+import type { ArchiveImportResult } from '../utils/archiveResponseTransfer';
 
 interface ArchivePageProps {
   surveys: CustomForm[];
@@ -10,6 +12,7 @@ interface ArchivePageProps {
   onRestoreResponsesForSurvey?: (surveyId: string) => void;
   onDeleteArchivedResponseGroups?: (groupIds: { archivedAt: string; surveyId: string }[]) => void;
   onRestoreArchivedResponseGroups?: (groupIds: { archivedAt: string; surveyId: string }[]) => void;
+  onImportArchivedResponses?: (file: File) => Promise<ArchiveImportResult>;
   isAdmin: boolean;
 }
 
@@ -21,6 +24,7 @@ export function ArchivePage({
   onRestoreResponsesForSurvey,
   onDeleteArchivedResponseGroups,
   onRestoreArchivedResponseGroups,
+  onImportArchivedResponses,
   isAdmin
 }: ArchivePageProps) {
   const [activeTab, setActiveTab] = useState<'surveys' | 'responses'>('surveys');
@@ -151,6 +155,54 @@ export function ArchivePage({
 
   const [confirmDeleteState, setConfirmDeleteState] = useState<{isOpen: boolean}>({ isOpen: false });
 
+  // Export/import of raw archived response data (see archiveResponseTransfer.ts)
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ArchiveImportResult | null>(null);
+  const [importError, setImportError] = useState('');
+
+  const handleExportSelected = () => {
+    const rows = groupedArchivedResponses
+      .filter((g) => selectedGroups.has(g.id))
+      .flatMap((g) => g.responses);
+    if (rows.length === 0) return;
+    exportArchivedResponsesAsExcel(rows, 'archived_responses_selected');
+  };
+
+  const handleExportAll = () => {
+    if (archivedResponses.length === 0) return;
+    exportArchivedResponsesAsExcel(archivedResponses, 'archived_responses_all');
+  };
+
+  const handleImportFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !onImportArchivedResponses) return;
+
+    setIsImporting(true);
+    setImportError('');
+    setImportResult(null);
+    try {
+      const result = await onImportArchivedResponses(file);
+      setImportResult(result);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Failed to import the archived responses file.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const downloadImportLog = () => {
+    if (!importResult) return;
+    const blob = new Blob([JSON.stringify(importResult.log, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `archive-import-log-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleBulkRestore = () => {
     if (selectedGroups.size === 0 || !onRestoreArchivedResponseGroups) return;
     const groups = filteredGroupedResponses
@@ -266,18 +318,58 @@ export function ArchivePage({
           <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
             {activeTab === 'surveys' ? 'Archived Surveys Directory' : 'Archived Responses Logs'}
           </h2>
-          
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={16} />
-            <input
-              type="text"
-              placeholder={`Search archived ${activeTab === 'surveys' ? 'surveys' : 'responses'}...`}
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-9 py-2 text-xs text-slate-700 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-[#0063a9]"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+            {activeTab === 'responses' && (
+              <div className="flex items-center gap-2">
+                <input
+                  ref={importFileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={handleImportFileSelected}
+                />
+                <button
+                  type="button"
+                  onClick={() => importFileInputRef.current?.click()}
+                  disabled={isImporting}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:opacity-60 disabled:cursor-wait cursor-pointer"
+                  title="Re-import a previously exported archived-responses file"
+                >
+                  {isImporting ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  <span>{isImporting ? 'Importing…' : 'Import'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportAll}
+                  disabled={archivedResponses.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:opacity-60 cursor-pointer"
+                  title="Export every archived response to Excel"
+                >
+                  <Download size={14} />
+                  <span>Export All Archived</span>
+                </button>
+              </div>
+            )}
+
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={16} />
+              <input
+                type="text"
+                placeholder={`Search archived ${activeTab === 'surveys' ? 'surveys' : 'responses'}...`}
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-9 py-2 text-xs text-slate-700 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-[#0063a9]"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
           </div>
         </div>
+
+        {importError && (
+          <div className="rounded-xl bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 text-xs font-semibold flex items-center gap-2 dark:bg-rose-950/20 dark:border-rose-900">
+            <span>{importError}</span>
+          </div>
+        )}
 
         {/* Tab 1 Content: Surveys List */}
         {activeTab === 'surveys' && (
@@ -355,6 +447,9 @@ export function ArchivePage({
                       {selectedGroups.size} group(s) selected
                     </span>
                     <div className="flex items-center gap-2">
+                      <button onClick={handleExportSelected} className="px-3 py-1.5 text-xs font-bold rounded-lg border border-[#0063a9]/30 bg-white dark:bg-slate-900 text-[#0063a9] hover:bg-blue-50 dark:hover:bg-slate-800 transition cursor-pointer">
+                        Export Selected
+                      </button>
                       <button onClick={handleBulkRestore} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-[#0063a9] text-white hover:bg-[#00528c] transition cursor-pointer">
                         Restore Selected
                       </button>
@@ -549,6 +644,9 @@ export function ArchivePage({
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   Are you sure you want to permanently delete {selectedGroups.size} archived logs? This action cannot be undone.
                 </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 pt-1">
+                  Tip: use "Export Selected" first if you want an Excel backup you can re-import later.
+                </p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 pt-2">
@@ -563,6 +661,68 @@ export function ArchivePage({
                 className="px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl bg-rose-600 hover:bg-rose-700 text-white cursor-pointer transition"
               >
                 Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Result Modal */}
+      {importResult && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-slate-950 rounded-2xl max-w-lg w-full border border-slate-200 dark:border-slate-800 p-6 shadow-xl relative">
+            <button
+              onClick={() => setImportResult(null)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
+              type="button"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-3 text-emerald-600">
+              <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 p-2">
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Archive Import Complete</h3>
+                <p className="text-xs text-slate-500">{importResult.stats.totalRows} rows processed</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 mt-5 text-xs">
+              <div className="bg-emerald-50 dark:bg-emerald-950/20 p-3 rounded-lg border border-emerald-100 dark:border-emerald-900">
+                <span className="text-emerald-700 dark:text-emerald-400 font-medium block">Imported</span>
+                <strong className="text-emerald-800 dark:text-emerald-300 text-lg">{importResult.stats.imported}</strong>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400 font-medium block">Duplicates skipped</span>
+                <strong className="text-slate-800 dark:text-slate-100 text-lg">{importResult.stats.skippedDuplicate}</strong>
+              </div>
+              <div className="bg-rose-50 dark:bg-rose-950/20 p-3 rounded-lg border border-rose-100 dark:border-rose-900">
+                <span className="text-rose-600 font-medium block">Invalid rows</span>
+                <strong className="text-rose-700 dark:text-rose-300 text-lg">{importResult.stats.skippedInvalid}</strong>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400 mt-4 leading-relaxed">
+              Imported rows are always restored as archived data. Download the full log to see exactly which rows were imported, skipped as duplicates, or rejected as invalid.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 mt-6 border-t border-slate-100 dark:border-slate-800 pt-4">
+              <button
+                onClick={downloadImportLog}
+                className="secondary-button text-xs py-2 px-4 flex items-center gap-1.5"
+                type="button"
+              >
+                <FileText size={14} />
+                <span>Download Import Log</span>
+              </button>
+              <button
+                onClick={() => setImportResult(null)}
+                className="bg-[#0063a9] hover:bg-[#00528c] text-white text-xs font-bold py-2 px-4 rounded-lg transition cursor-pointer"
+                type="button"
+              >
+                Done
               </button>
             </div>
           </div>

@@ -26,8 +26,38 @@ import { AdminChatWidget } from './components/AdminChatWidget';
 import { initializeSystemChats, getChatUnreadCount } from './utils/chatService';
 import { useSurveyData } from './hooks/useSurveyData';
 import { applyFilters, initialFilters } from './utils/analytics';
-import { FilterState, SurveyType, CustomForm } from './types/survey';
+import { FilterState, SurveyType, CustomForm, SurveyResponse } from './types/survey';
 import { PageModuleKey, getDefaultPermissions, hasPageAccess, getDepartmentDefaultPermissions } from './utils/rbac';
+
+// Shared by userAccessibleResponses/userAccessibleAllTimeResponses below - the
+// same role/department/survey-type scoping rule applied to either the
+// active-only response list or the active+archived merged list, so a user's
+// visibility rules don't drift between "Current" and "All-Time" data scope.
+function applyAccessFilter(
+  list: SurveyResponse[],
+  profile: { email: string; role: string; designation: string; department: string } | null,
+  effectiveSurveyTypes: SurveyType[],
+  activePage: string
+): SurveyResponse[] {
+  if (!profile) return [];
+  if (activePage === 'analytics') {
+    return list; // Analytics remains company-wide for all users
+  }
+
+  if (profile.role === 'Admin' || profile.designation === 'Executive' || profile.designation === 'Director') {
+    return list.filter((r) => effectiveSurveyTypes.includes(r.surveyType));
+  }
+
+  if (profile.designation === 'Supervisory') {
+    return list.filter((r) => r.department === profile.department && effectiveSurveyTypes.includes(r.surveyType));
+  }
+
+  if (profile.designation === 'Rank & File') {
+    return list.filter((r) => r.respondentEmail === profile.email && effectiveSurveyTypes.includes(r.surveyType));
+  }
+
+  return list.filter((r) => effectiveSurveyTypes.includes(r.surveyType));
+}
 
 export interface AccountProfile {
   email: string;
@@ -198,6 +228,13 @@ export default function App() {
     return localStorage.getItem('user_account') || null;
   });
 
+  // 'current' = active period only (today's default, unchanged behavior).
+  // 'all-time' = active + every archived period combined, so multi-year
+  // company trends accumulate across resets instead of blanking out each time
+  // a survey period is archived. Shared across Dashboard/Analytics so
+  // switching in one keeps the other consistent.
+  const [dataScope, setDataScope] = useState<'current' | 'all-time'>('current');
+
   // Accounts Management State
   const [accounts, setAccounts] = useState<AccountProfile[]>(() => {
     const saved = localStorage.getItem('survey_accounts_v1');
@@ -284,6 +321,7 @@ export default function App() {
     restoreResponsesForSurvey,
     deleteArchivedResponseGroups,
     restoreArchivedResponseGroups,
+    importArchivedResponses,
     surveys,
     questions,
     companies,
@@ -387,38 +425,24 @@ export default function App() {
   }, [profile]);
 
   // Centralized Data Isolation & Filtering based on user department/rank/permitted types
-  const userAccessibleResponses = useMemo(() => {
-    if (!profile) return [];
-    if (activePage === 'analytics') {
-      return responses; // Analytics remains company-wide for all users
-    }
-    
-    if (profile.role === 'Admin') {
-      return responses.filter(r => effectiveSurveyTypes.includes(r.surveyType));
-    }
+  const userAccessibleResponses = useMemo(
+    () => applyAccessFilter(responses, profile, effectiveSurveyTypes, activePage),
+    [responses, profile, effectiveSurveyTypes, activePage]
+  );
 
-    if (profile.designation === 'Executive' || profile.designation === 'Director') {
-      return responses.filter(r => effectiveSurveyTypes.includes(r.surveyType));
-    }
-
-    if (profile.designation === 'Supervisory') {
-      // Supervisor: see team/department responses
-      return responses.filter(r => 
-        r.department === profile.department && 
-        effectiveSurveyTypes.includes(r.surveyType)
-      );
-    }
-
-    if (profile.designation === 'Rank & File') {
-      // Rank & File: see own responses
-      return responses.filter(r => 
-        r.respondentEmail === profile.email && 
-        effectiveSurveyTypes.includes(r.surveyType)
-      );
-    }
-
-    return responses.filter(r => effectiveSurveyTypes.includes(r.surveyType));
-  }, [responses, profile, effectiveSurveyTypes, activePage]);
+  // The same active responses merged with every archived period, still
+  // scoped by the same role/department rules - this is the "All-Time" data
+  // source. Archived responses never overlap with active ones (archiving
+  // just flips a flag on the same row, see useSurveyData.ts), so this concat
+  // is a safe, dedup-free union of the full history.
+  const historyResponsesRaw = useMemo(() => [...responses, ...archivedResponses], [responses, archivedResponses]);
+  const userAccessibleAllTimeResponses = useMemo(
+    () => applyAccessFilter(historyResponsesRaw, profile, effectiveSurveyTypes, activePage),
+    [historyResponsesRaw, profile, effectiveSurveyTypes, activePage]
+  );
+  // Whichever of the two the current toggle selects - this is what most
+  // scope-aware pages (Dashboard/Reports/Present/Explorer) should consume.
+  const scopedAccessibleResponses = dataScope === 'all-time' ? userAccessibleAllTimeResponses : userAccessibleResponses;
 
   const userAccessibleAllResponses = useMemo(() => {
     if (!profile) return [];
@@ -471,8 +495,11 @@ export default function App() {
     return partnerCompanies.filter(c => !c.isArchived && effectiveSurveyTypes.some(t => t === c.type));
   }, [partnerCompanies, effectiveSurveyTypes]);
 
-  const filteredResponses = useMemo(() => applyFilters(userAccessibleResponses, filters), [userAccessibleResponses, filters]);
-  const analyticsFilteredResponses = useMemo(() => applyFilters(responses, filters), [responses, filters]);
+  const filteredResponses = useMemo(() => applyFilters(scopedAccessibleResponses, filters), [scopedAccessibleResponses, filters]);
+  const analyticsFilteredResponses = useMemo(
+    () => applyFilters(dataScope === 'all-time' ? historyResponsesRaw : responses, filters),
+    [dataScope, historyResponsesRaw, responses, filters]
+  );
   
   const activeSurveyTypes = filters.surveyType.length ? filters.surveyType : effectiveSurveyTypes;
 
@@ -570,6 +597,9 @@ export default function App() {
       <DashboardPage
         responses={filteredResponses}
         allResponses={userAccessibleAllResponses}
+        historyResponses={dataScope === 'all-time' ? userAccessibleAllTimeResponses : userAccessibleAllResponses}
+        dataScope={dataScope}
+        onChangeDataScope={setDataScope}
         partnerCompanies={userAccessiblePartnerCompanies}
         isLoading={isLoading}
         error={error}
@@ -638,14 +668,16 @@ export default function App() {
     analytics: (
       <AnalyticsPage
         responses={analyticsFilteredResponses}
-        allResponses={responses}
+        allResponses={dataScope === 'all-time' ? historyResponsesRaw : responses}
         partnerCompanies={partnerCompanies}
         activeSurveyTypes={allSurveyTypes}
         filters={filters}
         setFilters={setFilters}
+        dataScope={dataScope}
+        onChangeDataScope={setDataScope}
       />
     ),
-    present: <PresentPage responses={userAccessibleResponses} partnerCompanies={userAccessiblePartnerCompanies} />,
+    present: <PresentPage responses={scopedAccessibleResponses} partnerCompanies={userAccessiblePartnerCompanies} />,
     explorer: <SurveyExplorerPage responses={filteredResponses} surveys={userAccessibleSurveys} />,
     reports: (
       <ReportsPage
@@ -753,6 +785,7 @@ export default function App() {
         onRestoreResponsesForSurvey={restoreResponsesForSurvey}
         onDeleteArchivedResponseGroups={deleteArchivedResponseGroups}
         onRestoreArchivedResponseGroups={restoreArchivedResponseGroups}
+        onImportArchivedResponses={importArchivedResponses}
         isAdmin={isAdmin}
       />
     ),

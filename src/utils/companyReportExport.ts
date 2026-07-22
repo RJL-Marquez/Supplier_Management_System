@@ -104,7 +104,12 @@ async function fetchLogoDataUrl(): Promise<string | null> {
 /* PDF export                                                          */
 /* ------------------------------------------------------------------ */
 
-export async function exportCompanyReportAsPDF(data: CompanyReportData, customFilename?: string, previewOnly?: boolean): Promise<string | undefined> {
+export async function exportCompanyReportAsPDF(
+  data: CompanyReportData,
+  customFilename?: string,
+  previewOnly?: boolean,
+  asDataUri?: boolean
+): Promise<string | undefined> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const marginLeft = 48;
   const pageWidth = doc.internal.pageSize.width;
@@ -306,6 +311,11 @@ export async function exportCompanyReportAsPDF(data: CompanyReportData, customFi
   const companyClean = data.company.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   const dateStr = new Date().toISOString().slice(0, 10);
   const filename = customFilename || `${companyClean}_Feedback_Report_${dateStr}.pdf`;
+  if (asDataUri) {
+    // Used for email attachments (see graphMailService.ts) - no object URL/
+    // blob lifecycle to manage, just a base64 string ready to embed.
+    return doc.output('datauristring') as unknown as string;
+  }
   if (previewOnly) {
     const blob = doc.output('blob');
     const blobUrl = URL.createObjectURL(blob);

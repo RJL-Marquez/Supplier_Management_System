@@ -5,6 +5,7 @@ import { surveyQuestions } from '../data/questions';
 import { generateMockResponses, generateAllMockResponses, generateSingleMockResponse, generateBulkMockResponses } from '../data/mockResponses';
 import { importMasterListFromFile, ImportResult } from '../utils/masterListImport';
 import { seedPartnerCompanies } from '../data/partnerCompaniesSeed';
+import { importArchivedResponsesFromFile, ArchiveImportResult } from '../utils/archiveResponseTransfer';
 
 // Bumped from _v6: the baseline registry changed from a 41-company hand-typed
 // demo list to the full Master List snapshot (partnerCompaniesSeed.ts, ~1129
@@ -1580,6 +1581,17 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
   };
 
+  // Restores a previously-exported archived-response file (see
+  // archiveResponseTransfer.ts). Every imported row is forced archived
+  // regardless of what the file says, and duplicates (by responseId) are
+  // skipped - see mergeImportedResponses for the exact rules.
+  const importArchivedResponses = async (file: File): Promise<ArchiveImportResult> => {
+    const result = await importArchivedResponsesFromFile(file, responses);
+    setResponses(result.responses);
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(result.responses)));
+    return result;
+  };
+
   // Derive unique active survey types (Courier, Supplier, Subcontractor)
   const surveyTypes = useMemo<SurveyType[]>(() => {
     return ['Courier', 'Supplier', 'Subcontractor'];
@@ -1693,6 +1705,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     restoreResponsesForSurvey,
     deleteArchivedResponseGroups,
     restoreArchivedResponseGroups,
+    importArchivedResponses,
     surveys,
     surveyTypes,
     questions,

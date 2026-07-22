@@ -4,6 +4,8 @@ import { captureChartImage, exportCompanyReportAsPDF, CompanyReportData } from '
 import { computeCompanyComposite, getCompanyTrend, getSectionPeerAverages } from '../../utils/scoring';
 import { getScoreAxisDomain, questionPerformance } from '../../utils/analytics';
 import { SurveyResponse } from '../../types/survey';
+import { getGraphAccessToken } from '../../services/msalAuth';
+import { sendGraphMail, dataUrlToBase64 } from '../../services/graphMailService';
 
 const PRIMARY_COLOR = '#0063a9';
 const PEER_COLOR = '#b91c1c';
@@ -27,6 +29,15 @@ const formatMonthLabel = (mStr: string) => {
   const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1);
   return d.toLocaleDateString('en-US', { month: 'short' }) + ' ' + parts[0].slice(2);
 };
+/** Present when this capture should actually email the report via Microsoft
+ *  Graph (real "Confirm Now"/bulk send) instead of just opening a preview. */
+export interface SendViaGraphConfig {
+  to: string;
+  cc?: string[];
+  subject: string;
+  htmlBody: string;
+}
+
 interface BulkHiddenChartCapturerProps {
   item: any;
   responses: SurveyResponse[];
@@ -34,6 +45,8 @@ interface BulkHiddenChartCapturerProps {
   includeComments: boolean;
   previewWindow: Window | null;
   onComplete: () => void;
+  sendVia?: SendViaGraphConfig | null;
+  onSendResult?: (result: { success: boolean; error?: string }) => void;
 }
 
 export function BulkHiddenChartCapturer({
@@ -42,7 +55,9 @@ export function BulkHiddenChartCapturer({
   graphs,
   includeComments,
   previewWindow,
-  onComplete
+  onComplete,
+  sendVia,
+  onSendResult,
 }: BulkHiddenChartCapturerProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const radarRef = useRef<HTMLDivElement>(null);
@@ -144,18 +159,42 @@ export function BulkHiddenChartCapturer({
         const nameClean = companyName.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
         const filename = `${nameClean}_Feedback_Report_${dateStr}.pdf`;
 
-        const url = await exportCompanyReportAsPDF(reportData, filename, true);
-        if (url && isMounted) {
-          if (previewWindow) {
-            previewWindow.location.href = url;
-          } else {
-            window.open(url, '_blank');
+        if (sendVia) {
+          // Real send: build the PDF as base64 and email it via Microsoft
+          // Graph as the signed-in user, instead of just opening a preview.
+          const pdfDataUri = await exportCompanyReportAsPDF(reportData, filename, false, true);
+          if (!pdfDataUri) throw new Error('PDF generation produced no output.');
+          const accessToken = await getGraphAccessToken();
+          await sendGraphMail({
+            accessToken,
+            to: sendVia.to,
+            cc: sendVia.cc,
+            subject: sendVia.subject,
+            htmlBody: sendVia.htmlBody,
+            attachment: {
+              name: filename,
+              base64Content: dataUrlToBase64(pdfDataUri),
+              contentType: 'application/pdf',
+            },
+          });
+          if (isMounted) onSendResult?.({ success: true });
+        } else {
+          const url = await exportCompanyReportAsPDF(reportData, filename, true);
+          if (url && isMounted) {
+            if (previewWindow) {
+              previewWindow.location.href = url;
+            } else {
+              window.open(url, '_blank');
+            }
           }
         }
       } catch (err) {
-        console.error('Error generating bulk PDF preview', err);
+        console.error('Error generating/sending report', err);
         if (previewWindow) {
           previewWindow.close();
+        }
+        if (sendVia && isMounted) {
+          onSendResult?.({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
         }
       } finally {
         if (isMounted) onComplete();
