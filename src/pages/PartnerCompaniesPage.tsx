@@ -38,6 +38,7 @@ import { getMaxRatingForResponses } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
 import { computeDocumentStatus } from '../utils/compliance';
 import { ImportResult } from '../utils/masterListImport';
+import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
 
 function typeBadgeClasses(type: PartnerCompanyType): string {
   switch (type) {
@@ -76,6 +77,7 @@ interface PartnerCompaniesPageProps {
   onUpdateCompany: (company: PartnerCompany) => void;
   onImportMasterList?: (file: File) => Promise<ImportResult>;
   isAdmin?: boolean;
+  simClock?: SimClock | null;
 }
 
 export function PartnerCompaniesPage({
@@ -86,6 +88,7 @@ export function PartnerCompaniesPage({
   onUpdateCompany,
   onImportMasterList,
   isAdmin,
+  simClock = null,
 }: PartnerCompaniesPageProps) {
   // Tabs: Active, Expired, Archived
   const [statusTab, setStatusTab] = useState<'Active' | 'Expired' | 'Archived'>('Active');
@@ -101,11 +104,12 @@ export function PartnerCompaniesPage({
   // Detail Modal State
   const [selectedCompany, setSelectedCompany] = useState<PartnerCompany | null>(null);
   
-  // Custom Renewal Date Picker State
+  // Custom Renewal Date Picker State - defaults to the effective "today"
+  // (simulated date when a simulation is active, otherwise real today).
   const [isRenewalPickerOpen, setIsRenewalPickerOpen] = useState(false);
-  const [renewalYear, setRenewalYear] = useState(2026);
-  const [renewalMonth, setRenewalMonth] = useState(6); // July (0-indexed)
-  const [renewalDay, setRenewalDay] = useState(19);
+  const [renewalYear, setRenewalYear] = useState(() => getEffectiveNow(simClock).getFullYear());
+  const [renewalMonth, setRenewalMonth] = useState(() => getEffectiveNow(simClock).getMonth());
+  const [renewalDay, setRenewalDay] = useState(() => getEffectiveNow(simClock).getDate());
   const [renewalStep, setRenewalStep] = useState<1 | 2 | 3 | 4>(1);
 
   // Expiry Reminder form states (inside detail modal)
@@ -120,8 +124,12 @@ export function PartnerCompaniesPage({
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<SurveyType>('Courier');
   const [newAffiliation, setNewAffiliation] = useState('');
-  const [newRegDate, setNewRegDate] = useState('2026-07-19');
-  const [newExpDate, setNewExpDate] = useState('2027-07-19');
+  const [newRegDate, setNewRegDate] = useState(() => getEffectiveTodayStr(simClock));
+  const [newExpDate, setNewExpDate] = useState(() => {
+    const d = getEffectiveNow(simClock);
+    d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().slice(0, 10);
+  });
   const [newThreshold, setNewThreshold] = useState<number>(1);
   const [newFreq, setNewFreq] = useState<'daily' | 'weekly' | 'none'>('weekly');
   
@@ -144,7 +152,7 @@ export function PartnerCompaniesPage({
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
 
   const adminPasscode = 'admin'; // Main passcode requested, mgenesis2026 as backup
-  const currentDateStr = '2026-07-19';
+  const currentDateStr = getEffectiveTodayStr(simClock);
 
   const monthsList = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -1132,7 +1140,7 @@ export function PartnerCompaniesPage({
                       {Object.keys(branch.documents ?? {}).length > 0 ? (
                         <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800">
                           {Object.entries(branch.documents ?? {}).map(([docName, doc]) => {
-                            const { status } = computeDocumentStatus(doc as ComplianceDocument);
+                            const { status } = computeDocumentStatus(doc as ComplianceDocument, getEffectiveNow(simClock));
                             return (
                               <span
                                 key={docName}

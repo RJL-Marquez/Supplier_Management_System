@@ -1,22 +1,55 @@
 import { useState, useMemo } from 'react';
-import { Database, Play, Trash2, CheckCircle2, Activity, Sparkles, Layers, RotateCcw } from 'lucide-react';
+import { Database, Play, Trash2, CheckCircle2, Activity, Sparkles, Layers, RotateCcw, Clock, History } from 'lucide-react';
 import { SurveyResponse } from '../types/survey';
+import { SimClock } from '../utils/simClock';
+import { useEffectiveNow } from '../hooks/useEffectiveNow';
 
 interface SimulatorPageProps {
   responses: SurveyResponse[];
   archivedResponses: SurveyResponse[];
   onSimulate: (mode: 'single' | 'bulk' | 'complete') => void;
   onResetSimulation: () => void;
+  simClock: SimClock | null;
+  onSetSimClock: (isoDateTime: string) => void;
+  onClearSimClock: () => void;
+}
+
+// Formats a Date as the value a <input type="datetime-local"> expects
+// (local time, no timezone/seconds), so the picker defaults to "right now"
+// in the user's own timezone rather than UTC.
+function toDateTimeLocalValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function SimulatorPage({
   responses,
   archivedResponses,
   onSimulate,
-  onResetSimulation
+  onResetSimulation,
+  simClock,
+  onSetSimClock,
+  onClearSimClock
 }: SimulatorPageProps) {
   const [selectedMode, setSelectedMode] = useState<'single' | 'bulk' | 'complete'>('bulk');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const effectiveNow = useEffectiveNow(simClock);
+  const [pickedDateTime, setPickedDateTime] = useState(() => toDateTimeLocalValue(effectiveNow));
+
+  const handleActivateClock = () => {
+    if (!pickedDateTime) return;
+    onSetSimClock(new Date(pickedDateTime).toISOString());
+    setSuccessMessage(`System clock simulated to ${new Date(pickedDateTime).toLocaleString()}.`);
+    setTimeout(() => setSuccessMessage(null), 4000);
+  };
+
+  const handleResumeRealTime = () => {
+    onClearSimClock();
+    setPickedDateTime(toDateTimeLocalValue(new Date()));
+    setSuccessMessage('Resumed real-time - the system clock is no longer simulated.');
+    setTimeout(() => setSuccessMessage(null), 4000);
+  };
 
   // Group responses by responseId to get the unique count of simulated submissions
   const stats = useMemo(() => {
@@ -83,6 +116,67 @@ export function SimulatorPage({
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
           Simulate stakeholder response feeds and evaluations using custom synthetic accounts to stress-test your analytics visualizations.
         </p>
+      </div>
+
+      {/* Simulated System Clock */}
+      <div className={`rounded-2xl border p-6 shadow-sm transition-colors ${
+        simClock
+          ? 'bg-amber-50/40 dark:bg-amber-950/10 border-amber-200 dark:border-amber-900/40'
+          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+      }`}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className={`p-2 rounded-lg ${simClock ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+              {simClock ? <History size={18} /> : <Clock size={18} />}
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white">Simulated System Clock</h3>
+                {simClock && (
+                  <span className="inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase bg-amber-500 text-white">
+                    Simulation Active
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {simClock
+                  ? 'Every date-sensitive feature (expirations, contract alerts, simulated responses, analytics trends) is reading this date instead of real time.'
+                  : 'Currently synced to real time. Set a date below to time-travel the whole system.'}
+              </p>
+              <p className={`text-lg font-black tabular-nums mt-2 ${simClock ? 'text-amber-700 dark:text-amber-400' : 'text-slate-800 dark:text-white'}`}>
+                {effectiveNow.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+            <input
+              type="datetime-local"
+              value={pickedDateTime}
+              onChange={(e) => setPickedDateTime(e.target.value)}
+              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
+            />
+            <button
+              type="button"
+              onClick={handleActivateClock}
+              disabled={!pickedDateTime}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:pointer-events-none px-4 py-2 text-xs font-bold text-white shadow-sm transition cursor-pointer"
+            >
+              <History size={13} />
+              {simClock ? 'Update Date' : 'Activate Simulation'}
+            </button>
+            {simClock && (
+              <button
+                type="button"
+                onClick={handleResumeRealTime}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 transition cursor-pointer"
+              >
+                <RotateCcw size={13} />
+                Resume Real-Time
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -166,7 +260,7 @@ export function SimulatorPage({
             {/* Simulate Button */}
             <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                Responses are generated with realistic scores (biased high, 80-90ish, with a small low score probability and low N/A chance).
+                Responses are generated with realistic scores (biased high, 80-90ish, with a small low score probability and low N/A chance). Dated {simClock ? 'to the simulated clock above' : 'to right now'}.
               </span>
               <button
                 onClick={handleSimulate}

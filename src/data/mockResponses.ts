@@ -260,7 +260,8 @@ export function generateLiveSubmission(): SurveyResponse[] {
 export function generateAllMockResponses(
   surveysToUse: CustomForm[],
   companiesToUse: PartnerCompany[],
-  usersToUse: { rType: string; dept: string; email: string }[]
+  usersToUse: { rType: string; dept: string; email: string }[],
+  targetDate: Date = new Date()
 ): SurveyResponse[] {
   const rows: SurveyResponse[] = [];
   let submissionCounter = 0;
@@ -272,7 +273,7 @@ export function generateAllMockResponses(
         submissionCounter++;
         const seedBase = submissionCounter * 123 + compIdx * 17 + userIdx * 31;
         const responseId = `RESP-MOCK-${submissionCounter}-${10000 + Math.floor(seededRandom(seedBase) * 90000)}`;
-        const submissionDate = new Date();
+        const submissionDate = new Date(targetDate);
         submissionDate.setDate(submissionDate.getDate() - Math.floor(seededRandom(seedBase + 5) * 180));
         const submissionDateStr = submissionDate.toISOString();
 
@@ -378,11 +379,12 @@ export function generateBulkMockResponses(
   count: number,
   surveysToUse: CustomForm[],
   companiesToUse: PartnerCompany[],
-  usersToUse: { rType: string; dept: string; email: string }[]
+  usersToUse: { rType: string; dept: string; email: string }[],
+  targetDate: Date = new Date()
 ): SurveyResponse[] {
   const rows: SurveyResponse[] = [];
   for (let i = 0; i < count; i++) {
-    rows.push(...generateSingleMockResponse(surveysToUse, companiesToUse, usersToUse));
+    rows.push(...generateSingleMockResponse(surveysToUse, companiesToUse, usersToUse, targetDate));
   }
   return rows;
 }
@@ -390,7 +392,8 @@ export function generateBulkMockResponses(
 export function generateSingleMockResponse(
   surveysToUse: CustomForm[],
   companiesToUse: PartnerCompany[],
-  usersToUse: { rType: string; dept: string; email: string }[]
+  usersToUse: { rType: string; dept: string; email: string }[],
+  targetDate: Date = new Date()
 ): SurveyResponse[] {
   if (surveysToUse.length === 0 || companiesToUse.length === 0 || usersToUse.length === 0) {
     return [];
@@ -410,7 +413,7 @@ export function generateSingleMockResponse(
   const company = matchingCompanies[Math.floor(Math.random() * matchingCompanies.length)];
 
   const responseId = `RESP-SINGLE-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-  const submissionDateStr = new Date().toISOString();
+  const submissionDateStr = targetDate.toISOString();
 
   const rows: SurveyResponse[] = [];
   const seedBase = Math.floor(Math.random() * 100000);

@@ -6,6 +6,7 @@ import { generateMockResponses, generateAllMockResponses, generateSingleMockResp
 import { importMasterListFromFile, ImportResult } from '../utils/masterListImport';
 import { seedPartnerCompanies } from '../data/partnerCompaniesSeed';
 import { importArchivedResponsesFromFile, ArchiveImportResult } from '../utils/archiveResponseTransfer';
+import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
 
 // Bumped from _v6: the baseline registry changed from a 41-company hand-typed
 // demo list to the full Master List snapshot (partnerCompaniesSeed.ts, ~1129
@@ -219,6 +220,7 @@ interface CompressedSubmission {
   aat?: string; // archivedAt
   asi?: string; // archivedBySurveyId
   ast?: string; // archivedBySurveyTitle
+  si?: string; // seriesId
   a: { // answers
     q: string; // questionId
     n: number; // questionNumber
@@ -260,7 +262,8 @@ function compressResponses(responses: SurveyResponse[]): CompressedSubmission[] 
       if (resp.archivedAt !== undefined) comp.aat = resp.archivedAt;
       if (resp.archivedBySurveyId !== undefined) comp.asi = resp.archivedBySurveyId;
       if (resp.archivedBySurveyTitle !== undefined) comp.ast = resp.archivedBySurveyTitle;
-      
+      if (resp.seriesId !== undefined) comp.si = resp.seriesId;
+
       map.set(resp.responseId, comp);
     }
     comp.a.push({
@@ -308,7 +311,8 @@ function decompressResponses(compressed: any[]): SurveyResponse[] {
       if (item.aat !== undefined) resp.archivedAt = item.aat;
       if (item.asi !== undefined) resp.archivedBySurveyId = item.asi;
       if (item.ast !== undefined) resp.archivedBySurveyTitle = item.ast;
-      
+      if (item.si !== undefined) resp.seriesId = item.si;
+
       responses.push(resp);
     }
   }
@@ -316,7 +320,7 @@ function decompressResponses(compressed: any[]): SurveyResponse[] {
   return responses;
 }
 
-export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEmail?: string | null, isAdmin?: boolean) {
+export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEmail?: string | null, isAdmin?: boolean, simClock: SimClock | null = null) {
   const [responses, setResponses] = useState<SurveyResponse[]>([]);
   const [surveys, setSurveys] = useState<CustomForm[]>([]);
   const [partnerCompanies, setPartnerCompanies] = useState<PartnerCompany[]>([]);
@@ -1355,8 +1359,10 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     reminderFirstThresholdMonths?: number,
     reminderFrequency?: 'daily' | 'weekly' | 'none'
   ) => {
-    const todayStr = '2026-07-19';
-    const nextYearStr = '2027-07-19';
+    const todayStr = getEffectiveTodayStr(simClock);
+    const nextYear = getEffectiveNow(simClock);
+    nextYear.setFullYear(nextYear.getFullYear() + 1);
+    const nextYearStr = nextYear.toISOString().slice(0, 10);
     const newCompany: PartnerCompany = normalizePartnerCompany({
       id: `pc-${Date.now()}`,
       name: name.trim(),
@@ -1443,8 +1449,9 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
   // - complete: replaces all responses with a fully-covered dataset where every
   //   non-admin employee has evaluated every registered company.
   const addEvaluations = (mode: 'single' | 'bulk' | 'complete') => {
+    const targetDate = getEffectiveNow(simClock);
     if (mode === 'complete') {
-      const fullRows = generateAllMockResponses(surveys, partnerCompanies, NON_ADMIN_USERS);
+      const fullRows = generateAllMockResponses(surveys, partnerCompanies, NON_ADMIN_USERS, targetDate);
       setResponses(fullRows);
       safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(fullRows)));
 
@@ -1458,8 +1465,8 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
 
     const newRows =
       mode === 'bulk'
-        ? generateBulkMockResponses(BULK_BATCH_SIZE, surveys, partnerCompanies, NON_ADMIN_USERS)
-        : generateSingleMockResponse(surveys, partnerCompanies, NON_ADMIN_USERS);
+        ? generateBulkMockResponses(BULK_BATCH_SIZE, surveys, partnerCompanies, NON_ADMIN_USERS, targetDate)
+        : generateSingleMockResponse(surveys, partnerCompanies, NON_ADMIN_USERS, targetDate);
 
     if (newRows.length === 0) return;
 
@@ -1664,8 +1671,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
 
   // Dynamic contract warnings and expirations for admin notifications
   const contractNotifications = useMemo<ResponseNotification[]>(() => {
-    const todayStr = '2026-07-19';
-    const currentDate = new Date(todayStr);
+    const currentDate = getEffectiveNow(simClock);
     const list: ResponseNotification[] = [];
     
     partnerCompanies.forEach((c) => {
@@ -1709,7 +1715,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     });
     
     return list;
-  }, [partnerCompanies]);
+  }, [partnerCompanies, simClock]);
 
   const filteredChatNotifications = useMemo(() => {
     return chatNotifications.filter((notif: any) => {

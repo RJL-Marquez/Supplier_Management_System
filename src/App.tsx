@@ -28,6 +28,8 @@ import { useSurveyData } from './hooks/useSurveyData';
 import { applyFilters, initialFilters } from './utils/analytics';
 import { FilterState, SurveyType, CustomForm, SurveyResponse } from './types/survey';
 import { PageModuleKey, getDefaultPermissions, hasPageAccess, getDepartmentDefaultPermissions } from './utils/rbac';
+import { SimClock, loadSimClock, saveSimClock } from './utils/simClock';
+import { SimulatedClockIndicator } from './components/SimulatedClockIndicator';
 
 // Shared by userAccessibleResponses/userAccessibleAllTimeResponses below - the
 // same role/department/survey-type scoping rule applied to either the
@@ -238,6 +240,15 @@ export default function App() {
   const [dataScope, setDataScope] = useState<'current' | 'all-time' | 'custom'>('current');
   const [selectedSeriesIds, setSelectedSeriesIds] = useState<string[]>([]);
 
+  // Simulated system clock (Database Simulator "time travel") - persisted so
+  // it survives reloads like an actual changed system clock would. null
+  // means "real time," everything else reads through utils/simClock.ts.
+  const [simClock, setSimClockState] = useState<SimClock | null>(() => loadSimClock());
+  const setSimClock = (clock: SimClock | null) => {
+    setSimClockState(clock);
+    saveSimClock(clock);
+  };
+
   // Accounts Management State
   const [accounts, setAccounts] = useState<AccountProfile[]>(() => {
     const saved = localStorage.getItem('survey_accounts_v1');
@@ -350,7 +361,7 @@ export default function App() {
     clearResponses,
     addEvaluations,
     resetSimulation,
-  } = useSurveyData(accounts, account, isAdmin);
+  } = useSurveyData(accounts, account, isAdmin, simClock);
 
   const [activePage, setActivePage] = useState<PageKey>('dashboard');
   const [chatUnread, setChatUnread] = useState(0);
@@ -641,6 +652,7 @@ export default function App() {
         // survey-scoped view via userAccessiblePartnerCompanies.
         partnerCompanies={partnerCompanies}
         responses={userAccessibleResponses}
+        simClock={simClock}
         onAddCompany={addPartnerCompany}
         onRemoveCompany={removePartnerCompany}
         onUpdateCompany={updatePartnerCompany}
@@ -674,6 +686,7 @@ export default function App() {
         responses={userAccessibleResponses}
         partnerCompanies={userAccessiblePartnerCompanies}
         userEmail={account || ''}
+        simClock={simClock}
         onUpdateSurvey={updateSurvey}
         onUpdateSurveysBulk={updateSurveysBulk}
         onArchiveResponses={archiveResponsesForSurveys}
@@ -824,6 +837,9 @@ export default function App() {
         archivedResponses={archivedResponses}
         onSimulate={addEvaluations}
         onResetSimulation={resetSimulation}
+        simClock={simClock}
+        onSetSimClock={(isoDateTime) => setSimClock({ anchorIso: isoDateTime, activatedAtMs: Date.now() })}
+        onClearSimClock={() => setSimClock(null)}
       />
     ),
     'live-chat': profile && (
@@ -903,6 +919,9 @@ export default function App() {
         renderDropdown={renderSidebarDropdown}
         action={
           <div className="flex items-center divide-x divide-blue-400/25">
+            <div className="pr-3 hidden md:block">
+              <SimulatedClockIndicator simClock={simClock} />
+            </div>
             {isAdmin ? (
               <div className="pr-3">
                 <NotificationBell

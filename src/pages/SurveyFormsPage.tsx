@@ -4,6 +4,7 @@ import { CustomForm, SurveyType, PartnerCompany, SurveyAccessRole } from '../typ
 import { StateMessage } from '../components/StateMessage';
 import { CompletionStatusBar } from '../components/CompletionStatusBar';
 import { getSurveyEvaluationCompanies } from '../utils/analytics';
+import { SimClock, getEffectiveTodayStr } from '../utils/simClock';
 
 interface SurveyFormsPageProps {
   surveys: CustomForm[];
@@ -17,6 +18,7 @@ interface SurveyFormsPageProps {
   onUpdateSurveysBulk?: (updatedSurveysList: CustomForm[]) => void;
   onArchiveResponses?: (surveyIds: string[], seriesLabel?: string) => void;
   isAdmin?: boolean;
+  simClock?: SimClock | null;
 }
 
 const surveyTypeOptions: Array<'All' | SurveyType> = ['All', 'Courier', 'Supplier', 'Subcontractor'];
@@ -87,7 +89,8 @@ export function SurveyFormsPage({
   onUpdateSurvey,
   onUpdateSurveysBulk,
   onArchiveResponses,
-  isAdmin
+  isAdmin,
+  simClock = null
 }: SurveyFormsPageProps) {
   const [surveyType, setSurveyType] = useState<'All' | SurveyType>('All');
   const [search, setSearch] = useState('');
@@ -1284,15 +1287,12 @@ export function SurveyFormsPage({
 
           {/* Modify Companies to Evaluate - full-screen picker (single-survey modify only) */}
           {isCompanyPickerOpen && (() => {
-            const currentDateStr = '2026-07-19';
             const targetSurvey = surveys.find((s) => selectedSurveyIds.has(s.id));
+            // evaluationCompanyIds is intentionally omitted here - this picker
+            // must show the full eligible pool to choose from, not just
+            // whatever was already selected in a prior customization.
             const pickerCompanies = targetSurvey
-              ? partnerCompanies.filter((c) => {
-                  if (c.type !== targetSurvey.surveyType) return false;
-                  if (c.isArchived) return false;
-                  if (c.expirationDate && currentDateStr >= c.expirationDate) return false;
-                  return true;
-                })
+              ? getSurveyEvaluationCompanies({ surveyType: targetSurvey.surveyType, evaluationCompanyIds: undefined }, partnerCompanies, getEffectiveTodayStr(simClock))
               : [];
             const allSelected = pickerCompanies.length > 0 && pickerCompanies.every((c) => evaluationCompanyIds.includes(c.id));
 
