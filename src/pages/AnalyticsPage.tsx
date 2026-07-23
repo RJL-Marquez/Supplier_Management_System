@@ -7,6 +7,7 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
+  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -768,7 +769,10 @@ export function AnalyticsPage({
       <div className="grid gap-5 xl:grid-cols-2">
         <ChartCard
           title={performanceMode === 'highest' ? `Top ${limit} Best Performing Companies` : `Top ${limit} Least Rated Companies`}
-          subtitle={`Based on ${activeSurveyTypes.map(t => t + 's').join(' & ')} ratings`}
+          subtitle={
+            `Based on ${activeSurveyTypes.map(t => t + 's').join(' & ')} ratings` +
+            (topCompaniesAxisDomain[0] > 0 ? ` — scale starts at ${topCompaniesAxisDomain[0]} to highlight differences among close scores` : '')
+          }
           action={
             <div className="flex items-center gap-2 text-xs">
               <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
@@ -1088,11 +1092,12 @@ export function AnalyticsPage({
               <LineChart data={trend}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="key" />
-                <YAxis yAxisId="left" domain={[0, 100]} />
-                <YAxis yAxisId="right" orientation="right" allowDecimals={false} />
+                <YAxis yAxisId="left" domain={[0, 100]} tick={{ fill: '#2563eb' }} />
+                <YAxis yAxisId="right" orientation="right" allowDecimals={false} tick={{ fill: '#10b981' }} />
                 <Tooltip />
-                <Line yAxisId="left" type="monotone" dataKey="average" stroke="#2563eb" strokeWidth={3} dot={false} />
-                <Line yAxisId="right" type="monotone" dataKey="responses" stroke="#10b981" strokeWidth={2} dot={false} />
+                <Legend />
+                <Line yAxisId="left" type="monotone" dataKey="average" name="Average score (left axis)" stroke="#2563eb" strokeWidth={3} dot={false} />
+                <Line yAxisId="right" type="monotone" dataKey="responses" name="Responses (right axis)" stroke="#10b981" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           )}

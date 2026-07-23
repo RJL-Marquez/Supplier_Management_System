@@ -50,8 +50,11 @@ export function CompanyLeaderboardPanel({ responses }: CompanyLeaderboardPanelPr
                   {composite.band.label}
                 </span>
                 {composite.stdDev >= 20 ? (
-                  <span className="badge bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-                    Inconsistent (±{composite.stdDev})
+                  <span
+                    className="badge bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                    title="Spread between this company's highest- and lowest-scoring question categories (e.g. quality vs. pricing) in this period — not a measure of reliability over time."
+                  >
+                    Uneven across categories (±{composite.stdDev})
                   </span>
                 ) : null}
                 {outlier?.isLowOutlier ? (
