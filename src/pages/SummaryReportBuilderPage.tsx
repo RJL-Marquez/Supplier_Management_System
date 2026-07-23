@@ -26,7 +26,6 @@ import {
   Pie,
   Cell,
   Tooltip,
-  Legend
 } from 'recharts';
 import { PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
 import {
@@ -136,6 +135,11 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
       formattedValue: chartMetric === 'responses' ? `${row.responses} responses` : `${formatNumber(row.average)}%`,
     })).filter(row => row.value > 0);
   }, [surveyPerformance, chartMetric]);
+
+  // Donut hole readout - the static PDF capture can't rely on hover
+  // tooltips, so the headline number needs to live directly on the chart.
+  const chartCenterValue = chartMetric === 'responses' ? summary.totalResponses : `${formatNumber(summary.averageRating)}%`;
+  const chartCenterLabel = chartMetric === 'responses' ? 'Total Respondents' : 'Avg Rating (All Types)';
 
   // Logo fetch helper for pdf export
   const fetchLogoDataUrl = async (): Promise<string | null> => {
@@ -822,46 +826,78 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
                 </h4>
                 
                 {/* Captured chart wrapper */}
-                <div ref={chartWrapperRef} className="w-full max-w-[400px] h-[220px] flex items-center justify-center bg-white dark:bg-slate-950">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={chartData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {chartData.map((entry) => (
-                          <Cell
-                            key={`cell-${entry.name}`}
-                            fill={COLORS[entry.name as SurveyType] || '#CBD5E1'}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value: any, name: any, props: any) => [
-                          props.payload.formattedValue,
-                          name,
-                        ]}
-                        contentStyle={{
-                          background: '#1e293b',
-                          border: 'none',
-                          borderRadius: '8px',
-                          color: '#f8fafc',
-                          fontSize: '11px',
-                        }}
-                      />
-                      <Legend
-                        verticalAlign="bottom"
-                        iconType="circle"
-                        iconSize={8}
-                        wrapperStyle={{ fontSize: '10px' }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div ref={chartWrapperRef} className="w-full max-w-[400px] flex flex-col items-center bg-white dark:bg-slate-950">
+                  <div className="relative w-full h-[190px] flex items-center justify-center">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={chartData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={55}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                          // Renders immediately instead of animating in - guarantees the
+                          // chart is fully drawn the instant captureChartImage/html2canvas
+                          // grabs it for the PDF export, rather than racing an in-progress entrance animation.
+                          isAnimationActive={false}
+                        >
+                          {chartData.map((entry) => (
+                            <Cell
+                              key={`cell-${entry.name}`}
+                              fill={COLORS[entry.name as SurveyType] || '#CBD5E1'}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: any, name: any, props: any) => [
+                            props.payload.formattedValue,
+                            name,
+                          ]}
+                          contentStyle={{
+                            background: '#1e293b',
+                            border: 'none',
+                            borderRadius: '8px',
+                            color: '#f8fafc',
+                            fontSize: '11px',
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    {/* Donut-hole readout: the headline number, visible without hovering
+                        over a slice - essential since the static PDF capture can't show tooltips. */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-2xl font-black text-[#0063a9] dark:text-blue-400 leading-none">
+                        {chartCenterValue}
+                      </span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1 text-center px-2 leading-tight">
+                        {chartCenterLabel}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Per-type breakdown - pairs each slice's color with its name and
+                      exact number, since recharts' Pie label render function silently
+                      drops every sector in this app's recharts version. */}
+                  <div className="w-full grid grid-cols-3 gap-2 mt-1">
+                    {chartData.map((entry) => {
+                      const color = COLORS[entry.name as SurveyType] || '#CBD5E1';
+                      return (
+                        <div
+                          key={entry.name}
+                          className="flex flex-col items-center gap-1 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 px-2 py-2"
+                        >
+                          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                            {entry.name}
+                          </span>
+                          <span className="text-sm font-black" style={{ color }}>
+                            {chartMetric === 'responses' ? entry.value : `${formatNumber(entry.value)}%`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}

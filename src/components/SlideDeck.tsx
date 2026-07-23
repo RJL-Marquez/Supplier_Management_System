@@ -3,11 +3,14 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft,
   Calendar,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
+  FileText,
   Maximize2,
   Minimize2,
+  Presentation,
   Sparkles,
   Trophy,
   TrendingDown,
@@ -36,6 +39,7 @@ import {
 } from 'recharts';
 import { Slide } from '../utils/presentation';
 import { exportSlidesAsPDF } from '../utils/presentationPdf';
+import { exportSlidesAsPPTX } from '../utils/presentationPptx';
 import { SurveyResponse, SurveyType } from '../types/survey';
 import { surveyTypeDisplayLabel } from '../data/questionWeights';
 import { getScoreAxisDomain } from '../utils/analytics';
@@ -1114,14 +1118,16 @@ function SlideContent({ slide, responses = [] }: { slide: Slide; responses?: Sur
 }
 
 /* ------------------------------------------------------------------ */
-/* Deck shell: thumbnails, controls, fullscreen, PDF export             */
+/* Deck shell: thumbnails, controls, fullscreen, PDF/PPTX export        */
 /* ------------------------------------------------------------------ */
 
 export function SlideDeck({ slides, title, onExit, responses = [] }: SlideDeckProps) {
   const [index, setIndex] = useState(0);
   const [direction, setDirection] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  const [isExporting, setIsExporting] = useState<'pdf' | 'pptx' | null>(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
@@ -1148,6 +1154,17 @@ export function SlideDeck({ slides, title, onExit, responses = [] }: SlideDeckPr
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [exportMenuOpen]);
 
   // Bounds the whole deck card to the visible viewport (minus whatever sits
   // above it) so the toolbar, stage, and thumbnail rail all stay reachable
@@ -1207,12 +1224,14 @@ export function SlideDeck({ slides, title, onExit, responses = [] }: SlideDeckPr
     }
   };
 
-  const handleExportPDF = async () => {
-    setIsExporting(true);
+  const handleExport = async (format: 'pdf' | 'pptx') => {
+    setExportMenuOpen(false);
+    setIsExporting(format);
     try {
-      exportSlidesAsPDF(slides, title);
+      if (format === 'pdf') exportSlidesAsPDF(slides, title);
+      else exportSlidesAsPPTX(slides, title);
     } finally {
-      setIsExporting(false);
+      setIsExporting(null);
     }
   };
 
@@ -1226,10 +1245,36 @@ export function SlideDeck({ slides, title, onExit, responses = [] }: SlideDeckPr
           <span>Back to setup</span>
         </button>
         <div className="flex items-center gap-2">
-          <button onClick={handleExportPDF} type="button" className="secondary-button" disabled={isExporting}>
-            <Download size={16} />
-            <span>{isExporting ? 'Exporting…' : 'Export PDF'}</span>
-          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setExportMenuOpen((v) => !v)}
+              type="button"
+              className="secondary-button"
+              disabled={isExporting !== null}
+            >
+              <Download size={16} />
+              <span>{isExporting ? 'Exporting…' : 'Export As'}</span>
+              <ChevronDown size={14} />
+            </button>
+            {exportMenuOpen ? (
+              <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                <button
+                  type="button"
+                  onClick={() => handleExport('pdf')}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  <FileText size={14} /> PDF Document
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport('pptx')}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  <Presentation size={14} /> PowerPoint (PPTX)
+                </button>
+              </div>
+            ) : null}
+          </div>
           <button onClick={toggleFullscreen} type="button" className="secondary-button">
             {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             <span>{isFullscreen ? 'Exit fullscreen' : 'Present fullscreen'}</span>

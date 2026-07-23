@@ -4,6 +4,7 @@ import { Slide } from './presentation';
 const PAGE_W = 841.89;
 const PAGE_H = 595.28;
 const MARGIN = 48;
+const CONTENT_W = PAGE_W - MARGIN * 2;
 const BRAND = '#0063a9';
 const INK = '#172033';
 
@@ -114,8 +115,14 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
     }
     case 'agenda': {
       drawHeader(doc, "What's inside", 'Contents');
-      let y = 150;
+      const top = 150;
+      const bottom = PAGE_H - MARGIN;
+      // Grows to fill the available height with a short agenda (e.g. only
+      // 1-2 categories picked) instead of always stepping a fixed 42pt and
+      // leaving the rest of the slide blank.
+      const rowH = Math.min(64, (bottom - top) / slide.items.length);
       slide.items.forEach((item, i) => {
+        const y = top + i * rowH;
         setFill(doc, BRAND);
         doc.circle(MARGIN + 8, y - 5, 9, 'F');
         doc.setTextColor(255, 255, 255);
@@ -129,8 +136,7 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
         setText(doc, '#64748b');
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
-        doc.text(item.description, MARGIN + 28, y + 13, { maxWidth: PAGE_W - MARGIN * 2 - 28 });
-        y += 42;
+        doc.text(item.description, MARGIN + 28, y + 13, { maxWidth: CONTENT_W - 28 });
       });
       break;
     }
@@ -174,27 +180,39 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
     }
     case 'comparison': {
       drawHeader(doc, 'Category', 'Survey Type Comparison');
-      let y = 150;
       const maxAvg = pdfMaxRating;
-      slide.data.forEach((row) => {
+      const top = 150;
+      const bottom = PAGE_H - MARGIN;
+      // Rows share the whole remaining slide height (capped so 1-2 rows
+      // don't stretch into oversized bars), instead of a fixed 44pt step
+      // that leaves the bottom of the slide empty whenever there are fewer
+      // than ~9 survey types.
+      const rowH = Math.min(70, (bottom - top) / slide.data.length);
+      slide.data.forEach((row, i) => {
+        const y = top + i * rowH + rowH / 2;
         setText(doc, INK);
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
-        doc.text(row.surveyType, MARGIN, y);
+        doc.text(row.surveyType, MARGIN, y - 6);
         setText(doc, '#64748b');
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
-        doc.text(`${row.average.toFixed(2)} / ${pdfMaxRating.toFixed(2)}  ·  ${row.responses} responses`, MARGIN + 150, y);
-        bar(doc, MARGIN, y + 8, 500, 10, row.average / maxAvg, BRAND);
-        y += 44;
+        doc.text(`${row.average.toFixed(2)} / ${pdfMaxRating.toFixed(2)}  ·  ${row.responses} responses`, MARGIN + 150, y - 6);
+        bar(doc, MARGIN, y + 2, CONTENT_W, 12, row.average / maxAvg, BRAND);
       });
       break;
     }
     case 'sections': {
       drawHeader(doc, 'Category', 'Category Breakdown');
-      let y = 150;
+      const top = 150;
+      const bottom = PAGE_H - MARGIN;
       const maxAvg = Math.max(4, ...slide.data.map((d) => d.average));
+      // Row height fills whatever vertical space is actually available
+      // instead of a fixed 34pt step, so a handful of categories don't
+      // leave the bottom half of the slide empty.
+      const rowH = Math.min(50, (bottom - top) / slide.data.length);
       slide.data.forEach((row, i) => {
+        const y = top + i * rowH + rowH * 0.6;
         setText(doc, INK);
         doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
@@ -202,53 +220,65 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
         setText(doc, '#64748b');
         doc.setFont('helvetica', 'normal');
         doc.text(row.average.toFixed(2), PAGE_W - MARGIN - 30, y);
-        bar(doc, MARGIN, y + 6, PAGE_W - MARGIN * 2 - 60, 8, row.average / maxAvg, i === 0 ? '#10b981' : '#2563eb');
-        y += 34;
+        bar(doc, MARGIN, y + 6, CONTENT_W - 60, 8, row.average / maxAvg, i === 0 ? '#10b981' : '#2563eb');
       });
       break;
     }
     case 'leaderboard': {
       drawHeader(doc, 'Category', 'Company Leaderboard');
-      const colW = (PAGE_W - MARGIN * 2 - 40) / 3;
+      const colGap = 20;
+      const colW = (CONTENT_W - colGap * (slide.groups.length - 1)) / slide.groups.length;
+      const top = 165;
+      const bottom = PAGE_H - MARGIN;
+      const maxRows = Math.max(1, ...slide.groups.map((g) => g.rows.length));
+      // One shared row height across every column, sized to the group with
+      // the most rows, so all columns' lists fill the same vertical span
+      // down to the bottom margin rather than stopping partway with a fixed
+      // 18pt step (dead space below on any group with fewer companies).
+      const rowH = Math.min(30, (bottom - top) / maxRows);
       let x = MARGIN;
       slide.groups.forEach((group) => {
         setText(doc, INK);
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
         doc.text(group.surveyType, x, 145);
-        let y = 165;
-        group.rows.forEach((row) => {
+        group.rows.forEach((row, i) => {
+          const y = top + i * rowH;
           setText(doc, '#64748b');
           doc.setFontSize(8.5);
           doc.setFont('helvetica', 'normal');
-          doc.text(`${row.rank}. ${row.company}`, x, y, { maxWidth: colW - 10 });
+          doc.text(`${row.rank}. ${row.company}`, x, y, { maxWidth: colW - 30 });
           setText(doc, row.hex);
           doc.setFont('helvetica', 'bold');
           doc.text(row.score.toFixed(0), x + colW - 24, y);
-          y += 18;
         });
-        x += colW + 20;
+        x += colW + colGap;
       });
       break;
     }
     case 'trends': {
       drawHeader(doc, 'Category', 'Trends Over Time');
-      let y = 160;
+      const top = 160;
+      const bottom = PAGE_H - MARGIN;
       const maxAvg = 4;
-      slide.data.forEach((row) => {
+      const rowH = Math.min(36, (bottom - top) / slide.data.length);
+      const barX = MARGIN + 220;
+      slide.data.forEach((row, i) => {
+        const y = top + i * rowH;
         setText(doc, INK);
         doc.setFontSize(9);
         doc.text(row.month, MARGIN, y);
         setText(doc, '#64748b');
         doc.text(`${row.average.toFixed(2)} avg · ${row.responses} resp.`, MARGIN + 90, y);
-        bar(doc, MARGIN + 220, y - 7, PAGE_W - MARGIN * 2 - 220, 8, row.average / maxAvg, '#10b981');
-        y += 26;
+        bar(doc, barX, y - 7, PAGE_W - MARGIN - barX, 8, row.average / maxAvg, '#10b981');
       });
       break;
     }
     case 'questions': {
       drawHeader(doc, 'Category', 'Top & Bottom Questions');
-      const colW = (PAGE_W - MARGIN * 2 - 30) / 2;
+      const colW = (CONTENT_W - 30) / 2;
+      const top = 165;
+      const bottom = PAGE_H - MARGIN;
       [
         { label: 'Highest scoring', color: '#10b981', items: slide.top, x: MARGIN },
         { label: 'Lowest scoring', color: '#ef4444', items: slide.bottom, x: MARGIN + colW + 30 },
@@ -257,8 +287,9 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
         doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
         doc.text(col.label.toUpperCase(), col.x, 145);
-        let y = 165;
+        const rowH = col.items.length > 0 ? Math.min(46, (bottom - top) / col.items.length) : 0;
         col.items.forEach((q, i) => {
+          const y = top + i * rowH;
           setText(doc, INK);
           doc.setFontSize(8);
           doc.setFont('helvetica', 'normal');
@@ -266,7 +297,6 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
           setText(doc, col.color);
           doc.setFont('helvetica', 'bold');
           doc.text(q.average.toFixed(2), col.x, y + 12);
-          y += 34;
         });
       });
       break;
@@ -289,17 +319,26 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
       doc.setFont('helvetica', 'bold');
       doc.text(`${slide.score.toFixed(1)} / 100`, MARGIN, 225);
 
-      let y = 260;
-      slide.radar.forEach((section) => {
+      const radarTop = 260;
+      const radarBottom = slide.atRisk ? PAGE_H - MARGIN - 40 : PAGE_H - MARGIN;
+      const rowH = slide.radar.length > 0 ? Math.min(32, (radarBottom - radarTop) / slide.radar.length) : 0;
+      // Bar spans from just after the category label to just before the
+      // right-aligned peer figure, instead of a fixed 300pt width that left
+      // roughly a third of the slide's width empty on the right.
+      const peerLabelW = 70;
+      const barX = MARGIN + 150;
+      const barW = PAGE_W - MARGIN - peerLabelW - barX;
+      slide.radar.forEach((section, i) => {
+        const y = radarTop + i * rowH;
         setText(doc, INK);
         doc.setFontSize(8.5);
         doc.setFont('helvetica', 'normal');
         doc.text(section.section, MARGIN, y, { maxWidth: 140 });
-        bar(doc, MARGIN + 150, y - 8, 300, 8, section.value / 100, slide.hex);
+        bar(doc, barX, y - 8, barW, 8, section.value / 100, slide.hex);
         setText(doc, '#94a3b8');
-        doc.text(`peer ${section.peer.toFixed(0)}`, MARGIN + 460, y);
-        y += 24;
+        doc.text(`peer ${section.peer.toFixed(0)}`, PAGE_W - MARGIN, y, { align: 'right' });
       });
+      const y = radarTop + slide.radar.length * rowH;
 
       if (slide.atRisk) {
         setText(doc, '#b45309');
