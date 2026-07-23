@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Download, FileBarChart, FileSpreadsheet, FileText, Table2, Handshake, Search } from 'lucide-react';
+import { ChevronDown, ChevronRight, Database, Download, FileBarChart, FileSpreadsheet, FileText, Table2, Handshake, Search } from 'lucide-react';
 import { PartnerCompany, SurveyResponse } from '../types/survey';
 import { formatNumber, getCompanyPerformance, getKpiSummary, questionPerformance, averageBySurveyType } from '../utils/analytics';
 import { ExportTable, exportTablesAsCSV, exportTablesAsExcel, exportTablesAsPDF } from '../utils/exporters';
@@ -7,6 +7,7 @@ import { CompanyReportBuilderPage } from './CompanyReportBuilderPage';
 import { QuestionReportBuilderPage } from './QuestionReportBuilderPage';
 import { SummaryReportBuilderPage } from './SummaryReportBuilderPage';
 import { ExecutiveSummaryReportBuilderPage } from './ExecutiveSummaryReportBuilderPage';
+import { RawDataExportPage } from './RawDataExportPage';
 
 interface ReportsPageProps {
   responses: SurveyResponse[];
@@ -27,6 +28,7 @@ export function ReportsPage({ responses, partnerCompanies = [], canExport = fals
   const [showCompanyBuilder, setShowCompanyBuilder] = useState(false);
   const [showQuestionBuilder, setShowQuestionBuilder] = useState(false);
   const [showExecutiveBuilder, setShowExecutiveBuilder] = useState(false);
+  const [showRawDataExport, setShowRawDataExport] = useState(false);
   const summary = getKpiSummary(responses);
   const allQuestionRows = questionPerformance(responses);
   const questionRows = allQuestionRows.slice(0, 5);
@@ -136,9 +138,19 @@ export function ReportsPage({ responses, partnerCompanies = [], canExport = fals
     );
   }
 
+  if (showRawDataExport) {
+    return (
+      <RawDataExportPage
+        responses={responses}
+        canExport={canExport}
+        onBack={() => setShowRawDataExport(false)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-5">
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <ReportCard
           title="Summary Report"
           icon={FileBarChart}
@@ -159,6 +171,13 @@ export function ReportsPage({ responses, partnerCompanies = [], canExport = fals
           canExport={canExport}
           onExport={(format) => handleCardExport(format, 'question')}
           onOpenBuilder={() => setShowQuestionBuilder(true)}
+        />
+        <ReportCard
+          title="Raw Data Export"
+          icon={Database}
+          canExport={canExport}
+          onExport={() => {}}
+          onOpenBuilder={() => setShowRawDataExport(true)}
         />
       </section>
 
