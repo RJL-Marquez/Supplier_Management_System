@@ -1452,8 +1452,14 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     const targetDate = getEffectiveNow(simClock);
     if (mode === 'complete') {
       const fullRows = generateAllMockResponses(surveys, partnerCompanies, NON_ADMIN_USERS, targetDate);
-      setResponses(fullRows);
-      safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(fullRows)));
+      // Only the active period gets replaced - previously archived rows
+      // (e.g. an archived prior year) must survive re-simulating a fresh
+      // "complete" dataset, otherwise archiving followed by re-simulating
+      // silently erases that archived history.
+      const preservedArchived = responses.filter((r) => r.archived);
+      const updated = [...preservedArchived, ...fullRows];
+      setResponses(updated);
+      safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updated)));
 
       const groupedNotifs = groupResponsesToNotifications(fullRows);
       setNotifications(groupedNotifs.slice(0, NOTIFICATION_HISTORY_LIMIT));

@@ -284,19 +284,25 @@ export function AnalyticsPage({
     return filters.surveyType && filters.surveyType.length === 1 ? filters.surveyType[0] : 'All';
   }, [filters.surveyType]);
 
+  // Companies with at least one submitted evaluation - "highest/lowest rated"
+  // and "top performer" standings should only ever consider partners that
+  // have actually been evaluated, not registry entries sitting at a default
+  // 0/100 because nobody has scored them yet.
+  const evaluatedCompanyAverages = useMemo(() => companyAverages.filter((c) => c.count > 0), [companyAverages]);
+
   const categoryCompanyAverages = useMemo(() => {
-    return companyAverages.filter((c) => {
+    return evaluatedCompanyAverages.filter((c) => {
       if (activeCategory === 'All') return true;
       return c.type === activeCategory;
     });
-  }, [companyAverages, activeCategory]);
+  }, [evaluatedCompanyAverages, activeCategory]);
 
   const highestCompany = useMemo(() => {
-    return categoryCompanyAverages[0] || { name: 'No Registered Partners', average: 0, scorePercentage: 0, count: 0, type: 'N/A' };
+    return categoryCompanyAverages[0] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, count: 0, type: 'N/A' };
   }, [categoryCompanyAverages]);
 
   const lowestCompany = useMemo(() => {
-    return categoryCompanyAverages[categoryCompanyAverages.length - 1] || { name: 'No Registered Partners', average: 0, scorePercentage: 0, count: 0, type: 'N/A' };
+    return categoryCompanyAverages[categoryCompanyAverages.length - 1] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, count: 0, type: 'N/A' };
   }, [categoryCompanyAverages]);
 
   const highestLabel = activeCategory === 'All' 
@@ -319,18 +325,18 @@ export function AnalyticsPage({
   }, [activeCategory]);
 
   const topCompany = useMemo(() => {
-    return companyAverages[0] || { name: 'No Registered Partners', average: 0, scorePercentage: 0, type: 'N/A', count: 0 };
-  }, [companyAverages]);
+    return evaluatedCompanyAverages[0] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, type: 'N/A', count: 0 };
+  }, [evaluatedCompanyAverages]);
 
-  const topContractor = useMemo(() => companyAverages.find((c) => c.type === 'Courier'), [companyAverages]);
-  const topSupplier = useMemo(() => companyAverages.find((c) => c.type === 'Supplier'), [companyAverages]);
-  const topSubcontractor = useMemo(() => companyAverages.find((c) => c.type === 'Subcontractor'), [companyAverages]);
+  const topContractor = useMemo(() => evaluatedCompanyAverages.find((c) => c.type === 'Courier'), [evaluatedCompanyAverages]);
+  const topSupplier = useMemo(() => evaluatedCompanyAverages.find((c) => c.type === 'Supplier'), [evaluatedCompanyAverages]);
+  const topSubcontractor = useMemo(() => evaluatedCompanyAverages.find((c) => c.type === 'Subcontractor'), [evaluatedCompanyAverages]);
 
   const displayedCompany = useMemo(() => {
     if (selectedChampionType === 'Overall') return topCompany;
-    if (selectedChampionType === 'Courier') return topContractor || { name: 'No Registered Couriers', average: 0, scorePercentage: 0, type: 'Courier', count: 0 };
-    if (selectedChampionType === 'Supplier') return topSupplier || { name: 'No Registered Suppliers', average: 0, scorePercentage: 0, type: 'Supplier', count: 0 };
-    if (selectedChampionType === 'Subcontractor') return topSubcontractor || { name: 'No Registered Subcontractors', average: 0, scorePercentage: 0, type: 'Subcontractor', count: 0 };
+    if (selectedChampionType === 'Courier') return topContractor || { name: 'No Evaluated Couriers', average: 0, scorePercentage: 0, type: 'Courier', count: 0 };
+    if (selectedChampionType === 'Supplier') return topSupplier || { name: 'No Evaluated Suppliers', average: 0, scorePercentage: 0, type: 'Supplier', count: 0 };
+    if (selectedChampionType === 'Subcontractor') return topSubcontractor || { name: 'No Evaluated Subcontractors', average: 0, scorePercentage: 0, type: 'Subcontractor', count: 0 };
     return topCompany;
   }, [selectedChampionType, topCompany, topContractor, topSupplier, topSubcontractor]);
 
@@ -600,7 +606,7 @@ export function AnalyticsPage({
               {displayedCompany.name}
             </h3>
             <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-2xl">
-              {displayedCompany.name === 'No Registered Partners' || displayedCompany.name.startsWith('No Registered')
+              {displayedCompany.name.startsWith('No Evaluated')
                 ? 'No evaluations are registered. Employees can submit evaluations using the published survey forms.'
                 : `${displayedCompany.name} is recognized as the top-performing ${displayedCompany.type.toLowerCase()} partner, earning the highest combined satisfaction score of ${formatNumber(displayedCompany.average, 2)} out of ${portfolioMaxRating.toFixed(0)} across all survey categories from Microgenesis employees.`
               }

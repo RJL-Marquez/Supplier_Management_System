@@ -266,12 +266,19 @@ export function generateAllMockResponses(
   const rows: SurveyResponse[] = [];
   let submissionCounter = 0;
 
+  // Folding the target date into the seed means re-running "complete" after
+  // moving the simulated clock forward (a new evaluation period) produces a
+  // fresh rating pattern instead of regenerating byte-for-byte identical
+  // scores - otherwise "top performing" and every company's rating would
+  // never change between simulated periods.
+  const dateSeed = Math.floor(targetDate.getTime() / (1000 * 60 * 60 * 24)) * 7919;
+
   surveysToUse.forEach((survey) => {
     const matchingCompanies = companiesToUse.filter((c) => c.type === survey.surveyType && !c.isArchived);
     matchingCompanies.forEach((company, compIdx) => {
       usersToUse.forEach((user, userIdx) => {
         submissionCounter++;
-        const seedBase = submissionCounter * 123 + compIdx * 17 + userIdx * 31;
+        const seedBase = dateSeed + submissionCounter * 123 + compIdx * 17 + userIdx * 31;
         const responseId = `RESP-MOCK-${submissionCounter}-${10000 + Math.floor(seededRandom(seedBase) * 90000)}`;
         const submissionDate = new Date(targetDate);
         submissionDate.setDate(submissionDate.getDate() - Math.floor(seededRandom(seedBase + 5) * 180));

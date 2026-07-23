@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft,
@@ -53,6 +53,16 @@ const surveyTypeColors: Record<string, string> = {
   Supplier: '#10b981',
   Subcontractor: '#f97316',
 };
+
+// Every slide is laid out once at this fixed "design" resolution, then the
+// whole canvas is uniformly scaled (CSS transform) to whatever space is
+// actually available. This is the same "fit to window" technique
+// PowerPoint/Google Slides use, and it's what makes the deck look
+// identical - just bigger or smaller - on a 1366x768 laptop, a 1920x1080
+// monitor, or a tablet, instead of each slide's internal layout reflowing
+// (and sometimes overflowing) differently at every viewport size.
+const SLIDE_WIDTH = 1280;
+const SLIDE_HEIGHT = 720;
 
 function slideTitleFor(slide: Slide, index: number): string {
   switch (slide.kind) {
@@ -1112,7 +1122,10 @@ export function SlideDeck({ slides, title, onExit, responses = [] }: SlideDeckPr
   const [direction, setDirection] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const stageRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [frameHeight, setFrameHeight] = useState<number | null>(null);
 
   const goTo = (next: number) => {
     if (next < 0 || next >= slides.length) return;
@@ -1136,12 +1149,61 @@ export function SlideDeck({ slides, title, onExit, responses = [] }: SlideDeckPr
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
 
+  // Bounds the whole deck card to the visible viewport (minus whatever sits
+  // above it) so the toolbar, stage, and thumbnail rail all stay reachable
+  // without scrolling on a shorter screen like a 1366x768 laptop. A 420px
+  // floor stops it from getting crushed if the available space is ever
+  // unusually small.
+  useLayoutEffect(() => {
+    const recompute = () => {
+      if (!shellRef.current) return;
+      const top = shellRef.current.getBoundingClientRect().top;
+      setFrameHeight(Math.max(420, window.innerHeight - top - 24));
+    };
+    recompute();
+    window.addEventListener('resize', recompute);
+    document.addEventListener('fullscreenchange', recompute);
+    return () => {
+      window.removeEventListener('resize', recompute);
+      document.removeEventListener('fullscreenchange', recompute);
+    };
+  }, [isFullscreen]);
+
+  // Measures the space actually available for the slide canvas so it can be
+  // scaled down/up (via CSS transform) to the largest size that fits it
+  // without cropping or distorting the fixed design resolution above.
+  // Re-subscribing whenever frameHeight changes matters: frameHeight is set
+  // by the effect above, then applied to the shell's inline height on the
+  // *next* render - observing (and taking an immediate reading) only once on
+  // mount could capture the viewport's size before that height ever lands,
+  // then never correct itself since a ResizeObserver only fires again on a
+  // genuine subsequent size change.
+  useLayoutEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const update = () => setViewportSize({ width: el.clientWidth, height: el.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [frameHeight]);
+
+  // Falls back to 1 before the first real measurement lands, purely so the
+  // canvas always has a valid transform to render with - the slide content
+  // itself (AnimatePresence/motion.div) must never be conditionally mounted
+  // on this value, or a transient 0 mid-animation would tear down and
+  // recreate AnimatePresence, desyncing it from `index`.
+  const scale =
+    viewportSize.width > 0 && viewportSize.height > 0
+      ? Math.min(viewportSize.width / SLIDE_WIDTH, viewportSize.height / SLIDE_HEIGHT)
+      : 1;
+
   const toggleFullscreen = async () => {
-    if (!stageRef.current) return;
+    if (!shellRef.current) return;
     if (document.fullscreenElement) {
       await document.exitFullscreen();
     } else {
-      await stageRef.current.requestFullscreen();
+      await shellRef.current.requestFullscreen();
     }
   };
 
@@ -1175,50 +1237,62 @@ export function SlideDeck({ slides, title, onExit, responses = [] }: SlideDeckPr
         </div>
       </div>
 
-      <div ref={stageRef} className="rounded-2xl border border-slate-200 bg-slate-950 p-3 dark:border-slate-800 sm:p-5">
+      <div
+        ref={shellRef}
+        className="flex min-h-[420px] flex-col rounded-2xl border border-slate-200 bg-slate-950 p-3 dark:border-slate-800 sm:p-5"
+        style={frameHeight ? { height: frameHeight } : undefined}
+      >
         {/* Progress bar */}
-        <div className="mb-3 h-1 w-full overflow-hidden rounded-full bg-white/10">
+        <div className="mb-3 h-1 w-full shrink-0 overflow-hidden rounded-full bg-white/10">
           <div className="h-1 rounded-full bg-[#2563eb] transition-all duration-300" style={{ width: `${progress}%` }} />
         </div>
 
-        <div className="flex flex-col gap-3 lg:flex-row">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
           {/* Stage */}
-          <div className="relative flex-1">
-            <div className="relative aspect-video w-full overflow-hidden rounded-xl shadow-2xl">
-              <AnimatePresence custom={direction} mode="wait">
-                <motion.div
-                  key={index}
-                  custom={direction}
-                  initial={{ opacity: 0, x: direction * 40 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: direction * -40 }}
-                  transition={{ duration: 0.35, ease: 'easeOut' }}
-                  className="absolute inset-0"
-                >
-                  <SlideContent slide={slides[index]} responses={responses} />
-                </motion.div>
-              </AnimatePresence>
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            <div
+              ref={viewportRef}
+              className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden rounded-xl bg-slate-900"
+            >
+              <div
+                className="relative shrink-0 overflow-hidden rounded-xl shadow-2xl"
+                style={{ width: SLIDE_WIDTH, height: SLIDE_HEIGHT, transform: `scale(${scale})` }}
+              >
+                <AnimatePresence custom={direction} mode="wait">
+                  <motion.div
+                    key={index}
+                    custom={direction}
+                    initial={{ opacity: 0, x: direction * 40 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: direction * -40 }}
+                    transition={{ duration: 0.35, ease: 'easeOut' }}
+                    className="absolute inset-0"
+                  >
+                    <SlideContent slide={slides[index]} responses={responses} />
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* Prev / Next */}
+              <button
+                onClick={() => goTo(index - 1)}
+                type="button"
+                disabled={index === 0}
+                className="absolute left-2 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-md transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-0"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                onClick={() => goTo(index + 1)}
+                type="button"
+                disabled={index === slides.length - 1}
+                className="absolute right-2 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-md transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-0"
+              >
+                <ChevronRight size={18} />
+              </button>
             </div>
 
-            {/* Prev / Next */}
-            <button
-              onClick={() => goTo(index - 1)}
-              type="button"
-              disabled={index === 0}
-              className="absolute left-2 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-md transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-0"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <button
-              onClick={() => goTo(index + 1)}
-              type="button"
-              disabled={index === slides.length - 1}
-              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-md transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-0"
-            >
-              <ChevronRight size={18} />
-            </button>
-
-            <div className="mt-2 flex items-center justify-center gap-2 text-xs font-semibold text-slate-300">
+            <div className="mt-2 flex shrink-0 items-center justify-center gap-2 text-xs font-semibold text-slate-300">
               <span>
                 Slide {index + 1} of {slides.length}
               </span>
@@ -1228,7 +1302,7 @@ export function SlideDeck({ slides, title, onExit, responses = [] }: SlideDeckPr
           </div>
 
           {/* Thumbnail rail */}
-          <div className="flex gap-2 overflow-x-auto pb-1 lg:w-40 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:pb-0">
+          <div className="flex shrink-0 gap-2 overflow-x-auto pb-1 lg:w-40 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:pb-0">
             {slides.map((slide, i) => (
               <button
                 key={i}

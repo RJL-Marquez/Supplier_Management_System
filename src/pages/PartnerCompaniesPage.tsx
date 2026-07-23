@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Plus,
   Trash,
@@ -17,6 +17,7 @@ import {
   LayoutGrid,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
   Clock,
   Settings,
   Archive,
@@ -52,6 +53,11 @@ function typeBadgeClasses(type: PartnerCompanyType): string {
       return 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700';
   }
 }
+
+// Registries can hold 1000+ companies (the full Master List) - rendering
+// every row at once tanks scroll/interaction performance, so the list/table
+// is paginated client-side on top of the already-filtered result.
+const COMPANIES_PAGE_SIZE = 60;
 
 const DOCUMENT_STATUS_STYLES: Record<DocumentStatus, string> = {
   Current: 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40',
@@ -92,6 +98,7 @@ export function PartnerCompaniesPage({
 }: PartnerCompaniesPageProps) {
   // Tabs: Active, Expired, Archived
   const [statusTab, setStatusTab] = useState<'Active' | 'Expired' | 'Archived'>('Active');
+  const [currentPage, setCurrentPage] = useState(1);
   // Affiliation filter
   const [activeTab, setActiveTab] = useState<PartnerCompanyType | 'All'>('All');
   // Local/Foreign sub-filter, only meaningful while activeTab === 'Supplier'
@@ -385,6 +392,21 @@ export function PartnerCompaniesPage({
     }
     return baseList;
   }, [classifiedCompanies, statusTab, activeTab, originFilter, searchQuery, sortConfig]);
+
+  // Jump back to page 1 whenever a filter/search/sort narrows or reshuffles
+  // the result set - otherwise the user can land on a now-empty page.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusTab, activeTab, originFilter, searchQuery, sortConfig]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCompanies.length / COMPANIES_PAGE_SIZE));
+  // Clamp defensively (e.g. the list shrinks from a delete while on a later
+  // page) so pagination stays correct without waiting for the effect above.
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedCompanies = useMemo(
+    () => filteredCompanies.slice((safePage - 1) * COMPANIES_PAGE_SIZE, safePage * COMPANIES_PAGE_SIZE),
+    [filteredCompanies, safePage]
+  );
 
   // Click handler to open company details modal
   const handleCompanyClick = (company: PartnerCompany) => {
@@ -682,7 +704,7 @@ export function PartnerCompaniesPage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredCompanies.map((c) => {
+                {paginatedCompanies.map((c) => {
                   const isExpiringSoon = c.expirationDate && !c.isArchived && 
                     (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() <= 30 * 24 * 60 * 60 * 1000) &&
                     (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() > 0);
@@ -763,7 +785,7 @@ export function PartnerCompaniesPage({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {filteredCompanies.map((c) => {
+          {paginatedCompanies.map((c) => {
             const score = getCompanyScoreDetails(c.name, c.type);
             const isExpiringSoon = c.expirationDate && !c.isArchived && 
               (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() <= 30 * 24 * 60 * 60 * 1000) &&
@@ -894,6 +916,38 @@ export function PartnerCompaniesPage({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="panel px-5 py-3 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            Showing {(safePage - 1) * COMPANIES_PAGE_SIZE + 1}
+            &ndash;{Math.min(safePage * COMPANIES_PAGE_SIZE, filteredCompanies.length)} of {filteredCompanies.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(Math.max(1, safePage - 1))}
+              disabled={safePage <= 1}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
+            >
+              <ChevronLeft size={14} />
+              <span>Prev</span>
+            </button>
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 tabular-nums px-1">
+              Page {safePage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(Math.min(totalPages, safePage + 1))}
+              disabled={safePage >= totalPages}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
+            >
+              <span>Next</span>
+              <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       )}
 
