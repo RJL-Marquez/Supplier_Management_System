@@ -264,7 +264,7 @@ export function SimulatorPage({
               </span>
               <button
                 onClick={handleSimulate}
-                className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-5 py-2.5 text-xs font-bold text-white shadow-md transition-all duration-250 hover:scale-[1.01]"
+                className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#0063a9] hover:bg-[#00528c] dark:bg-blue-600 dark:hover:bg-blue-700 px-5 py-2.5 text-xs font-bold text-white shadow-md transition-all duration-250 hover:scale-[1.01]"
                 type="button"
               >
                 <Play size={13} fill="currentColor" />

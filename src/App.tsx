@@ -979,7 +979,7 @@ export default function App() {
             <div className="min-w-0 flex-1">{pageContent}</div>
           </div>
           
-          {activePage !== 'notifications' && activePage !== 'create-form' && activePage !== 'fill-form' && activePage !== 'present' && activePage !== 'partners-feedback-hub' && (
+          {isAdmin && activePage !== 'notifications' && activePage !== 'create-form' && activePage !== 'fill-form' && activePage !== 'present' && activePage !== 'partners-feedback-hub' && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
               <div className="flex items-center gap-2">
                 <Search size={16} className="text-[#0063a9] dark:text-blue-400 shrink-0" />
