@@ -167,7 +167,7 @@ export function CompanyAnalysisPanel({ responses, archiveSeries = [] }: CompanyA
     });
   }, [activeComposite, primaryTrend, compareTrend, compareLabel]);
 
-  const [trendGranularity, setTrendGranularity] = useState<'default' | 'monthly' | 'yearly' | 'series'>('default');
+  const [trendGranularity, setTrendGranularity] = useState<'monthly' | 'yearly' | 'series'>('monthly');
 
   // By-series view: one point per named archive period (e.g. "1st Half 2026"),
   // ordered chronologically - the concrete "project this company's rating
@@ -230,6 +230,15 @@ export function CompanyAnalysisPanel({ responses, archiveSeries = [] }: CompanyA
     trendGranularity === 'yearly' ? yearlyTrendData :
     trendGranularity === 'series' ? seriesTrendData :
     trendData;
+
+  // Same "zoom in when everything's already high" treatment as the section
+  // chart above - a trend that hovers in the 85-95 band all year looks like
+  // a flat line against a fixed 0-100 axis, hiding the real month-to-month
+  // movement the chart exists to show.
+  const trendAxisDomain = useMemo(() => {
+    if (!activeComposite) return [0, 100] as [number, number];
+    return computeAxisDomain(displayedTrendData, [activeComposite.company, compareLabel]);
+  }, [displayedTrendData, activeComposite, compareLabel]);
 
   const handleSelectCompany = (company: string) => {
     setSelectedCompany(company);
@@ -537,11 +546,18 @@ export function CompanyAnalysisPanel({ responses, archiveSeries = [] }: CompanyA
           {/* Score trend - now below the section chart, also reflects the chosen comparison */}
           <div className="flex flex-col">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-1">
-              <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-                Score trend vs {compareLabel.toLowerCase()}
-              </h4>
+              <div>
+                <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                  Score trend vs {compareLabel.toLowerCase()}
+                </h4>
+                {trendAxisDomain[0] > 0 && (
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                    Scale starts at {trendAxisDomain[0]} to highlight differences among high scores.
+                  </p>
+                )}
+              </div>
               <div className="flex shrink-0 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden">
-                {(['default', 'monthly', 'yearly', 'series'] as const).map((option, idx) => (
+                {(['monthly', 'yearly', 'series'] as const).map((option, idx) => (
                   <button
                     key={option}
                     type="button"
@@ -568,7 +584,7 @@ export function CompanyAnalysisPanel({ responses, archiveSeries = [] }: CompanyA
                 <LineChart data={displayedTrendData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+                  <YAxis domain={trendAxisDomain} tick={{ fontSize: 11 }} />
                   <Tooltip />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Line
