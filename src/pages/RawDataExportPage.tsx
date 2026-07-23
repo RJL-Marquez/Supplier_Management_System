@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, Download, FileSpreadsheet, HardHat, Package, Table2, Truck } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Download, FileSpreadsheet, FileText, HardHat, Package, Table2, Truck } from 'lucide-react';
 import { SurveyResponse, SurveyType } from '../types/survey';
-import { exportRawResponsesAsCSV, exportRawResponsesAsExcel } from '../utils/rawResponseExport';
+import { exportRawResponsesAsCSV, exportRawResponsesAsExcel, exportRawResponsesAsPDF } from '../utils/rawResponseExport';
 
 interface RawDataExportPageProps {
   responses: SurveyResponse[];
@@ -9,7 +9,7 @@ interface RawDataExportPageProps {
   onBack: () => void;
 }
 
-type RawExportFormat = 'csv' | 'excel';
+type RawExportFormat = 'csv' | 'excel' | 'pdf';
 
 const CATEGORY_CONFIG: { type: SurveyType; icon: typeof Truck; description: string }[] = [
   { type: 'Courier', icon: Truck, description: 'Raw evaluation submissions for courier partners, one sheet per company.' },
@@ -47,7 +47,8 @@ export function RawDataExportPage({ responses, canExport = false, onBack }: RawD
               onExport={(format) => {
                 const filenameBase = `${type.toLowerCase()}_raw_evaluations`;
                 if (format === 'csv') exportRawResponsesAsCSV(responses, type, filenameBase);
-                else exportRawResponsesAsExcel(responses, type, filenameBase);
+                else if (format === 'excel') exportRawResponsesAsExcel(responses, type, filenameBase);
+                else exportRawResponsesAsPDF(responses, type, filenameBase);
               }}
             />
           );
@@ -95,7 +96,7 @@ function RawExportCard({
   );
 }
 
-/** "Export As ▾" trigger restricted to Excel / CSV, used on each category card. */
+/** "Export As ▾" trigger restricted to Excel / CSV / PDF, used on each category card. */
 function RawExportMenu({ onExport }: { onExport: (format: RawExportFormat) => void }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -138,6 +139,13 @@ function RawExportMenu({ onExport }: { onExport: (format: RawExportFormat) => vo
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
           >
             <Table2 size={14} /> CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => choose('pdf')}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            <FileText size={14} /> PDF
           </button>
         </div>
       ) : null}
