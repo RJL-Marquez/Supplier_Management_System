@@ -177,12 +177,12 @@ export function CompanyReportBuilderPage({ responses, partnerCompanies, canExpor
   const anyGraphSelected = graphs.bar || graphs.radar || graphs.trend || graphs.perQuestion || includeComments;
   const canRunExport = Boolean(canExport && composite && anyGraphSelected && !isExporting);
 
-  const extraPages: ('trend' | 'perQuestion' | 'comments')[] = [];
-  if (graphs.trend) extraPages.push('trend');
-  if (graphs.perQuestion) extraPages.push('perQuestion');
-  if (includeComments) extraPages.push('comments');
-
-  const contentPageCount = 1 + extraPages.length;
+  // The PDF flows bar/radar/trend graphs and the per-question/comments
+  // tables through one continuous cursor (see exportCompanyReportAsPDF's
+  // ensureSpace), so it normally lands on 2 content pages regardless of how
+  // many optional sections are checked - not one dedicated page per section.
+  const hasPage3 = graphs.perQuestion || includeComments;
+  const contentPageCount = hasPage3 ? 2 : 1;
 
   const handleExport = async (format: 'pdf' | 'docx') => {
     if (!composite || !selectedCompany) return;
@@ -352,18 +352,25 @@ export function CompanyReportBuilderPage({ responses, partnerCompanies, canExpor
               </div>
             ) : (
               <div className="mx-auto flex flex-col items-center gap-10">
-                {/* Page 1 — Cover */}
+                {/* Page 1 — Cover. Header block sits near the top and the
+                    confidentiality footer sits near the bottom, matching the
+                    PDF's fixed y-coordinates (logo/title around 20-47% down,
+                    footer around 88-92% down) - NOT vertically centered as one
+                    unit, which would spread the blank space evenly top/bottom
+                    instead of concentrating it in the middle like the PDF does. */}
                 <PagedSheet pageLabel="Page 1 · Cover">
-                  <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-                    <img src="/microgenesis_logo.png" alt="Microgenesis" className="h-14 w-auto" />
-                    <div className="mt-7 h-px w-20 bg-[#0063a9]" />
-                    <h1 className="mt-7 text-3xl font-bold text-slate-800 dark:text-slate-100">Company Performance Report</h1>
-                    <p className="mt-2 text-xl font-bold text-[#0063a9]">{composite.company}</p>
-                    <p className="mt-1 text-base text-slate-500 dark:text-slate-400">
-                      {surveyTypeDisplayLabel[category]} · Generated{' '}
-                      {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </p>
-                    <div className="mt-20 border-t border-slate-100 pt-4 text-center dark:border-slate-800">
+                  <div className="flex h-full flex-col items-center px-6 text-center">
+                    <div className="pt-[16%]">
+                      <img src="/microgenesis_logo.png" alt="Microgenesis" className="mx-auto h-14 w-auto" />
+                      <div className="mx-auto mt-7 h-px w-20 bg-[#0063a9]" />
+                      <h1 className="mt-7 text-3xl font-bold text-slate-800 dark:text-slate-100">Company Performance Report</h1>
+                      <p className="mt-2 text-xl font-bold text-[#0063a9]">{composite.company}</p>
+                      <p className="mt-1 text-base text-slate-500 dark:text-slate-400">
+                        {category} Evaluation · Generated{' '}
+                        {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </p>
+                    </div>
+                    <div className="mt-auto pb-[7%] text-center">
                       <p className="text-sm text-slate-400 dark:text-slate-500">Prepared for internal review by the</p>
                       <p className="text-sm font-bold text-slate-500 dark:text-slate-300">Microgenesis Supplier Management System</p>
                       <p className="mt-1 text-xs italic text-slate-400 dark:text-slate-500">
@@ -377,8 +384,8 @@ export function CompanyReportBuilderPage({ responses, partnerCompanies, canExpor
                 <PagedSheet pageLabel="Page 2" footerRight={`Page 1 of ${contentPageCount}`}>
                   <ReportPageHeader company={composite.company} />
                   <h2 className="mt-6 text-xl font-bold text-slate-800 dark:text-slate-100">Executive Summary</h2>
-                  <div className="mt-3 grid grid-cols-3 gap-3">
-                    <SummaryStat label="Composite score" value={`${formatNumber(composite.compositeScore)} / 100`} />
+                  <div className="mt-3 grid grid-cols-3 divide-x divide-slate-200 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                    <SummaryStat label="Composite score" value={`${formatNumber(composite.compositeScore)} / 100`} accent />
                     <SummaryStat label="Rating band" value={composite.band.label} />
                     <SummaryStat label="Evaluations" value={String(composite.evaluationCount)} />
                   </div>
@@ -455,110 +462,97 @@ export function CompanyReportBuilderPage({ responses, partnerCompanies, canExpor
                       </div>
                     </div>
                   )}
+
+                  {/* Score Trend shares Page 2 with the bar/radar graphs, mirroring
+                      the PDF's continuous cursor flow (ensureSpace only breaks to a
+                      new page once content actually overflows). */}
+                  {graphs.trend && (
+                    <div className="mt-4">
+                      <h4 className="mb-1 text-xs font-bold text-slate-700 dark:text-slate-200">Score Trend</h4>
+                      <div ref={trendRef} className="h-48 w-full bg-white dark:bg-slate-900">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={trendChartData} margin={{ top: 20, right: 16, bottom: 5, left: -10 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="label" tick={{ fontSize: 9 }} tickLine={false} />
+                            <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} tickLine={false} width={30} />
+                            <Tooltip />
+                            <Legend verticalAlign="top" align="left" layout="horizontal" iconSize={10} wrapperStyle={{ fontSize: 10, paddingBottom: 10, left: 0 }} />
+                            <Line type="monotone" dataKey="score" name={composite.company} stroke={PRIMARY_COLOR} strokeWidth={2} dot={{ r: 3 }} connectNulls isAnimationActive={false}>
+                              <LabelList dataKey="score" position="top" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 13, fill: PRIMARY_COLOR, fontWeight: 'bold' }} />
+                            </Line>
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                      {trendChartData.length === 0 && (
+                        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">Not enough dated submissions yet to plot a trend.</p>
+                      )}
+                    </div>
+                  )}
                 </PagedSheet>
 
-                {/* Dynamic Extra Pages (Score Trend, Per-Question, Comments) */}
-                {extraPages.map((pageType, idx) => {
-                  const displayPageNum = 3 + idx;
-                  const contentPageNum = 2 + idx;
-                  const footerText = `Page ${contentPageNum} of ${contentPageCount}`;
+                {/* Page 3 — Per-question table and comments share one page,
+                    same reasoning as above. */}
+                {hasPage3 && (
+                  <PagedSheet pageLabel="Page 3" footerRight={`Page 2 of ${contentPageCount}`}>
+                    <ReportPageHeader company={composite.company} />
 
-                  if (pageType === 'trend') {
-                    return (
-                      <PagedSheet key="trend-page" pageLabel={`Page ${displayPageNum}`} footerRight={footerText}>
-                        <ReportPageHeader company={composite.company} />
-                        <div className="mt-6">
-                          <h4 className="mb-2 font-semibold text-slate-700 dark:text-slate-200">Score Trend</h4>
-                          <div ref={trendRef} className="h-48 w-full bg-white dark:bg-slate-900">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <LineChart data={trendChartData} margin={{ top: 20, right: 16, bottom: 5, left: -10 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                <XAxis dataKey="label" tick={{ fontSize: 9 }} tickLine={false} />
-                                <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} tickLine={false} width={30} />
-                                <Tooltip />
-                                <Legend verticalAlign="top" align="left" layout="horizontal" iconSize={10} wrapperStyle={{ fontSize: 10, paddingBottom: 10, left: 0 }} />
-                                <Line type="monotone" dataKey="score" name={composite.company} stroke={PRIMARY_COLOR} strokeWidth={2} dot={{ r: 3 }} connectNulls isAnimationActive={false}>
-                                  <LabelList dataKey="score" position="top" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 13, fill: PRIMARY_COLOR, fontWeight: 'bold' }} />
-                                </Line>
-                              </LineChart>
-                            </ResponsiveContainer>
-                          </div>
-                          {trendChartData.length === 0 && (
-                            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">Not enough dated submissions yet to plot a trend.</p>
-                          )}
+                    {graphs.perQuestion && (
+                      <div className="mt-6">
+                        <h4 className="mb-2 text-base font-bold text-slate-800 dark:text-slate-100">Per-Question Average Rating</h4>
+                        <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                          <table className="w-full text-left text-[10px]">
+                            <thead className="bg-[#0063a9] text-white">
+                              <tr>
+                                <th className="px-2.5 py-1.5 font-semibold">Question</th>
+                                <th className="px-2.5 py-1.5 font-semibold">Average Rating</th>
+                                <th className="px-2.5 py-1.5 font-semibold">Responses</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {questionRows.map((row, idx) => (
+                                <tr key={row.question} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
+                                  <td className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300">{row.question}</td>
+                                  <td className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300">{formatNumber(row.average)}</td>
+                                  <td className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300">{row.responses}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
-                      </PagedSheet>
-                    );
-                  }
+                      </div>
+                    )}
 
-                  if (pageType === 'perQuestion') {
-                    return (
-                      <PagedSheet key="per-question-page" pageLabel={`Page ${displayPageNum}`} footerRight={footerText}>
-                        <ReportPageHeader company={composite.company} />
-                        <div className="mt-6">
-                          <h4 className="mb-2 text-base font-bold text-slate-800 dark:text-slate-100">Per-Question Average Rating</h4>
+                    {includeComments && (
+                      <div className="mt-6">
+                        <h4 className="mb-2 text-base font-bold text-slate-800 dark:text-slate-100">Stakeholder Comments</h4>
+                        {selectedCommentsList.length === 0 ? (
+                          <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm italic text-slate-400 dark:border-slate-700 dark:text-slate-500">
+                            No stakeholder comments selected for display. Click "Review Stakeholder Remarks" to select comments.
+                          </p>
+                        ) : (
                           <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
-                            <table className="w-full text-left text-sm sm:text-base">
+                            <table className="w-full text-left text-[10px]">
                               <thead className="bg-[#0063a9] text-white">
                                 <tr>
-                                  <th className="px-3 py-2 font-semibold">Question</th>
-                                  <th className="px-3 py-2 font-semibold">Average Rating</th>
-                                  <th className="px-3 py-2 font-semibold">Responses</th>
+                                  <th className="px-2.5 py-1.5 font-semibold w-12">#</th>
+                                  <th className="px-2.5 py-1.5 font-semibold">Feedback / Comments</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {questionRows.map((row, idx) => (
-                                  <tr key={row.question} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
-                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.question}</td>
-                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{formatNumber(row.average)}</td>
-                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.responses}</td>
+                                {selectedCommentsList.map((c, idx) => (
+                                  <tr key={c.responseId} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
+                                    <td className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300 font-medium">{idx + 1}</td>
+                                    <td className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300 italic">"{c.comment}"</td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
                           </div>
-                        </div>
-                      </PagedSheet>
-                    );
-                  }
-
-                  if (pageType === 'comments') {
-                    return (
-                      <PagedSheet key="comments-page" pageLabel={`Page ${displayPageNum}`} footerRight={footerText}>
-                        <ReportPageHeader company={composite.company} />
-                        <div className="mt-6">
-                          <h4 className="mb-2 text-base font-bold text-slate-800 dark:text-slate-100">Stakeholder Comments</h4>
-                          {selectedCommentsList.length === 0 ? (
-                            <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm italic text-slate-400 dark:border-slate-700 dark:text-slate-500">
-                              No stakeholder comments selected for display. Click "Review Stakeholder Remarks" to select comments.
-                            </p>
-                          ) : (
-                            <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
-                              <table className="w-full text-left text-sm sm:text-base">
-                                <thead className="bg-[#0063a9] text-white">
-                                  <tr>
-                                    <th className="px-3 py-2 font-semibold w-12">#</th>
-                                    <th className="px-3 py-2 font-semibold">Feedback / Comments</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {selectedCommentsList.map((c, idx) => (
-                                    <tr key={c.responseId} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
-                                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-medium">{idx + 1}</td>
-                                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300 italic">"{c.comment}"</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      </PagedSheet>
-                    );
-                  }
-
-                  return null;
-                })}
+                        )}
+                      </div>
+                    )}
+                  </PagedSheet>
+                )}
               </div>
             )}
           </div>
@@ -724,11 +718,11 @@ export function CompanyReportBuilderPage({ responses, partnerCompanies, canExpor
   );
 }
 
-function SummaryStat({ label, value }: { label: string; value: string }) {
+function SummaryStat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+    <div className="p-3">
       <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-700 dark:text-slate-200">{value}</p>
+      <p className={`mt-1 text-sm font-bold ${accent ? 'text-[#0063a9]' : 'text-slate-800 dark:text-slate-100'}`}>{value}</p>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { SurveyResponse, SurveyType } from '../types/survey';
 import { ExportTable, exportTablesAsCSV, exportTablesAsExcel } from './exporters';
+import { logExport } from './exportHistory';
 
 // Reproduces the original MBS Partner Evaluation Forms export layout (one
 // row per submission, question text as column headers) from this app's
@@ -296,5 +297,7 @@ export function exportRawResponsesAsPDF(responses: SurveyResponse[], surveyType:
     );
   }
 
-  doc.save(`${filenameBase}_${timestamp()}.pdf`);
+  const filename = `${filenameBase}_${timestamp()}.pdf`;
+  doc.save(filename);
+  logExport({ title: `Raw Data Export (${surveyType})`, format: 'pdf', filename });
 }

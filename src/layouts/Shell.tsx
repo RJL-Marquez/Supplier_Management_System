@@ -1,25 +1,53 @@
 import { LucideIcon, Menu, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 
-interface PageItem<T extends string> {
+interface NavChild<T extends string> {
   key: T;
   label: string;
-  icon: LucideIcon;
-  hasDropdown?: boolean;
-  section?: string;
   badgeCount?: number;
 }
 
+// A single clickable destination in the sidebar.
+export interface NavLeaf<T extends string> {
+  type?: 'link';
+  key: T;
+  label: string;
+  icon: LucideIcon;
+  badgeCount?: number;
+}
+
+// A collapsible parent that groups related destinations (e.g. "Suppliers" ->
+// Supplier List / Supplier Profiles / Feedback Hub). The parent itself never
+// navigates anywhere - clicking it only expands/collapses its children.
+export interface NavGroup<T extends string> {
+  type: 'group';
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  children: NavChild<T>[];
+}
+
+export type NavItem<T extends string> = NavLeaf<T> | NavGroup<T>;
+
 interface ShellProps<T extends string> {
-  pages: PageItem<T>[];
+  pages: NavItem<T>[];
   activePage: T;
   onPageChange: (page: T) => void;
   title: string;
   action: ReactNode;
   children: ReactNode;
-  renderDropdown?: (key: T) => ReactNode;
   pageHeading?: string;
   sidebarExtra?: (isCollapsed: boolean) => ReactNode;
+}
+
+// Flattens groups so we can look up the active item's label/icon regardless
+// of whether it's a top-level link or nested inside a group.
+function flattenPages<T extends string>(pages: NavItem<T>[]): { key: T; label: string; icon: LucideIcon }[] {
+  return pages.flatMap((page) =>
+    page.type === 'group'
+      ? page.children.map((child) => ({ key: child.key, label: child.label, icon: page.icon }))
+      : [{ key: page.key, label: page.label, icon: page.icon }]
+  );
 }
 
 export function Shell<T extends string>({
@@ -29,27 +57,37 @@ export function Shell<T extends string>({
   title,
   action,
   children,
-  renderDropdown,
   pageHeading,
   sidebarExtra,
 }: ShellProps<T>) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [expandedKey, setExpandedKey] = useState<T | null>(null);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
 
-  const activePageItem = pages.find((p) => p.key === activePage);
+  const flatPages = flattenPages(pages);
+  const activePageItem = flatPages.find((p) => p.key === activePage);
   const ActiveIcon = activePageItem?.icon ?? Menu;
 
-  // Group consecutive pages that share the same section so the sidebar can render category headers.
-  const pageGroups = pages.reduce<{ section?: string; items: PageItem<T>[] }[]>((groups, page) => {
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup && lastGroup.section === page.section) {
-      lastGroup.items.push(page);
-    } else {
-      groups.push({ section: page.section, items: [page] });
+  // Auto-expand whichever group currently contains the active page, without
+  // collapsing groups the user has already opened manually.
+  useEffect(() => {
+    const activeGroup = pages.find(
+      (page): page is NavGroup<T> => page.type === 'group' && page.children.some((child) => child.key === activePage)
+    );
+    if (activeGroup) {
+      setExpandedGroups((prev) => (prev.has(activeGroup.id) ? prev : new Set(prev).add(activeGroup.id)));
     }
-    return groups;
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePage]);
+
+  const toggleGroup = (id: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div className="min-h-screen bg-cloud text-ink dark:bg-slate-950 dark:text-slate-100 flex flex-col">
@@ -60,8 +98,9 @@ export function Shell<T extends string>({
           <div className="relative z-10 flex items-center justify-center h-full bg-[#0063a9] shrink-0 w-[220px] px-4">
             <button
                onClick={() => {
-                 const homePage = pages.find((p) => p.key === ('dashboard' as any))?.key || pages[0]?.key;
-                 if (homePage) onPageChange(homePage);
+                 const homePage = pages.find((p) => p.type !== 'group' && (p as NavLeaf<T>).key === ('dashboard' as any));
+                 const fallback = homePage ? (homePage as NavLeaf<T>).key : flatPages[0]?.key;
+                 if (fallback) onPageChange(fallback);
                }}
               className="group flex w-full h-full items-center justify-center outline-none transition cursor-pointer overflow-hidden"
               title="Go to Dashboard"
@@ -111,6 +150,38 @@ export function Shell<T extends string>({
             <div className="fixed inset-0 z-30 lg:hidden" onClick={() => setIsMobileNavOpen(false)} />
             <div className="absolute left-4 right-4 top-full mt-1.5 z-40 max-h-[70vh] overflow-y-auto divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white shadow-lg dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-950">
               {pages.map((page) => {
+                if (page.type === 'group') {
+                  const GroupIcon = page.icon;
+                  return (
+                    <div key={page.id} className="py-1">
+                      <div className="flex items-center gap-2 px-3.5 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        <GroupIcon size={13} className="shrink-0" />
+                        <span className="truncate">{page.label}</span>
+                      </div>
+                      {page.children.map((child) => {
+                        const active = activePage === child.key;
+                        return (
+                          <button
+                            key={child.key}
+                            type="button"
+                            onClick={() => {
+                              onPageChange(child.key);
+                              setIsMobileNavOpen(false);
+                            }}
+                            className={`flex w-full items-center gap-2.5 py-2.5 pl-8 pr-3.5 text-left text-sm font-medium transition ${
+                              active
+                                ? 'bg-blue-50 text-[#0063a9] font-bold dark:bg-blue-950/40 dark:text-blue-300'
+                                : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-900'
+                            }`}
+                          >
+                            <span className="truncate">{child.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+
                 const Icon = page.icon;
                 const active = activePage === page.key;
                 return (
@@ -141,99 +212,113 @@ export function Shell<T extends string>({
       <div className="flex flex-1">
         {/* Sidebar - Below Header */}
         <div className={`relative sticky top-20 h-[calc(100vh-80px)] hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 lg:block transition-all duration-300 shrink-0 ${isSidebarCollapsed ? 'w-16' : 'w-[220px]'}`}>
-          {/* Toggle Sidebar Button on the right border, aligned lower down below menu items and fully visible */}
+          {/* Toggle Sidebar Button on the right border - centered on the sidebar's
+              own height (not a fixed pixel offset), so it stays vertically
+              centered regardless of viewport height (1366x768, 1920x1080, etc). */}
           <button
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="absolute top-[180px] -right-3.5 z-30 h-7 w-7 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md flex items-center justify-center text-slate-500 hover:text-[#0063a9] hover:bg-slate-50 dark:hover:bg-slate-800 hover:scale-105 transition-all cursor-pointer"
+            className="absolute top-1/2 -translate-y-1/2 -right-3.5 z-30 h-7 w-7 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md flex items-center justify-center text-slate-500 hover:text-[#0063a9] hover:bg-slate-50 dark:hover:bg-slate-800 hover:scale-105 transition-all cursor-pointer"
             title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {isSidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
           </button>
 
           <aside className={`h-full flex flex-col justify-between py-6 transition-all duration-300 ${isSidebarCollapsed ? 'px-2' : 'px-3'} overflow-hidden`}>
-            <nav className="space-y-4 overflow-y-auto pr-1 flex-1">
-              {pageGroups.map((group, groupIndex) => (
-                <div key={group.section ?? `group-${groupIndex}`}>
-                  {group.section && (
-                    <div
-                      className={`mb-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 ${
-                        isSidebarCollapsed ? 'text-center px-0' : ''
-                      } ${groupIndex > 0 ? 'pt-3 mt-2 border-t border-slate-100 dark:border-slate-800' : ''}`}
-                    >
-                      {isSidebarCollapsed ? (
-                        <span className="block h-px w-full bg-slate-200 dark:bg-slate-800" aria-hidden="true" />
-                      ) : (
-                        group.section
-                      )}
-                    </div>
-                  )}
-                  <div className="space-y-1">
-                    {group.items.map((page) => {
-              const Icon = page.icon;
-              const active = activePage === page.key;
-              const isExpanded = expandedKey === page.key;
+            <nav className="space-y-1 overflow-y-auto pr-1 flex-1">
+              {pages.map((page) => {
+                if (page.type === 'group') {
+                  const GroupIcon = page.icon;
+                  const isExpanded = expandedGroups.has(page.id);
+                  const groupHasActiveChild = page.children.some((child) => child.key === activePage);
 
-              return (
-                <div key={page.key}>
-                  <div
-                    className={`flex w-full items-stretch rounded-lg transition-all duration-200 ${
-                      active ? 'bg-blue-50 text-[#0063a9] dark:bg-blue-950/60 dark:text-blue-200 shadow-sm font-bold' : ''
-                    }`}
-                  >
-                    <button
-                      className={`flex flex-1 min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 ${
-                        active
-                          ? 'text-[#0063a9] dark:text-blue-200 font-bold'
-                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
-                      } ${isSidebarCollapsed ? 'justify-center px-2' : ''}`}
-                      type="button"
-                      onClick={() => onPageChange(page.key)}
-                      title={isSidebarCollapsed ? page.label : undefined}
-                    >
-                      <Icon size={18} className="shrink-0" />
-                      {!isSidebarCollapsed && (
-                        <span className="flex-1 flex items-center justify-between min-w-0">
-                          <span className="truncate pr-1">{page.label}</span>
-                          {page.badgeCount !== undefined && page.badgeCount > 0 && (
-                            <span className="ml-2 flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white shadow-sm ring-1 ring-white dark:ring-slate-950">
-                              {page.badgeCount}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                      {isSidebarCollapsed && page.badgeCount !== undefined && page.badgeCount > 0 && (
-                        <span className="absolute top-1 right-1 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-rose-500 text-[8px] font-bold text-white shadow-sm ring-1 ring-white dark:ring-slate-950">
-                          {page.badgeCount}
-                        </span>
-                      )}
-                    </button>
-                    {page.hasDropdown && !isSidebarCollapsed && (
+                  return (
+                    <div key={page.id}>
                       <button
                         type="button"
-                        onClick={() => setExpandedKey(isExpanded ? null : page.key)}
-                        className={`flex shrink-0 items-center px-2.5 rounded-lg transition-colors ${
-                          active
-                            ? 'text-[#0063a9] dark:text-blue-200 hover:bg-blue-100/60 dark:hover:bg-blue-900/40'
-                            : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-900 dark:hover:text-slate-200'
-                        }`}
-                        title={isExpanded ? 'Collapse forms list' : 'Expand forms list'}
+                        onClick={() => {
+                          if (isSidebarCollapsed) setIsSidebarCollapsed(false);
+                          toggleGroup(page.id);
+                        }}
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 ${
+                          groupHasActiveChild
+                            ? 'text-[#0063a9] dark:text-blue-200 font-bold'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                        } ${isSidebarCollapsed ? 'justify-center px-2' : ''}`}
+                        title={isSidebarCollapsed ? page.label : undefined}
                       >
-                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        <GroupIcon size={18} className="shrink-0" />
+                        {!isSidebarCollapsed && (
+                          <span className="flex-1 flex items-center justify-between min-w-0">
+                            <span className="truncate pr-1">{page.label}</span>
+                            <ChevronDown size={14} className={`shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                          </span>
+                        )}
                       </button>
-                    )}
-                  </div>
 
-                  {page.hasDropdown && isExpanded && !isSidebarCollapsed && (
-                    <div className="mt-1 pl-2.5 space-y-1.5 border-l border-slate-100 dark:border-slate-800">
-                      {renderDropdown?.(page.key)}
+                      {isExpanded && !isSidebarCollapsed && (
+                        <div className="mt-1 mb-1.5 pl-4 space-y-0.5 border-l border-slate-100 dark:border-slate-800">
+                          {page.children.map((child) => {
+                            const active = activePage === child.key;
+                            return (
+                              <button
+                                key={child.key}
+                                type="button"
+                                onClick={() => onPageChange(child.key)}
+                                className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-[13px] font-medium transition ${
+                                  active
+                                    ? 'bg-blue-50 text-[#0063a9] font-bold dark:bg-blue-950/60 dark:text-blue-200'
+                                    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white'
+                                }`}
+                              >
+                                <span className="truncate">{child.label}</span>
+                                {child.badgeCount !== undefined && child.badgeCount > 0 && (
+                                  <span className="ml-2 flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white shadow-sm">
+                                    {child.badgeCount}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-                    })}
-                  </div>
-                </div>
-              ))}
+                  );
+                }
+
+                const Icon = page.icon;
+                const active = activePage === page.key;
+
+                return (
+                  <button
+                    key={page.key}
+                    type="button"
+                    onClick={() => onPageChange(page.key)}
+                    className={`relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 ${
+                      active
+                        ? 'bg-blue-50 text-[#0063a9] dark:bg-blue-950/60 dark:text-blue-200 shadow-sm font-bold'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                    } ${isSidebarCollapsed ? 'justify-center px-2' : ''}`}
+                    title={isSidebarCollapsed ? page.label : undefined}
+                  >
+                    <Icon size={18} className="shrink-0" />
+                    {!isSidebarCollapsed && (
+                      <span className="flex-1 flex items-center justify-between min-w-0">
+                        <span className="truncate pr-1">{page.label}</span>
+                        {page.badgeCount !== undefined && page.badgeCount > 0 && (
+                          <span className="ml-2 flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white shadow-sm ring-1 ring-white dark:ring-slate-950">
+                            {page.badgeCount}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {isSidebarCollapsed && page.badgeCount !== undefined && page.badgeCount > 0 && (
+                      <span className="absolute top-1 right-1 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-rose-500 text-[8px] font-bold text-white shadow-sm ring-1 ring-white dark:ring-slate-950">
+                        {page.badgeCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </nav>
             {sidebarExtra && (
               <div className="mt-auto pt-4 border-t border-slate-100 dark:border-slate-800 shrink-0">

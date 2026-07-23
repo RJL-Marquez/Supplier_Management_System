@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   BarChart3,
+  Calendar,
   LayoutGrid,
   ListChecks,
-  PieChart,
   Presentation as PresentationIcon,
   Sparkles,
   Star,
@@ -37,6 +38,7 @@ const categoryIcons: Record<PresentationCategoryId, typeof BarChart3> = {
   trends: TrendingUp,
   questions: ListChecks,
   spotlight: Star,
+  distribution: AlertTriangle,
 };
 
 export function PresentPage({ responses, partnerCompanies }: PresentPageProps) {
@@ -67,15 +69,19 @@ export function PresentPage({ responses, partnerCompanies }: PresentPageProps) {
     [responses, surveyTypes],
   );
 
-  const dateFiltered = scopedResponses;
+  const isCustomInvalid = dateRangeId === 'custom' && (!customFrom || !customTo || customFrom > customTo);
 
-  const isCustomInvalid = false;
-  const canGenerate = selectedCategories.length > 0 && dateFiltered.length > 0;
+  const dateFiltered = useMemo(() => {
+    if (isCustomInvalid) return [];
+    return filterByDateRange(scopedResponses, { id: dateRangeId, from: customFrom, to: customTo });
+  }, [scopedResponses, dateRangeId, customFrom, customTo, isCustomInvalid]);
+
+  const canGenerate = selectedCategories.length > 0 && dateFiltered.length > 0 && !isCustomInvalid;
 
   const handleGenerate = () => {
     if (!canGenerate) return;
     const activeTypes = surveyTypes.length ? surveyTypes : allSurveyTypes;
-    const dateRangeLabel = 'All Time';
+    const dateRangeLabel = describeDateRange({ id: dateRangeId, from: customFrom, to: customTo }, dateFiltered);
     const finalTitle = titleInput.trim() || DEFAULT_TITLE;
     const slides = buildSlides({
       responses: dateFiltered,
@@ -154,9 +160,60 @@ export function PresentPage({ responses, partnerCompanies }: PresentPageProps) {
         </div>
       </section>
 
-      {/* Step 2: Survey types + date range */}
+      {/* Step 2: Time window */}
       <section className="panel">
-        <h3 className="text-base font-semibold">2. Which stakeholder groups?</h3>
+        <div className="flex items-center gap-2">
+          <Calendar size={16} className="text-[#0063a9] dark:text-blue-400" />
+          <h3 className="text-base font-semibold">2. What time window?</h3>
+        </div>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Narrow the deck to a specific reporting period, or cover everything on record.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {DATE_RANGE_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setDateRangeId(option.id)}
+              title={option.description}
+              className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
+                dateRangeId === option.id
+                  ? 'border-[#0063a9] bg-[#0063a9] text-white'
+                  : 'border-slate-200 text-slate-500 hover:border-slate-300 dark:border-slate-700 dark:text-slate-400'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {dateRangeId === 'custom' && (
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              From
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-800 focus:border-[#0063a9] focus:outline-none focus:ring-1 focus:ring-[#0063a9] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              To
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-800 focus:border-[#0063a9] focus:outline-none focus:ring-1 focus:ring-[#0063a9] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </label>
+            {isCustomInvalid && (
+              <p className="text-xs font-semibold text-rose-500">Pick a valid start and end date, with start before end.</p>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* Step 3: Survey types */}
+      <section className="panel">
+        <h3 className="text-base font-semibold">3. Which stakeholder groups?</h3>
         <p className="text-sm text-slate-500 dark:text-slate-400">Leave all selected to cover every partner type.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {allSurveyTypes.map((type) => (
@@ -176,9 +233,9 @@ export function PresentPage({ responses, partnerCompanies }: PresentPageProps) {
         </div>
       </section>
 
-      {/* Step 3: Title */}
+      {/* Step 4: Title */}
       <section className="panel">
-        <h3 className="text-base font-semibold">3. Give it a title</h3>
+        <h3 className="text-base font-semibold">4. Give it a title</h3>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Shown on the cover slide and the presentation window — make it your own.
         </p>
@@ -197,12 +254,15 @@ export function PresentPage({ responses, partnerCompanies }: PresentPageProps) {
       <section className="panel flex flex-col items-center justify-between gap-4 sm:flex-row">
         <div>
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            {dateFiltered.length > 0
+            {isCustomInvalid
+              ? 'Fix the custom date range above to continue.'
+              : dateFiltered.length > 0
               ? `Ready to generate — ${dateFiltered.length} responses in this window.`
               : 'No responses match this selection yet.'}
           </p>
           <p className="text-xs text-slate-400">
-            {selectedCategories.length} topic{selectedCategories.length === 1 ? '' : 's'} selected · All Time
+            {selectedCategories.length} topic{selectedCategories.length === 1 ? '' : 's'} selected ·{' '}
+            {DATE_RANGE_OPTIONS.find((o) => o.id === dateRangeId)?.label}
           </p>
         </div>
         <button type="button" onClick={handleGenerate} disabled={!canGenerate} className="primary-button disabled:cursor-not-allowed disabled:opacity-40">

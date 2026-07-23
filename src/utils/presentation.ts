@@ -7,6 +7,7 @@ import {
   formatNumber,
   getKpiSummary,
   monthlyTrend,
+  naFrequency,
   questionPerformance,
   ratingDistribution,
   responseVolume,
@@ -98,13 +99,32 @@ export type PresentationCategoryId =
   | 'leaderboard'
   | 'trends'
   | 'questions'
-  | 'spotlight';
+  | 'spotlight'
+  | 'distribution';
 
 export interface PresentationCategoryDef {
   id: PresentationCategoryId;
   label: string;
   description: string;
 }
+
+// Single source of truth for each slide's small uppercase "kicker" label,
+// shared by the live deck (SlideDeck.tsx) and both static exports
+// (presentationPdf.ts, presentationPptx.ts) so the three renderers can never
+// drift out of sync with each other.
+export const SLIDE_EYEBROWS: Record<Slide['kind'], string> = {
+  title: 'Cover',
+  agenda: "What's inside",
+  overview: 'Overview',
+  comparison: 'Performance Insight',
+  sections: 'By Category',
+  leaderboard: 'Rankings',
+  trends: 'Historical View',
+  questions: 'Question Insights',
+  spotlight: 'Featured Partner',
+  distribution: 'Data Quality & Risk',
+  closing: 'Closing',
+};
 
 export const PRESENTATION_CATEGORIES: PresentationCategoryDef[] = [
   {
@@ -136,6 +156,11 @@ export const PRESENTATION_CATEGORIES: PresentationCategoryDef[] = [
     id: 'spotlight',
     label: 'Company Spotlight',
     description: 'A closer look at the top performer plus anyone falling behind their peers',
+  },
+  {
+    id: 'distribution',
+    label: 'Distribution & Risk Watch',
+    description: 'How ratings are spread out, where N/A responses cluster, and every partner trailing its peer group',
   },
 ];
 
@@ -180,6 +205,13 @@ export type Slide =
       band: string;
       hex: string;
       atRisk?: { company: string; surveyType: SurveyType; score: number };
+    }
+  | {
+      kind: 'distribution';
+      buckets: { rating: string; count: number }[];
+      naByCategory: { category: string; count: number }[];
+      naPercentage: number;
+      atRisk: { company: string; surveyType: SurveyType; score: number; band: string; hex: string }[];
     }
   | { kind: 'closing'; takeaways: string[] };
 
@@ -347,8 +379,11 @@ export function buildSlides(options: BuildSlidesOptions): Slide[] {
     surveyTypes,
   });
 
-  // 4. Selected category slides
-  categoryIds.forEach((id) => {
+  // 4. Selected category slides, in the fixed canonical order (raw/data ->
+  // rankings -> trends -> deep dives) regardless of the order the user
+  // happened to click the category cards in, so the deck always reads as a
+  // coherent narrative instead of a randomly-shuffled one.
+  selectedCategoryDefs.map((c) => c.id).forEach((id) => {
     if (id === 'comparison') {
       slides.push({ kind: 'comparison', data: averageBySurveyType(responses, surveyTypes) });
     }
@@ -388,6 +423,38 @@ export function buildSlides(options: BuildSlidesOptions): Slide[] {
           .reverse()
           .map((q) => ({ question: q.question, average: q.average })),
         maxRating: summary.maxRating,
+      });
+    }
+
+    if (id === 'distribution') {
+      const buckets = ratingDistribution(responses).map((b) => ({ rating: b.rating, count: b.count }));
+      const naByCategory = naFrequency(responses)
+        .filter((c) => c.count > 0)
+        .sort((a, b) => b.count - a.count);
+
+      // "Needs attention" across every selected survey type, not just one -
+      // each type's own peer group is used (a Courier is only ever compared
+      // to other Couriers), then merged and ranked so the lowest overall
+      // composite scores surface first regardless of which form they came from.
+      const atRisk = surveyTypes
+        .flatMap((type) => {
+          const leaderboard = getLeaderboard(responses, type);
+          const outliers = getOutliers(leaderboard);
+          return outliers
+            .filter((o) => o.isLowOutlier)
+            .map((o) => leaderboard.find((c) => c.company === o.company))
+            .filter((c): c is NonNullable<typeof c> => Boolean(c));
+        })
+        .sort((a, b) => a.compositeScore - b.compositeScore)
+        .slice(0, 6)
+        .map((c) => ({ company: c.company, surveyType: c.surveyType, score: c.compositeScore, band: c.band.label, hex: c.band.hex }));
+
+      slides.push({
+        kind: 'distribution',
+        buckets,
+        naByCategory,
+        naPercentage: summary.naPercentage,
+        atRisk,
       });
     }
 

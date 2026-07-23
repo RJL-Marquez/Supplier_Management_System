@@ -2,6 +2,7 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { logExport } from './exportHistory';
 
 /**
  * Shared client-side export helpers. Everything here runs entirely in the
@@ -41,7 +42,9 @@ export function exportTablesAsCSV(tables: ExportTable[], filenameBase: string) {
     return `${table.title}\n${csvBody}`;
   });
   const blob = new Blob([chunks.join('\n\n')], { type: 'text/csv;charset=utf-8;' });
-  triggerDownload(blob, `${filenameBase}_${timestamp()}.csv`);
+  const filename = `${filenameBase}_${timestamp()}.csv`;
+  triggerDownload(blob, filename);
+  logExport({ title: tables[0]?.title || filenameBase, format: 'csv', filename });
 }
 
 /** One workbook, one sheet per table (sheet name = table title, truncated to Excel's 31-char limit). */
@@ -64,7 +67,9 @@ export function exportTablesAsExcel(tables: ExportTable[], filenameBase: string)
     XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
   });
 
-  XLSX.writeFile(workbook, `${filenameBase}_${timestamp()}.xlsx`);
+  const filename = `${filenameBase}_${timestamp()}.xlsx`;
+  XLSX.writeFile(workbook, filename);
+  logExport({ title: tables[0]?.title || filenameBase, format: 'excel', filename });
 }
 
 /** One PDF, one heading + table per section, stacked vertically (auto page-breaks via autoTable). */
@@ -164,5 +169,7 @@ export function exportTablesAsPDF(reportTitle: string, tables: ExportTable[], fi
     );
   }
 
-  doc.save(`${filenameBase}_${timestamp()}.pdf`);
+  const filename = `${filenameBase}_${timestamp()}.pdf`;
+  doc.save(filename);
+  logExport({ title: reportTitle, format: 'pdf', filename });
 }

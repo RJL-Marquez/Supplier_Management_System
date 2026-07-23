@@ -151,5 +151,11 @@ export function hasPageAccess(
     return userPages.includes('survey-forms');
   }
 
+  // Every authenticated user has their own submissions and profile,
+  // regardless of rank/department page overrides.
+  if (pageKey === 'my-submissions' || pageKey === 'profile-settings') {
+    return true;
+  }
+
   return userPages.includes(pageKey as PageModuleKey);
 }

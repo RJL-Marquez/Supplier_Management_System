@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import { Slide } from './presentation';
+import { Slide, SLIDE_EYEBROWS } from './presentation';
 
 const PAGE_W = 841.89;
 const PAGE_H = 595.28;
@@ -114,7 +114,7 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
       break;
     }
     case 'agenda': {
-      drawHeader(doc, "What's inside", 'Contents');
+      drawHeader(doc, SLIDE_EYEBROWS.agenda, 'Contents');
       const top = 150;
       const bottom = PAGE_H - MARGIN;
       // Grows to fill the available height with a short agenda (e.g. only
@@ -141,7 +141,7 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
       break;
     }
     case 'overview': {
-      drawHeader(doc, 'Overview', 'Where things stand');
+      drawHeader(doc, SLIDE_EYEBROWS.overview, 'Where things stand');
       let x = MARGIN;
       const kpiW = (PAGE_W - MARGIN * 2 - 30) / 4;
       slide.kpis.forEach((kpi) => {
@@ -179,7 +179,7 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
       break;
     }
     case 'comparison': {
-      drawHeader(doc, 'Category', 'Survey Type Comparison');
+      drawHeader(doc, SLIDE_EYEBROWS.comparison, 'Survey Type Comparison');
       const maxAvg = pdfMaxRating;
       const top = 150;
       const bottom = PAGE_H - MARGIN;
@@ -203,7 +203,7 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
       break;
     }
     case 'sections': {
-      drawHeader(doc, 'Category', 'Category Breakdown');
+      drawHeader(doc, SLIDE_EYEBROWS.sections, 'Category Breakdown');
       const top = 150;
       const bottom = PAGE_H - MARGIN;
       const maxAvg = Math.max(4, ...slide.data.map((d) => d.average));
@@ -225,7 +225,7 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
       break;
     }
     case 'leaderboard': {
-      drawHeader(doc, 'Category', 'Company Leaderboard');
+      drawHeader(doc, SLIDE_EYEBROWS.leaderboard, 'Company Leaderboard');
       const colGap = 20;
       const colW = (CONTENT_W - colGap * (slide.groups.length - 1)) / slide.groups.length;
       const top = 165;
@@ -257,7 +257,7 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
       break;
     }
     case 'trends': {
-      drawHeader(doc, 'Category', 'Trends Over Time');
+      drawHeader(doc, SLIDE_EYEBROWS.trends, 'Trends Over Time');
       const top = 160;
       const bottom = PAGE_H - MARGIN;
       const maxAvg = 4;
@@ -275,7 +275,7 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
       break;
     }
     case 'questions': {
-      drawHeader(doc, 'Category', 'Top & Bottom Questions');
+      drawHeader(doc, SLIDE_EYEBROWS.questions, 'Top & Bottom Questions');
       const colW = (CONTENT_W - 30) / 2;
       const top = 165;
       const bottom = PAGE_H - MARGIN;
@@ -302,7 +302,7 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
       break;
     }
     case 'spotlight': {
-      drawHeader(doc, 'Category', 'Company Spotlight');
+      drawHeader(doc, SLIDE_EYEBROWS.spotlight, 'Company Spotlight');
       setText(doc, slide.hex);
       doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
@@ -348,6 +348,69 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
           MARGIN,
           y + 12,
         );
+      }
+      break;
+    }
+
+    case 'distribution': {
+      drawHeader(
+        doc,
+        SLIDE_EYEBROWS.distribution,
+        'Distribution & Risk Watch',
+        `How ratings are spread out${slide.naPercentage > 0 ? `, ${slide.naPercentage.toFixed(1)}% marked N/A` : ''}, and who's trailing their peer group.`,
+      );
+      const colGap = 30;
+      const colW = (CONTENT_W - colGap) / 2;
+      const top = 165;
+      const bottom = PAGE_H - MARGIN;
+
+      // Left column: rating distribution bars
+      setText(doc, INK);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text('RATING DISTRIBUTION', MARGIN, 150);
+      const maxCount = Math.max(1, ...slide.buckets.map((b) => b.count));
+      const bucketRowH = Math.min(40, (bottom - top) / Math.max(1, slide.buckets.length));
+      slide.buckets.forEach((bucket, i) => {
+        const y = top + i * bucketRowH + bucketRowH * 0.6;
+        setText(doc, INK);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.text(String(bucket.rating), MARGIN, y);
+        setText(doc, '#64748b');
+        doc.setFont('helvetica', 'normal');
+        doc.text(String(bucket.count), MARGIN + colW - 30, y);
+        bar(doc, MARGIN, y + 6, colW - 60, 8, bucket.count / maxCount, bucket.rating === 'N/A' ? '#94a3b8' : BRAND);
+      });
+
+      // Right column: needs attention list
+      const rightX = MARGIN + colW + colGap;
+      setText(doc, '#b45309');
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text('NEEDS ATTENTION', rightX, 150);
+      if (slide.atRisk.length === 0) {
+        setText(doc, '#64748b');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.text('No partner is meaningfully trailing its peer group in this window.', rightX, top, { maxWidth: colW });
+      } else {
+        const riskRowH = Math.min(34, (bottom - top) / slide.atRisk.length);
+        slide.atRisk.forEach((c, i) => {
+          const y = top + i * riskRowH;
+          setText(doc, INK);
+          doc.setFontSize(9.5);
+          doc.setFont('helvetica', 'bold');
+          doc.text(c.company, rightX, y, { maxWidth: colW - 60 });
+          setText(doc, '#64748b');
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.text(`${c.surveyType} · ${c.band}`, rightX, y + 12);
+          setText(doc, c.hex);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(10);
+          doc.text(c.score.toFixed(1), rightX + colW - 4, y, { align: 'right' });
+        });
       }
       break;
     }

@@ -21,6 +21,7 @@ import {
 } from 'docx';
 import { SurveyType } from '../types/survey';
 import { CompanyComposite } from './scoring';
+import { logExport } from './exportHistory';
 
 /** What graph sections the person chose to include, plus the captured chart images (if any). */
 export interface CompanyReportGraphSelection {
@@ -322,6 +323,7 @@ export async function exportCompanyReportAsPDF(
     return blobUrl;
   }
   doc.save(filename);
+  logExport({ title: `Company Report - ${data.company}`, format: 'pdf', filename });
 }
 
 /* ------------------------------------------------------------------ */
@@ -688,10 +690,12 @@ export async function exportCompanyReportAsDocx(data: CompanyReportData) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   const filenameSafe = data.company.replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+  const filename = `company_report_${filenameSafe}_${new Date().toISOString().slice(0, 10)}.docx`;
   link.href = url;
-  link.download = `company_report_${filenameSafe}_${new Date().toISOString().slice(0, 10)}.docx`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+  logExport({ title: `Company Report - ${data.company}`, format: 'docx', filename });
 }

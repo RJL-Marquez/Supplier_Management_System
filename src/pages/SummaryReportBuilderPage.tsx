@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   ChevronDown,
@@ -127,6 +127,11 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
     return questionPerformance(filteredResponses).slice(0, 5);
   }, [filteredResponses]);
 
+  // Whether the export produces a 3rd page (Partner Performance & Question
+  // Highlights) - shared between the preview's page count and the PDF export
+  // so the two never drift on how many pages the document actually has.
+  const hasExtraSections = showTopCompanies || showBottomCompanies || showQuestions;
+
   // Recharts Chart Data
   const chartData = useMemo(() => {
     return surveyPerformance.map(row => ({
@@ -156,6 +161,18 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
     } catch {
       return null;
     }
+  };
+
+  // Reads the real pixel dimensions of a captured PNG so it can be embedded at
+  // its true aspect ratio - a hardcoded guessed ratio stretches/squashes the
+  // chart whenever the live wrapper's actual proportions differ from the guess.
+  const dataUrlDimensions = (dataUrl: string): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth || 400, height: img.naturalHeight || 220 });
+      img.onerror = () => resolve({ width: 400, height: 220 });
+      img.src = dataUrl;
+    });
   };
 
   // Helper to capture SVG chart as PNG base64
@@ -412,8 +429,9 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
             doc.text(`Survey Performance Metrics Map (${chartMetric === 'responses' ? 'Submissions Volume' : 'Average Score %'})`, marginLeft, cursorY);
             cursorY += 12;
 
-            const targetHeight = 150;
-            const targetWidth = targetHeight * (400 / 220); // Maintain ratio
+            const { width: natW, height: natH } = await dataUrlDimensions(chartDataUrl);
+            const targetWidth = contentWidth * 0.55;
+            const targetHeight = (natH / natW) * targetWidth;
             doc.addImage(chartDataUrl, 'PNG', marginLeft + (contentWidth - targetWidth) / 2, cursorY, targetWidth, targetHeight);
             cursorY += targetHeight + 25;
           }
@@ -446,7 +464,6 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
         }
 
         // PAGE 3: PARTNER COMPANY RATINGS & HIGHLIGHTS
-        const hasExtraSections = showTopCompanies || showBottomCompanies || showQuestions;
         if (hasExtraSections) {
           addHeaderAndFooter(doc);
           cursorY = 95;
@@ -772,284 +789,317 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
           </div>
         </div>
 
-        {/* The Paper Sheet */}
+        {/* The Paper Sheets - one block per actual PDF page, so what's shown here always matches what Export PDF produces */}
         <div className="flex-1 bg-slate-100 dark:bg-slate-900/60 rounded-xl p-4 md:p-8 overflow-y-auto max-h-[800px] border border-slate-200/50 dark:border-slate-800/40">
-          <div className="bg-white dark:bg-slate-950 mx-auto max-w-[800px] min-h-[1120px] p-8 md:p-12 shadow-md border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 relative space-y-6">
-            
-            {/* Elegant Letterhead Header */}
-            <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800 pb-5">
-              <div>
-                <img src={LOGO_URL} alt="Microgenesis Logo" className="h-9 w-auto object-contain" referrerPolicy="no-referrer" />
-              </div>
-              <div className="text-right">
-                <h1 className="text-xs font-extrabold tracking-wider text-[#0063a9] uppercase">Summary Report</h1>
-                <p className="text-[10px] text-slate-400 mt-1 font-mono">MBS Partner Evaluation System</p>
-                <p className="text-[10px] text-slate-400 font-mono">Generated: {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              </div>
-            </div>
+          <div className="mx-auto flex flex-col items-center gap-10">
+            {/* Page 1 - Cover. Header sits near the top and the confidential
+                footer sits near the bottom (matching the PDF's fixed y-coordinates)
+                rather than centering the whole block, which would spread the
+                blank space evenly instead of concentrating it in the middle. */}
+            <SummaryPagedSheet pageLabel="Page 1 · Cover">
+              <div className="flex h-full flex-col items-center px-4 text-center">
+                <div className="pt-[16%]">
+                  <img src={LOGO_URL} alt="Microgenesis" className="mx-auto h-14 w-auto" referrerPolicy="no-referrer" />
+                  <div className="mx-auto mt-7 h-px w-20 bg-[#0063a9]" />
+                  <h1 className="mt-7 text-2xl font-bold text-slate-800 dark:text-slate-100">Summary Report</h1>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">MBS Partner Evaluation System</p>
 
-            {/* Document Title Banner */}
-            <div className="py-2">
-              <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Survey Performance Summary Analysis</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-                This comprehensive executive digest synthesizes performance evaluations submitted for active supplier divisions. Ratings are aggregated across Courier, Supplier, and Subcontractor channels to provide system-wide insights.
-              </p>
-            </div>
-
-            {/* Core KPI Cards Block */}
-            {showKpis && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 rounded-lg p-3.5 flex flex-col justify-center">
-                  <span className="text-xs text-slate-400 font-semibold tracking-wider">RESPONSES</span>
-                  <span className="text-lg font-bold text-[#0063a9] mt-1">{summary.totalResponses}</span>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 rounded-lg p-3.5 flex flex-col justify-center">
-                  <span className="text-xs text-slate-400 font-semibold tracking-wider">AVG RATING</span>
-                  <span className="text-lg font-bold text-[#0063a9] mt-1">{formatNumber(summary.averageRating)}%</span>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 rounded-lg p-3.5 flex flex-col justify-center">
-                  <span className="text-xs text-slate-400 font-semibold tracking-wider">SATISFACTION</span>
-                  <span className="text-lg font-bold text-[#0063a9] mt-1">{formatNumber(summary.overallSatisfactionScore)}%</span>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 rounded-lg p-3.5 flex flex-col justify-center">
-                  <span className="text-xs text-slate-400 font-semibold tracking-wider">N/A FREQUENCY</span>
-                  <span className="text-lg font-bold text-[#0063a9] mt-1">{formatNumber(summary.naPercentage)}%</span>
-                </div>
-              </div>
-            )}
-
-            {/* Dynamic Circular Graph Graphe section */}
-            {showChart && activeTypes.length > 0 && (
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-5 bg-white dark:bg-slate-950 flex flex-col items-center">
-                <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest text-center mb-3">
-                  Survey Share & Performance distribution ({chartMetric === 'responses' ? 'Submissions' : 'Average %'})
-                </h4>
-                
-                {/* Captured chart wrapper */}
-                <div ref={chartWrapperRef} className="w-full max-w-[400px] flex flex-col items-center bg-white dark:bg-slate-950">
-                  <div className="relative w-full h-[190px] flex items-center justify-center">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={chartData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={55}
-                          outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value"
-                          // Renders immediately instead of animating in - guarantees the
-                          // chart is fully drawn the instant captureChartImage/html2canvas
-                          // grabs it for the PDF export, rather than racing an in-progress entrance animation.
-                          isAnimationActive={false}
-                        >
-                          {chartData.map((entry) => (
-                            <Cell
-                              key={`cell-${entry.name}`}
-                              fill={COLORS[entry.name as SurveyType] || '#CBD5E1'}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value: any, name: any, props: any) => [
-                            props.payload.formattedValue,
-                            name,
-                          ]}
-                          contentStyle={{
-                            background: '#1e293b',
-                            border: 'none',
-                            borderRadius: '8px',
-                            color: '#f8fafc',
-                            fontSize: '11px',
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    {/* Donut-hole readout: the headline number, visible without hovering
-                        over a slice - essential since the static PDF capture can't show tooltips. */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                      <span className="text-2xl font-black text-[#0063a9] dark:text-blue-400 leading-none">
-                        {chartCenterValue}
-                      </span>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1 text-center px-2 leading-tight">
-                        {chartCenterLabel}
-                      </span>
+                  <div className="mt-14 w-full max-w-md rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/40 p-5 text-left">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Report Specifications:</p>
+                    <div className="mt-2.5 space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      <p><span className="font-semibold text-slate-700 dark:text-slate-200">Active Survey Types:</span> {activeTypes.join(', ') || 'None selected'}</p>
+                      <p><span className="font-semibold text-slate-700 dark:text-slate-200">Total Submitted Surveys Count:</span> {summary.totalResponses} submissions</p>
+                      <p><span className="font-semibold text-slate-700 dark:text-slate-200">Average System-wide Score:</span> {formatNumber(summary.averageRating)}%</p>
+                      <p><span className="font-semibold text-slate-700 dark:text-slate-200">Generated On:</span> {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                     </div>
                   </div>
-                  {/* Per-type breakdown - pairs each slice's color with its name and
-                      exact number, since recharts' Pie label render function silently
-                      drops every sector in this app's recharts version. */}
-                  <div className="w-full grid grid-cols-3 gap-2 mt-1">
-                    {chartData.map((entry) => {
-                      const color = COLORS[entry.name as SurveyType] || '#CBD5E1';
-                      return (
-                        <div
-                          key={entry.name}
-                          className="flex flex-col items-center gap-1 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 px-2 py-2"
-                        >
-                          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300">
-                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-                            {entry.name}
-                          </span>
-                          <span className="text-sm font-black" style={{ color }}>
-                            {chartMetric === 'responses' ? entry.value : `${formatNumber(entry.value)}%`}
-                          </span>
-                        </div>
-                      );
-                    })}
+                </div>
+                <p className="mt-auto pb-[3%] text-[10px] text-slate-400 dark:text-slate-500">
+                  Microgenesis Supplier Management System — Confidential
+                </p>
+              </div>
+            </SummaryPagedSheet>
+
+            {/* Page 2 - KPIs, chart, performance table */}
+            <SummaryPagedSheet pageLabel="Page 2" footerPage="Page 1">
+              <SummaryPageHeader />
+              <h2 className="mt-6 text-lg font-bold text-slate-900 dark:text-white">System-wide Evaluation Overview</h2>
+
+              {showKpis && (
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-900/40">
+                    <span className="block text-lg font-bold text-[#0063a9]">{summary.totalResponses}</span>
+                    <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total Submitted Evaluations</span>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-900/40">
+                    <span className="block text-lg font-bold text-[#0063a9]">{formatNumber(summary.averageRating)}%</span>
+                    <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-400">Average System Score</span>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-900/40">
+                    <span className="block text-lg font-bold text-[#0063a9]">{formatNumber(summary.overallSatisfactionScore)}%</span>
+                    <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-400">Overall Satisfaction Index</span>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-900/40">
+                    <span className="block text-lg font-bold text-[#0063a9]">{formatNumber(summary.naPercentage)}%</span>
+                    <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-400">N/A Answer Frequency Rate</span>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Performance Summary Table */}
-            {showTable && activeTypes.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-white">Survey Performance Summary</h3>
-                  <span className="text-[10px] text-slate-400 uppercase font-mono">Table 1.1</span>
+              {/* Dynamic Circular Graph section */}
+              {showChart && activeTypes.length > 0 && (
+                <div className="mt-5">
+                  <h4 className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-100">
+                    Survey Performance Metrics Map ({chartMetric === 'responses' ? 'Submissions Volume' : 'Average Score %'})
+                  </h4>
+
+                  {/* Captured chart wrapper */}
+                  <div ref={chartWrapperRef} className="mx-auto w-full max-w-[340px] flex flex-col items-center bg-white dark:bg-slate-950">
+                    <div className="relative w-full h-[170px] flex items-center justify-center">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={chartData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={50}
+                            outerRadius={72}
+                            paddingAngle={5}
+                            dataKey="value"
+                            // Renders immediately instead of animating in - guarantees the
+                            // chart is fully drawn the instant captureChartImage/html2canvas
+                            // grabs it for the PDF export, rather than racing an in-progress entrance animation.
+                            isAnimationActive={false}
+                          >
+                            {chartData.map((entry) => (
+                              <Cell
+                                key={`cell-${entry.name}`}
+                                fill={COLORS[entry.name as SurveyType] || '#CBD5E1'}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            formatter={(value: any, name: any, props: any) => [
+                              props.payload.formattedValue,
+                              name,
+                            ]}
+                            contentStyle={{
+                              background: '#1e293b',
+                              border: 'none',
+                              borderRadius: '8px',
+                              color: '#f8fafc',
+                              fontSize: '11px',
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      {/* Donut-hole readout: the headline number, visible without hovering
+                          over a slice - essential since the static PDF capture can't show tooltips. */}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <span className="text-2xl font-black text-[#0063a9] dark:text-blue-400 leading-none">
+                          {chartCenterValue}
+                        </span>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1 text-center px-2 leading-tight">
+                          {chartCenterLabel}
+                        </span>
+                      </div>
+                    </div>
+                    {/* Per-type breakdown - pairs each slice's color with its name and
+                        exact number, since recharts' Pie label render function silently
+                        drops every sector in this app's recharts version. */}
+                    <div className="w-full grid grid-cols-3 gap-2 mt-1">
+                      {chartData.map((entry) => {
+                        const color = COLORS[entry.name as SurveyType] || '#CBD5E1';
+                        return (
+                          <div
+                            key={entry.name}
+                            className="flex flex-col items-center gap-1 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 px-2 py-2"
+                          >
+                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                              {entry.name}
+                            </span>
+                            <span className="text-sm font-black" style={{ color }}>
+                              {chartMetric === 'responses' ? entry.value : `${formatNumber(entry.value)}%`}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-                <div className="overflow-hidden border border-slate-200 dark:border-slate-800 rounded-lg">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-[#0063a9] text-white">
-                        <th className="px-4 py-2.5 font-bold">Survey Type Category</th>
-                        <th className="px-4 py-2.5 font-bold text-center">Average Rating Score (%)</th>
-                        <th className="px-4 py-2.5 font-bold text-center">Submitted Evaluations</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {surveyPerformance.map((row, index) => (
-                        <tr
-                          key={row.surveyType}
-                          className={index % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/20' : 'bg-white dark:bg-slate-900'}
-                        >
-                          <td className="px-4 py-2 text-slate-700 dark:text-slate-300 font-semibold flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: COLORS[row.surveyType] }} />
-                            {row.surveyType} Division
-                          </td>
-                          <td className="px-4 py-2 text-center text-slate-800 dark:text-slate-100 font-extrabold">{formatNumber(row.average)}%</td>
-                          <td className="px-4 py-2 text-center text-slate-600 dark:text-slate-400">{row.responses}</td>
+              )}
+
+              {/* Performance Summary Table */}
+              {showTable && activeTypes.length > 0 && (
+                <div className="mt-5 space-y-2">
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-white">Survey Category Performance Table</h3>
+                  <div className="overflow-hidden border border-slate-200 dark:border-slate-800 rounded-lg">
+                    <table className="w-full text-left border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-[#0063a9] text-white">
+                          <th className="px-3 py-1.5 font-bold">Survey Category</th>
+                          <th className="px-3 py-1.5 font-bold text-center">Average Score (%)</th>
+                          <th className="px-3 py-1.5 font-bold text-center">Total Submissions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {surveyPerformance.map((row, index) => (
+                          <tr
+                            key={row.surveyType}
+                            className={index % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/20' : 'bg-white dark:bg-slate-900'}
+                          >
+                            <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300 font-semibold">{row.surveyType}</td>
+                            <td className="px-3 py-1.5 text-center text-slate-800 dark:text-slate-100 font-extrabold">{formatNumber(row.average)}%</td>
+                            <td className="px-3 py-1.5 text-center text-slate-600 dark:text-slate-400">{row.responses}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
+            </SummaryPagedSheet>
+
+            {/* Page 3 - Partner Performance & Question Highlights (only exists in the PDF if at least one of these sections is on) */}
+            {hasExtraSections && (
+              <SummaryPagedSheet pageLabel="Page 3" footerPage="Page 2">
+                <SummaryPageHeader />
+                <h2 className="mt-6 text-lg font-bold text-slate-900 dark:text-white">Partner Performance &amp; Question Highlights</h2>
+
+                {showTopCompanies && topCompanies.length > 0 && (
+                  <div className="mt-5 space-y-2">
+                    <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-800 dark:text-white">
+                      <Award size={14} className="text-emerald-500" />
+                      <span>Top Performing Evaluated Companies</span>
+                    </h3>
+                    <div className="overflow-hidden border border-slate-100 dark:border-slate-800 rounded-lg text-[10px]">
+                      <table className="w-full text-left">
+                        <thead className="bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-400 font-bold">
+                          <tr>
+                            <th className="px-3 py-1.5">Rank</th>
+                            <th className="px-3 py-1.5">Company Name</th>
+                            <th className="px-3 py-1.5 text-center">Average Score (%)</th>
+                            <th className="px-3 py-1.5 text-center">Evaluations Count</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {topCompanies.map((row, idx) => (
+                            <tr key={row.company} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-900/20' : 'bg-white dark:bg-slate-950'}>
+                              <td className="px-3 py-1 font-bold text-emerald-600 dark:text-emerald-400">#{idx + 1}</td>
+                              <td className="px-3 py-1 font-semibold text-slate-800 dark:text-slate-200">{row.company}</td>
+                              <td className="px-3 py-1 text-center font-bold text-slate-700 dark:text-slate-300">{formatNumber(row.average)}%</td>
+                              <td className="px-3 py-1 text-center text-slate-500">{row.evaluations}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {showBottomCompanies && leastRatedCompanies.length > 0 && (
+                  <div className="mt-5 space-y-2">
+                    <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-800 dark:text-white">
+                      <AlertTriangle size={14} className="text-rose-500" />
+                      <span>Lowest Rated Evaluated Companies</span>
+                    </h3>
+                    <div className="overflow-hidden border border-slate-100 dark:border-slate-800 rounded-lg text-[10px]">
+                      <table className="w-full text-left">
+                        <thead className="bg-rose-50 dark:bg-rose-950/20 text-rose-800 dark:text-rose-400 font-bold">
+                          <tr>
+                            <th className="px-3 py-1.5">Rank</th>
+                            <th className="px-3 py-1.5">Company Name</th>
+                            <th className="px-3 py-1.5 text-center">Average Score (%)</th>
+                            <th className="px-3 py-1.5 text-center">Evaluations Count</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {leastRatedCompanies.map((row, idx) => (
+                            <tr key={row.company} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-900/20' : 'bg-white dark:bg-slate-950'}>
+                              <td className="px-3 py-1 font-bold text-rose-600 dark:text-rose-400">#{companyPerformance.length - idx}</td>
+                              <td className="px-3 py-1 font-semibold text-slate-800 dark:text-slate-200">{row.company}</td>
+                              <td className="px-3 py-1 text-center font-bold text-slate-700 dark:text-slate-300">{formatNumber(row.average)}%</td>
+                              <td className="px-3 py-1 text-center text-slate-500">{row.evaluations}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {showQuestions && questionRows.length > 0 && (
+                  <div className="mt-5 space-y-2">
+                    <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-800 dark:text-white">
+                      <HelpCircle size={14} className="text-slate-500" />
+                      <span>Question Performance Highlights</span>
+                    </h3>
+                    <div className="overflow-hidden border border-slate-100 dark:border-slate-800 rounded-lg text-[10px]">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold">
+                          <tr>
+                            <th className="px-3 py-1.5">Question Rating Highlight</th>
+                            <th className="px-3 py-1.5 text-center">Average Rating (%)</th>
+                            <th className="px-3 py-1.5 text-center">Response Submissions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {questionRows.map((row, idx) => (
+                            <tr key={row.question} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-900/20' : 'bg-white dark:bg-slate-950'}>
+                              <td className="px-3 py-1.5 text-slate-600 dark:text-slate-300 font-medium leading-relaxed">{row.question}</td>
+                              <td className="px-3 py-1.5 text-center font-extrabold text-[#0063a9]">{formatNumber(row.average)}%</td>
+                              <td className="px-3 py-1.5 text-center text-slate-500">{row.responses}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </SummaryPagedSheet>
             )}
-
-            {/* Top performing companies section */}
-            {showTopCompanies && topCompanies.length > 0 && (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4">
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
-                    <Award size={15} className="text-emerald-500" />
-                    <span>Top Performing Evaluated Companies</span>
-                  </h3>
-                  <span className="text-[10px] text-slate-400 uppercase font-mono">Rankings</span>
-                </div>
-                <div className="overflow-hidden border border-slate-100 dark:border-slate-800 rounded-lg text-xs">
-                  <table className="w-full text-left">
-                    <thead className="bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-400 font-bold">
-                      <tr>
-                        <th className="px-4 py-2">Rank</th>
-                        <th className="px-4 py-2">Company</th>
-                        <th className="px-4 py-2 text-center">Average Score (%)</th>
-                        <th className="px-4 py-2 text-center">Evaluations</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {topCompanies.map((row, idx) => (
-                        <tr key={row.company} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/10">
-                          <td className="px-4 py-1.5 font-bold text-emerald-600 dark:text-emerald-400">#{idx + 1}</td>
-                          <td className="px-4 py-1.5 font-semibold text-slate-800 dark:text-slate-200">{row.company}</td>
-                          <td className="px-4 py-1.5 text-center font-bold text-slate-700 dark:text-slate-300">{formatNumber(row.average)}%</td>
-                          <td className="px-4 py-1.5 text-center text-slate-500">{row.evaluations}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Bottom performing companies section */}
-            {showBottomCompanies && leastRatedCompanies.length > 0 && (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4">
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
-                    <AlertTriangle size={15} className="text-rose-500" />
-                    <span>Lowest Rated Evaluated Companies</span>
-                  </h3>
-                  <span className="text-[10px] text-slate-400 uppercase font-mono">Rankings</span>
-                </div>
-                <div className="overflow-hidden border border-slate-100 dark:border-slate-800 rounded-lg text-xs">
-                  <table className="w-full text-left">
-                    <thead className="bg-rose-50 dark:bg-rose-950/20 text-rose-800 dark:text-rose-400 font-bold">
-                      <tr>
-                        <th className="px-4 py-2">Rank</th>
-                        <th className="px-4 py-2">Company</th>
-                        <th className="px-4 py-2 text-center">Average Score (%)</th>
-                        <th className="px-4 py-2 text-center">Evaluations</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {leastRatedCompanies.map((row, idx) => (
-                        <tr key={row.company} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/10">
-                          <td className="px-4 py-1.5 font-bold text-rose-600 dark:text-rose-400">#{companyPerformance.length - idx}</td>
-                          <td className="px-4 py-1.5 font-semibold text-slate-800 dark:text-slate-200">{row.company}</td>
-                          <td className="px-4 py-1.5 text-center font-bold text-slate-700 dark:text-slate-300">{formatNumber(row.average)}%</td>
-                          <td className="px-4 py-1.5 text-center text-slate-500">{row.evaluations}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Question highlights section */}
-            {showQuestions && questionRows.length > 0 && (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4">
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
-                    <HelpCircle size={15} className="text-slate-500" />
-                    <span>Question Highlights (Top 5 Ranked Questions)</span>
-                  </h3>
-                  <span className="text-[10px] text-slate-400 uppercase font-mono">Questions</span>
-                </div>
-                <div className="overflow-hidden border border-slate-100 dark:border-slate-800 rounded-lg text-xs">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold">
-                      <tr>
-                        <th className="px-4 py-2">Question Highlight</th>
-                        <th className="px-4 py-2 text-center">Average Score (%)</th>
-                        <th className="px-4 py-2 text-center">Submissions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {questionRows.map((row) => (
-                        <tr key={row.question} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/10">
-                          <td className="px-4 py-2 text-slate-600 dark:text-slate-300 font-medium leading-relaxed">{row.question}</td>
-                          <td className="px-4 py-2 text-center font-extrabold text-[#0063a9]">{formatNumber(row.average)}%</td>
-                          <td className="px-4 py-2 text-center text-slate-500">{row.responses}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Page footer */}
-            <div className="absolute bottom-6 left-12 right-12 flex justify-between items-center text-[8px] text-slate-400 font-mono border-t border-slate-100 dark:border-slate-800 pt-3">
-              <span>Confidential Report — MBS Partner System</span>
-              <span>Microgenesis Supplier Management</span>
-            </div>
-
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+/** One A4-proportioned sheet in the print preview, styled like the actual PDF page. */
+function SummaryPagedSheet({ children, pageLabel, footerPage }: { children: ReactNode; pageLabel: string; footerPage?: string }) {
+  const PAGE_WIDTH = 640;
+  const PAGE_HEIGHT = Math.round(PAGE_WIDTH * (297 / 210)); // A4 aspect ratio
+  return (
+    <div className="flex flex-col items-center">
+      <div
+        className="w-full rounded-sm bg-white shadow-xl ring-1 ring-slate-900/5 dark:bg-slate-900 dark:ring-white/10"
+        style={{ width: PAGE_WIDTH, minHeight: PAGE_HEIGHT, maxWidth: '100%' }}
+      >
+        <div className="flex h-full flex-col px-10 py-9 sm:px-12">
+          <div className="flex-1">{children}</div>
+          {footerPage && (
+            <div className="mt-8 flex items-center justify-between border-t border-slate-100 pt-3 text-[10px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+              <span>Microgenesis Supplier Management System — Confidential</span>
+              <span>{footerPage}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] font-medium text-slate-400 dark:text-slate-500">{pageLabel}</p>
+    </div>
+  );
+}
+
+/** Repeating page header (logo + report name) shown at the top of every content page, mirroring `addHeaderAndFooter` in the PDF export. */
+function SummaryPageHeader() {
+  return (
+    <div className="flex items-start justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+      <img src={LOGO_URL} alt="Microgenesis Logo" className="h-9 w-auto object-contain" referrerPolicy="no-referrer" />
+      <div className="text-right">
+        <p className="text-xs font-bold text-slate-800 dark:text-slate-100">Summary Report</p>
+        <p className="text-[10px] text-slate-400 dark:text-slate-500">MBS Partner Evaluation System</p>
+      </div>
     </div>
   );
 }

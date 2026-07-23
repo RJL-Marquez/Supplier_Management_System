@@ -619,21 +619,23 @@ export function QuestionReportBuilderPage({ responses, partnerCompanies, canExpo
               </div>
             ) : (
               <div className="mx-auto flex flex-col items-center gap-10">
-                {/* Page 1 — Cover Sheet */}
+                {/* Page 1 — Cover Sheet. Header sits near the top and the
+                    confidential footer sits near the bottom (matching the PDF's
+                    fixed y-coordinates) rather than centering the whole block,
+                    which would spread the blank space evenly instead of
+                    concentrating it in the middle like the PDF does. */}
                 <PagedSheet pageLabel="Page 1 · Cover">
-                  <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-                    <img src="/microgenesis_logo.png" alt="Microgenesis" className="h-14 w-auto" />
-                    <div className="mt-7 h-px w-20 bg-[#0063a9]" />
-                    <h1 className="mt-7 text-2xl font-bold text-slate-800 dark:text-slate-100">Question Performance Report</h1>
-                    <p className="mt-2 text-lg font-bold text-[#0063a9]">Comparative Question-Level Analysis</p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      Form Categories: {activeTypes.map(t => surveyTypeDisplayLabel[t]).join(', ')}
-                    </p>
-                    <p className="mt-0.5 text-xs text-slate-400">
-                      Generated {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </p>
-                    
-                    <div className="mt-20 border-t border-slate-100 pt-4 text-center dark:border-slate-800">
+                  <div className="flex h-full flex-col items-center px-6 text-center">
+                    <div className="pt-[16%]">
+                      <img src="/microgenesis_logo.png" alt="Microgenesis" className="mx-auto h-14 w-auto" />
+                      <div className="mx-auto mt-7 h-px w-20 bg-[#0063a9]" />
+                      <h1 className="mt-7 text-2xl font-bold text-slate-800 dark:text-slate-100">Question Performance Report</h1>
+                      <p className="mt-2 text-lg font-bold text-[#0063a9]">MBS Partner Evaluation Analytics</p>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        Generated on {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </p>
+                    </div>
+                    <div className="mt-auto pb-[7%] text-center">
                       <p className="text-sm text-slate-400 dark:text-slate-500">Prepared for internal review by the</p>
                       <p className="text-sm font-bold text-slate-500 dark:text-slate-300">Microgenesis Supplier Management System</p>
                       <p className="mt-1 text-xs italic text-slate-400 dark:text-slate-500">
@@ -648,62 +650,73 @@ export function QuestionReportBuilderPage({ responses, partnerCompanies, canExpo
                   const label = surveyTypeDisplayLabel[type];
                   const companiesList = evaluatedCompaniesByType[type];
                   const questionsList = statsByType[type];
+                  // PDF splits the list into a left/right column block (first
+                  // half left, second half right) rather than a row-major CSS
+                  // grid, so which company lands in which column matches exactly.
+                  const half = Math.ceil(companiesList.length / 2);
+                  const leftCompanies = companiesList.slice(0, half);
+                  const rightCompanies = companiesList.slice(half);
 
                   return (
                     <PagedSheet key={type} pageLabel={`Page ${index + 2}`} footerRight={`Page ${index + 1} of ${activeTypes.length}`}>
-                      <ReportPageHeader title={`${label} Performance`} />
-                      
+                      <ReportPageHeader />
+
                       <div className="mt-5 space-y-4">
-                        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{label} Evaluation</h2>
-                        
+                        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{label} Performance Evaluation</h2>
+
                         {/* Companies callout list */}
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/20 text-xs">
                           <span className="font-bold text-slate-700 dark:text-slate-300 block mb-2">
                             Evaluated Companies ({companiesList.length}):
                           </span>
-                          {companiesList.length > 0 ? (
-                            <ul className="list-disc pl-4 grid grid-cols-2 gap-x-6 gap-y-1 text-slate-600 dark:text-slate-400 leading-relaxed">
-                              {companiesList.map((comp) => (
-                                <li key={comp} className="break-all">{comp}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <span className="text-slate-500 italic">No companies evaluated in this form yet.</span>
+                          {companiesList.length > 0 && (
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-slate-600 dark:text-slate-400 leading-relaxed">
+                              <ul className="list-disc pl-4">
+                                {leftCompanies.map((comp) => (
+                                  <li key={comp} className="break-all">{comp}</li>
+                                ))}
+                              </ul>
+                              <ul className="list-disc pl-4">
+                                {rightCompanies.map((comp) => (
+                                  <li key={comp} className="break-all">{comp}</li>
+                                ))}
+                              </ul>
+                            </div>
                           )}
                         </div>
 
                         {/* Questions Performance Table */}
                         <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800 mt-2">
-                          <table className="w-full text-left text-xs">
+                          <table className="w-full text-left text-[10px]">
                             <thead className="bg-[#0063a9] text-white">
                               <tr>
-                                <th className="px-3 py-2 font-semibold">Question</th>
+                                <th className="px-2.5 py-1.5 font-semibold">Question</th>
                                 {columnsVisibility.average && (
-                                  <th className="px-3 py-2 font-semibold text-center w-16">Average (%)</th>
+                                  <th className="px-2.5 py-1.5 font-semibold text-center w-16">Average (%)</th>
                                 )}
                                 {columnsVisibility.responses && (
-                                  <th className="px-3 py-2 font-semibold text-center w-16">Responses</th>
+                                  <th className="px-2.5 py-1.5 font-semibold text-center w-16">Responses</th>
                                 )}
                                 {columnsVisibility.highest && (
-                                  <th className="px-3 py-2 font-semibold w-28">Highest Score</th>
+                                  <th className="px-2.5 py-1.5 font-semibold w-28">Highest Scoring Company</th>
                                 )}
                                 {columnsVisibility.lowest && (
-                                  <th className="px-3 py-2 font-semibold w-28">Lowest Score</th>
+                                  <th className="px-2.5 py-1.5 font-semibold w-28">Lowest Scoring Company</th>
                                 )}
                               </tr>
                             </thead>
                             <tbody>
                               {questionsList.map((row, idx) => (
                                 <tr key={row.questionId} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/40' : 'bg-white dark:bg-slate-900'}>
-                                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-medium">{row.questionText}</td>
+                                  <td className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300 font-medium">{row.questionText}</td>
                                   {columnsVisibility.average && (
-                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300 text-center font-bold">{formatNumber(row.average)}%</td>
+                                    <td className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300 text-center font-bold">{formatNumber(row.average)}%</td>
                                   )}
                                   {columnsVisibility.responses && (
-                                    <td className="px-3 py-2 text-slate-500 dark:text-slate-400 text-center">{row.responsesCount}</td>
+                                    <td className="px-2.5 py-1.5 text-slate-500 dark:text-slate-400 text-center">{row.responsesCount}</td>
                                   )}
                                   {columnsVisibility.highest && (
-                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                                    <td className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300">
                                       {row.highestCompany ? (
                                         <div className="flex flex-col">
                                           <span className="font-semibold text-emerald-600 dark:text-emerald-400 truncate max-w-[110px]">{row.highestCompany.company}</span>
@@ -713,7 +726,7 @@ export function QuestionReportBuilderPage({ responses, partnerCompanies, canExpo
                                     </td>
                                   )}
                                   {columnsVisibility.lowest && (
-                                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                                    <td className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300">
                                       {row.lowestCompany ? (
                                         <div className="flex flex-col">
                                           <span className="font-semibold text-rose-600 dark:text-rose-400 truncate max-w-[110px]">{row.lowestCompany.company}</span>
@@ -824,14 +837,14 @@ function PagedSheet({
   );
 }
 
-/** The small running header (logo + report name) repeated at the top of each content page, mirroring the export. */
-function ReportPageHeader({ title }: { title: string }) {
+/** The small running header (logo + report name) repeated at the top of each content page, mirroring the export - always static text, matching drawHeaderAndFooter in the PDF (it never shows the per-section label). */
+function ReportPageHeader() {
   return (
     <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
       <img src="/microgenesis_logo.png" alt="Microgenesis" className="h-6 w-auto" />
       <div className="text-right">
-        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{title}</p>
-        <p className="text-[10px] text-slate-400 dark:text-slate-500">Question Performance Report</p>
+        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">Question Performance Report</p>
+        <p className="text-[10px] text-slate-400 dark:text-slate-500">MBS Partner Evaluation System</p>
       </div>
     </div>
   );

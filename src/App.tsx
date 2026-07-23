@@ -1,14 +1,14 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
-import { BarChart3, Bell, FileText, LayoutDashboard, Moon, Search, Sun, Table2, FilePlus, ClipboardCheck, ArrowLeft, LogOut, ShieldAlert, Users, Presentation, Archive, Database, UserCog, Mail, MessageSquare } from 'lucide-react';
+import { BarChart3, Bell, FileText, LayoutDashboard, Moon, Search, Sun, FilePlus, ClipboardCheck, ArrowLeft, LogOut, ShieldAlert, Users, UserCog, ClipboardList, CircleUserRound, Settings as SettingsIcon } from 'lucide-react';
 import { AccountMenu } from './components/AccountMenu';
 import { NotificationBell } from './components/NotificationBell';
 import { EmployeeNotificationBell } from './components/EmployeeNotificationBell';
-import { Shell } from './layouts/Shell';
+import { Shell, NavItem } from './layouts/Shell';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotificationLogsPage } from './pages/NotificationLogsPage';
-import { EmployeeNotificationLogsPage } from './pages/EmployeeNotificationLogsPage';
+import { EmployeeNotificationsHubPage } from './pages/EmployeeNotificationsHubPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SurveyExplorerPage } from './pages/SurveyExplorerPage';
 import { CreateSurveyPage } from './pages/CreateSurveyPage';
@@ -21,8 +21,13 @@ import { ArchivePage } from './pages/ArchivePage';
 import { SimulatorPage } from './pages/SimulatorPage';
 import { AccountManagementPage } from './pages/AccountManagementPage';
 import { PartnersFeedbackHubPage } from './pages/PartnersFeedbackHubPage';
-import { LiveChatPage } from './pages/LiveChatPage';
+import { MySubmissionsPage } from './pages/MySubmissionsPage';
+import { ProfilePage } from './pages/ProfilePage';
+import { SettingsPage } from './pages/SettingsPage';
+import { OutstandingEvaluationsPage } from './pages/OutstandingEvaluationsPage';
+import { ExportHistoryPage } from './pages/ExportHistoryPage';
 import { AdminChatWidget } from './components/AdminChatWidget';
+import { logAdminActivity } from './utils/adminActivityLog';
 import { initializeSystemChats, getChatUnreadCount } from './utils/chatService';
 import { useSurveyData } from './hooks/useSurveyData';
 import { applyFilters, initialFilters } from './utils/analytics';
@@ -202,25 +207,53 @@ const DEFAULT_ACCOUNTS: AccountProfile[] = [
   }
 ];
 
-type PageKey = 'dashboard' | 'partner-companies' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'live-chat';
+type PageKey = 'dashboard' | 'partner-companies' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings';
 
-const adminPages = [
-  { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
-
-  { key: 'survey-forms' as const, label: 'Survey Forms', icon: ClipboardCheck, hasDropdown: true, section: 'Surveys' },
-  { key: 'explorer' as const, label: 'Survey Explorer', icon: Table2, section: 'Surveys' },
-
-  { key: 'analytics' as const, label: 'Analytics', icon: BarChart3, section: 'Analytics' },
-  { key: 'reports' as const, label: 'Reports', icon: FileText, section: 'Analytics' },
-  { key: 'present' as const, label: 'Present', icon: Presentation, section: 'Analytics' },
-
-  { key: 'partner-companies' as const, label: 'Partner Companies', icon: Users, section: 'Management' },
-  { key: 'partners-feedback-hub' as const, label: 'Partners Feedback Hub', icon: Mail, section: 'Management' },
-  { key: 'account-management' as const, label: 'Account Management', icon: UserCog, section: 'Management' },
-
-  { key: 'notifications' as const, label: 'Notification Logs', icon: Bell, section: 'System' },
-  { key: 'archive' as const, label: 'Archive Center', icon: Archive, section: 'System' },
-  { key: 'simulator' as const, label: 'Database Simulator', icon: Database, section: 'System' },
+// Admin sidebar: grouped by workflow stage (raw data -> insight -> output)
+// rather than flat/alphabetical, per the dashboard IA redesign.
+const adminNavItems: NavItem<PageKey>[] = [
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  {
+    type: 'group',
+    id: 'group-suppliers',
+    // "Partner Companies" (not "Suppliers") - the registry covers Couriers
+    // and Subcontractors too, and "Suppliers" is only one of those three
+    // categories.
+    label: 'Partner Companies',
+    icon: Users,
+    children: [
+      { key: 'partner-companies', label: 'Partner Companies' },
+      { key: 'partners-feedback-hub', label: 'Feedback Hub' },
+    ],
+  },
+  {
+    type: 'group',
+    id: 'group-evaluations',
+    label: 'Evaluations',
+    icon: ClipboardCheck,
+    children: [
+      { key: 'survey-forms', label: 'All Submissions' },
+      { key: 'pending-review', label: 'Outstanding Evaluations' },
+      { key: 'explorer', label: 'Raw Data Explorer' },
+      { key: 'archive', label: 'Archive Center' },
+    ],
+  },
+  // Single page already covers trends + company comparisons together, so
+  // it's one flat destination rather than a group of near-duplicate items.
+  { key: 'analytics', label: 'Analytics', icon: BarChart3 },
+  {
+    type: 'group',
+    id: 'group-reports',
+    label: 'Reports & Exports',
+    icon: FileText,
+    children: [
+      { key: 'reports', label: 'Generate Report' },
+      { key: 'present', label: 'Present Mode' },
+      { key: 'export-history', label: 'Export History' },
+    ],
+  },
+  { key: 'account-management', label: 'Employees / Users', icon: UserCog },
+  { key: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 const allSurveyTypes: SurveyType[] = ['Courier', 'Supplier', 'Subcontractor'];
@@ -265,6 +298,7 @@ export default function App() {
   const saveAccounts = (newAccounts: AccountProfile[]) => {
     setAccounts(newAccounts);
     localStorage.setItem('survey_accounts_v1', JSON.stringify(newAccounts));
+    logAdminActivity('Updated employee accounts', `${newAccounts.length} account${newAccounts.length === 1 ? '' : 's'} on file`);
   };
 
   const [departmentPermissions, setDepartmentPermissions] = useState<Record<string, { pages: PageModuleKey[]; surveyTypes: SurveyType[] }>>(() => {
@@ -282,6 +316,7 @@ export default function App() {
   const saveDepartmentPermissions = (newPerms: Record<string, { pages: PageModuleKey[]; surveyTypes: SurveyType[] }>) => {
     setDepartmentPermissions(newPerms);
     localStorage.setItem('survey_department_permissions_v1', JSON.stringify(newPerms));
+    logAdminActivity('Updated department permissions');
   };
 
   const getUserProfile = (email: string | null) => {
@@ -405,6 +440,11 @@ export default function App() {
   const [editingSurveyId, setEditingSurveyId] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [darkMode, setDarkMode] = useState(false);
+
+  const handleResetAllData = () => {
+    logAdminActivity('Reset system database');
+    resetAllData();
+  };
 
   // A survey's own "Department / Role Access" checkboxes (set via Survey Forms > Modify)
   // are the source of truth for who can see & answer that specific form. If a survey has
@@ -539,28 +579,33 @@ export default function App() {
   const activeSurveyTypes = filters.surveyType.length ? filters.surveyType : effectiveSurveyTypes;
 
 
-  const visiblePages = useMemo(() => {
-    const pages = adminPages
-      .filter((page) => userPermissions.pages.includes(page.key as PageModuleKey))
-      .map((page) => {
-        if (page.key === 'notifications' && !isAdmin) {
-          return { ...page, label: 'Survey Reminders', icon: Mail };
-        }
-        return page;
-      });
+  // Employee sidebar: simple, task-focused, flat (no groups). Every
+  // authenticated employee gets the same 5 items regardless of rank -
+  // deeper per-rank data scoping still applies to the pages themselves via
+  // applyAccessFilter/userPermissions, just not to which nav items show.
+  const employeeNavItems: NavItem<PageKey>[] = useMemo(
+    () => [
+      { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { key: 'fill-form', label: 'New Evaluation', icon: FilePlus },
+      { key: 'my-submissions', label: 'My Submissions', icon: ClipboardList },
+      { key: 'notifications', label: 'Notifications', icon: Bell, badgeCount: chatUnread },
+      { key: 'profile-settings', label: 'Profile / Settings', icon: CircleUserRound },
+    ],
+    [chatUnread]
+  );
 
-    if (!isAdmin) {
-      pages.push({
-        key: 'live-chat',
-        label: 'Live Chat Support',
-        icon: MessageSquare,
-        section: 'Support',
-        badgeCount: chatUnread
-      } as any);
-    }
+  const visiblePages = isAdmin ? adminNavItems : employeeNavItems;
 
-    return pages;
-  }, [userPermissions.pages, isAdmin, chatUnread]);
+  // Flattened lookup (groups expanded) used for the title/heading and the
+  // route-guard fallback below, regardless of whether the current role's
+  // nav is grouped or flat.
+  const flatNavLeaves = useMemo(
+    () =>
+      visiblePages.flatMap((item) =>
+        item.type === 'group' ? item.children.map((child) => ({ key: child.key, label: child.label })) : [{ key: item.key, label: item.label }]
+      ),
+    [visiblePages]
+  );
 
   const activeTitle = useMemo(() => {
     if (activePage === 'dashboard') {
@@ -574,8 +619,8 @@ export default function App() {
       return selected ? `Survey: ${selected.title}` : 'Survey Details';
     }
     if (activePage === 'fill-form') return 'Fill Out Stakeholder Survey';
-    return visiblePages.find((page) => page.key === activePage)?.label ?? 'Dashboard';
-  }, [activePage, selectedSurveyId, surveys, editingSurveyId, profile, visiblePages]);
+    return flatNavLeaves.find((page) => page.key === activePage)?.label ?? 'Dashboard';
+  }, [activePage, selectedSurveyId, surveys, editingSurveyId, profile, flatNavLeaves]);
 
   const pageHeading = useMemo(() => {
     if (activePage === 'dashboard') {
@@ -593,13 +638,12 @@ export default function App() {
   // Safe routing guard redirecting users to permitted views
   useEffect(() => {
     if (!account) return;
-    if (activePage === 'live-chat' && !isAdmin) return; // Allow employee access to live-chat
     const currentIsAllowed = hasPageAccess(userPermissions.pages, activePage, isAdmin);
     if (!currentIsAllowed) {
-      const fallback = visiblePages[0]?.key || 'dashboard';
+      const fallback = flatNavLeaves[0]?.key || 'dashboard';
       setActivePage(fallback as PageKey);
     }
-  }, [activePage, userPermissions.pages, visiblePages, account, isAdmin]);
+  }, [activePage, userPermissions.pages, flatNavLeaves, account, isAdmin]);
 
   const handleLogin = (email: string) => {
     setAccount(email);
@@ -726,20 +770,75 @@ export default function App() {
         canExport={canExport}
       />
     ),
-    notifications: isAdmin ? (
-      <NotificationLogsPage notifications={notifications} unreadCount={unreadCount} />
-    ) : (
-      <EmployeeNotificationLogsPage
-        userEmail={account || ''}
-        profile={profile}
+    'export-history': <ExportHistoryPage />,
+    'pending-review': (
+      <OutstandingEvaluationsPage
         surveys={surveys}
         partnerCompanies={partnerCompanies}
         responses={responses}
-        onFillForm={(id) => {
-          setSelectedSurveyId(id);
-          setActivePage('fill-form');
-        }}
       />
+    ),
+    'my-submissions': (
+      <MySubmissionsPage
+        responses={userAccessibleAllTimeResponses}
+        userEmail={account || ''}
+        onFillForm={() => setActivePage('fill-form')}
+      />
+    ),
+    'profile-settings': profile && (
+      <ProfilePage
+        email={account || ''}
+        role={profile.role}
+        designation={profile.designation}
+        department={profile.department}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode((value) => !value)}
+        onLogout={() => {
+          setAccount(null);
+          localStorage.removeItem('user_account');
+        }}
+        responses={userAccessibleAllTimeResponses}
+        onViewAllSubmissions={() => setActivePage('my-submissions')}
+      />
+    ),
+    settings: profile && (
+      <SettingsPage
+        email={account || ''}
+        role={profile.role}
+        designation={profile.designation}
+        department={profile.department}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode((value) => !value)}
+        onOpenSimulator={() => setActivePage('simulator')}
+        onResetSystemData={handleResetAllData}
+        onLogout={() => {
+          setAccount(null);
+          localStorage.removeItem('user_account');
+        }}
+        accountsCount={accounts.length}
+        activePartnerCompaniesCount={partnerCompanies.filter((c) => !c.isArchived).length}
+        totalResponsesCount={responses.length}
+      />
+    ),
+    notifications: isAdmin ? (
+      <NotificationLogsPage notifications={notifications} unreadCount={unreadCount} />
+    ) : (
+      profile && (
+        <EmployeeNotificationsHubPage
+          userEmail={account || ''}
+          profile={profile}
+          surveys={surveys}
+          partnerCompanies={partnerCompanies}
+          responses={responses}
+          onFillForm={(id) => {
+            setSelectedSurveyId(id);
+            setActivePage('fill-form');
+          }}
+          currentUser={profile}
+          accounts={accounts}
+          chatUnread={chatUnread}
+        />
+      )
     ),
     'create-form': (
       <CreateSurveyPage
@@ -842,65 +941,7 @@ export default function App() {
         onClearSimClock={() => setSimClock(null)}
       />
     ),
-    'live-chat': profile && (
-      <LiveChatPage
-        currentUser={profile}
-        isAdmin={isAdmin}
-        accounts={accounts}
-      />
-    ),
   }[activePage];
-
-  // Content shown when the "Survey Forms" nav item's dropdown toggle is expanded:
-  // the current forms, followed by "Add New" as the last option.
-  const renderSidebarDropdown = (key: string) => {
-    if (key !== 'survey-forms') return null;
-
-    return (
-      <>
-        {userAccessibleSurveys.map((survey) => {
-          const isViewing = activePage === 'view-form' && selectedSurveyId === survey.id;
-          return (
-            <button
-              key={survey.id}
-              onClick={() => {
-                navigateFrom('view-form', () => {
-                  setSelectedSurveyId(survey.id);
-                  setActivePage('view-form');
-                });
-              }}
-              className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition ${
-                isViewing
-                  ? 'bg-blue-50 text-[#0063a9] font-bold dark:bg-blue-950/40 dark:text-blue-300'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900/50 dark:hover:text-white'
-              }`}
-              type="button"
-              title={survey.title}
-            >
-              <span
-                className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-                  isViewing ? 'bg-[#0063a9] dark:bg-blue-400' : 'bg-slate-300 dark:bg-slate-600'
-                }`}
-              />
-              <span className="truncate">{survey.title}</span>
-            </button>
-          );
-        })}
-
-        {isAdmin && (
-          <button
-            onClick={() => navigateFrom('create-form', () => setActivePage('create-form'))}
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition cursor-pointer"
-            type="button"
-            id="btn-sidebar-create"
-          >
-            <FilePlus size={14} />
-            <span>＋ Add New</span>
-          </button>
-        )}
-      </>
-    );
-  };
 
   return (
     <div className={darkMode ? 'dark' : ''}>
@@ -916,7 +957,6 @@ export default function App() {
         }}
         title={activeTitle}
         pageHeading={pageHeading}
-        renderDropdown={renderSidebarDropdown}
         action={
           <div className="flex items-center divide-x divide-blue-400/25">
             <div className="pr-3 hidden md:block">
@@ -979,7 +1019,7 @@ export default function App() {
             <div className="min-w-0 flex-1">{pageContent}</div>
           </div>
           
-          {isAdmin && activePage !== 'notifications' && activePage !== 'create-form' && activePage !== 'fill-form' && activePage !== 'present' && activePage !== 'partners-feedback-hub' && (
+          {isAdmin && activePage !== 'notifications' && activePage !== 'create-form' && activePage !== 'fill-form' && activePage !== 'present' && activePage !== 'partners-feedback-hub' && activePage !== 'settings' && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
               <div className="flex items-center gap-2">
                 <Search size={16} className="text-[#0063a9] dark:text-blue-400 shrink-0" />
@@ -988,7 +1028,7 @@ export default function App() {
                 </span>
               </div>
               <button
-                onClick={resetAllData}
+                onClick={handleResetAllData}
                 className="text-xs font-bold text-rose-500 hover:text-rose-600 hover:underline transition shrink-0 cursor-pointer"
                 title="Re-seed standard reports and database values"
               >

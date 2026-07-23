@@ -533,7 +533,7 @@ export function PartnerCompaniesPage({
       {/* Secondary Filter Options Bar */}
       <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-3">
         {/* Affiliation category tabs */}
-        <div className="flex flex-nowrap overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 dark:border-transparent dark:bg-slate-950 sm:max-w-lg w-full sm:w-auto" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex flex-nowrap overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 dark:border-transparent dark:bg-slate-950 w-full sm:w-auto" style={{ scrollbarWidth: 'none' }}>
           {(['All', 'Courier', 'Supplier', 'Subcontractor', 'Uncategorized'] as const).map((tab) => (
             <button
               key={tab}
@@ -578,7 +578,7 @@ export function PartnerCompaniesPage({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search name or BP code..."
-            className="field text-xs py-2 pl-8"
+            className="field text-xs py-2 !pl-9"
           />
         </div>
 

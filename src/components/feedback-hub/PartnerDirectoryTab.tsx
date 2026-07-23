@@ -104,7 +104,7 @@ export function PartnerDirectoryTab({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search directory by partner name, contact person, or email..."
-            className="field pl-9 text-xs"
+            className="field !pl-9 text-xs"
           />
         </div>
 

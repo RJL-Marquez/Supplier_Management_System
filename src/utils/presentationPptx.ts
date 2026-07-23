@@ -1,5 +1,5 @@
 import PptxGenJS from 'pptxgenjs';
-import { Slide } from './presentation';
+import { Slide, SLIDE_EYEBROWS } from './presentation';
 
 // 16:9 widescreen, matching the on-screen deck's 1280x720 design canvas
 // (SlideDeck.tsx) so the two stay visually consistent.
@@ -105,7 +105,7 @@ function renderSlide(pres: PptxGenJS, slide: Slide, pdfMaxRating: number) {
     }
 
     case 'agenda': {
-      addHeader(pptxSlide, "What's inside", 'Contents');
+      addHeader(pptxSlide, SLIDE_EYEBROWS.agenda, 'Contents');
       const rowH = Math.min(0.62, (CONTENT_BOTTOM - 1.15) / slide.items.length);
       let y = 1.15;
       slide.items.forEach((item, i) => {
@@ -127,7 +127,7 @@ function renderSlide(pres: PptxGenJS, slide: Slide, pdfMaxRating: number) {
     }
 
     case 'overview': {
-      const contentTop = addHeader(pptxSlide, 'Overview', 'Where things stand');
+      const contentTop = addHeader(pptxSlide, SLIDE_EYEBROWS.overview, 'Where things stand');
       const kpiGap = 0.12;
       const kpiW = (CONTENT_W - kpiGap * (slide.kpis.length - 1)) / slide.kpis.length;
       const kpiH = 0.72;
@@ -193,7 +193,7 @@ function renderSlide(pres: PptxGenJS, slide: Slide, pdfMaxRating: number) {
     }
 
     case 'comparison': {
-      const contentTop = addHeader(pptxSlide, 'Category', 'Survey Type Comparison');
+      const contentTop = addHeader(pptxSlide, SLIDE_EYEBROWS.comparison, 'Survey Type Comparison');
       const chartH = CONTENT_BOTTOM - contentTop;
       pptxSlide.addChart(
         pres.ChartType.bar,
@@ -227,7 +227,7 @@ function renderSlide(pres: PptxGenJS, slide: Slide, pdfMaxRating: number) {
     }
 
     case 'sections': {
-      const contentTop = addHeader(pptxSlide, 'Category', 'Category Breakdown');
+      const contentTop = addHeader(pptxSlide, SLIDE_EYEBROWS.sections, 'Category Breakdown');
       const chartH = CONTENT_BOTTOM - contentTop;
       const sorted = slide.data;
       const maxAvg = Math.max(4, ...sorted.map((d) => d.average));
@@ -264,7 +264,7 @@ function renderSlide(pres: PptxGenJS, slide: Slide, pdfMaxRating: number) {
     }
 
     case 'leaderboard': {
-      const contentTop = addHeader(pptxSlide, 'Category', 'Company Leaderboard');
+      const contentTop = addHeader(pptxSlide, SLIDE_EYEBROWS.leaderboard, 'Company Leaderboard');
       const groups = slide.groups;
       const colGap = 0.2;
       const colW = (CONTENT_W - colGap * (groups.length - 1)) / groups.length;
@@ -305,7 +305,7 @@ function renderSlide(pres: PptxGenJS, slide: Slide, pdfMaxRating: number) {
     }
 
     case 'trends': {
-      const contentTop = addHeader(pptxSlide, 'Category', 'Trends Over Time');
+      const contentTop = addHeader(pptxSlide, SLIDE_EYEBROWS.trends, 'Trends Over Time');
       const chartH = CONTENT_BOTTOM - contentTop;
       pptxSlide.addChart(
         pres.ChartType.line,
@@ -339,7 +339,7 @@ function renderSlide(pres: PptxGenJS, slide: Slide, pdfMaxRating: number) {
     }
 
     case 'questions': {
-      const contentTop = addHeader(pptxSlide, 'Category', 'Top & Bottom Questions');
+      const contentTop = addHeader(pptxSlide, SLIDE_EYEBROWS.questions, 'Top & Bottom Questions');
       const colGap = 0.3;
       const colW = (CONTENT_W - colGap) / 2;
       const colH = CONTENT_BOTTOM - contentTop;
@@ -379,7 +379,7 @@ function renderSlide(pres: PptxGenJS, slide: Slide, pdfMaxRating: number) {
     }
 
     case 'spotlight': {
-      const contentTop = addHeader(pptxSlide, 'Category', 'Company Spotlight');
+      const contentTop = addHeader(pptxSlide, SLIDE_EYEBROWS.spotlight, 'Company Spotlight');
       const leftW = 3.4;
       const rightX = MARGIN + leftW + 0.3;
       const rightW = CONTENT_W - leftW - 0.3;
@@ -458,6 +458,81 @@ function renderSlide(pres: PptxGenJS, slide: Slide, pdfMaxRating: number) {
           radarStyle: 'filled',
         },
       );
+      break;
+    }
+
+    case 'distribution': {
+      const contentTop = addHeader(
+        pptxSlide,
+        SLIDE_EYEBROWS.distribution,
+        'Distribution & Risk Watch',
+        `How ratings are spread out${slide.naPercentage > 0 ? `, ${slide.naPercentage.toFixed(1)}% marked N/A` : ''}, and who's trailing their peer group.`,
+      );
+      const colGap = 0.3;
+      const colW = (CONTENT_W - colGap) / 2;
+      const colH = CONTENT_BOTTOM - contentTop;
+
+      pptxSlide.addText('RATING DISTRIBUTION', {
+        x: MARGIN, y: contentTop, w: colW, h: 0.24, fontSize: 10, bold: true, color: INK, fontFace: FONT,
+      });
+      pptxSlide.addChart(
+        pres.ChartType.bar,
+        [
+          {
+            name: 'Responses',
+            labels: slide.buckets.map((b) => String(b.rating)),
+            values: slide.buckets.map((b) => b.count),
+          },
+        ],
+        {
+          x: MARGIN, y: contentTop + 0.3, w: colW, h: colH - 0.3,
+          barDir: 'col',
+          chartColors: [BRAND],
+          valAxisMinVal: 0,
+          showValue: true,
+          dataLabelPosition: 'outEnd',
+          dataLabelFontSize: 9,
+          dataLabelColor: INK,
+          catAxisLabelFontSize: 9.5,
+          catAxisLabelColor: INK,
+          valAxisLabelFontSize: 8.5,
+          valAxisLabelColor: MUTED,
+          showLegend: false,
+          barGapWidthPct: 35,
+          gridLineColor: BORDER,
+        },
+      );
+
+      const rightX = MARGIN + colW + colGap;
+      pptxSlide.addText('NEEDS ATTENTION', {
+        x: rightX, y: contentTop, w: colW, h: 0.24, fontSize: 10, bold: true, color: 'B45309', fontFace: FONT,
+      });
+      if (slide.atRisk.length === 0) {
+        pptxSlide.addText('No partner is meaningfully trailing its peer group in this window.', {
+          x: rightX, y: contentTop + 0.32, w: colW, h: 0.6, fontSize: 9.5, italic: true, color: MUTED, fontFace: FONT,
+        });
+      } else {
+        const rowTop = contentTop + 0.32;
+        const rowH = Math.min(0.6, (colH - 0.32) / slide.atRisk.length);
+        slide.atRisk.forEach((c, i) => {
+          const y = rowTop + i * rowH;
+          pptxSlide.addShape('roundRect', {
+            x: rightX, y: y + 0.03, w: colW, h: rowH - 0.06, rectRadius: 0.05,
+            fill: { color: SURFACE }, line: { color: BORDER, width: 1 },
+          });
+          pptxSlide.addText(
+            [
+              { text: `${c.company}\n`, options: { bold: true, color: INK, breakLine: true } },
+              { text: `${c.surveyType} · ${c.band}`, options: { fontSize: 8, color: MUTED } },
+            ],
+            { x: rightX + 0.12, y: y + 0.08, w: colW - 0.9, h: rowH - 0.16, fontSize: 10, fontFace: FONT, valign: 'top' },
+          );
+          pptxSlide.addText(c.score.toFixed(1), {
+            x: rightX + colW - 0.7, y: y + 0.08, w: 0.58, h: rowH - 0.16, align: 'right', valign: 'middle',
+            fontSize: 11, bold: true, color: c.hex.replace('#', ''), fontFace: FONT,
+          });
+        });
+      }
       break;
     }
 

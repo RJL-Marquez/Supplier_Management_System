@@ -19,6 +19,8 @@ import {
   X,
 } from 'lucide-react';
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -37,7 +39,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Slide } from '../utils/presentation';
+import { Slide, SLIDE_EYEBROWS } from '../utils/presentation';
 import { exportSlidesAsPDF } from '../utils/presentationPdf';
 import { exportSlidesAsPPTX } from '../utils/presentationPptx';
 import { SurveyResponse, SurveyType } from '../types/survey';
@@ -88,6 +90,8 @@ function slideTitleFor(slide: Slide, index: number): string {
       return 'Top & Bottom Questions';
     case 'spotlight':
       return 'Spotlight';
+    case 'distribution':
+      return 'Data Quality & Risk';
     case 'closing':
       return 'Key Takeaways';
     default:
@@ -103,6 +107,67 @@ function ScoreBadge({ label, hex }: { label: string; hex: string }) {
     >
       {label}
     </span>
+  );
+}
+
+/** Faint brand-colored dot-grid + radial wash shared by every content slide, so
+ * they read as one consistent deck instead of plain white documents. Kept
+ * subtle (low opacity) so it never competes with charts or text on top. */
+function SlideBackdrop() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="absolute -right-24 -top-32 h-80 w-80 rounded-full bg-[#0063a9]/[0.05] blur-3xl" />
+      <div className="absolute -bottom-28 -left-16 h-64 w-64 rounded-full bg-[#0063a9]/[0.04] blur-3xl" />
+      <div
+        className="absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage: 'radial-gradient(circle, #0063a9 1px, transparent 1px)',
+          backgroundSize: '26px 26px',
+        }}
+      />
+    </div>
+  );
+}
+
+/** Standard eyebrow + title + accent underline used by every content slide,
+ * so typography/spacing never drifts slide to slide. */
+function SlideHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: string; subtitle?: string }) {
+  return (
+    <div className="relative shrink-0">
+      <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">{eyebrow}</p>
+      <h2 className="mt-1.5 text-2xl font-bold text-slate-900 sm:text-3xl">{title}</h2>
+      {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+      <div className="mt-3 h-1 w-14 rounded-full bg-gradient-to-r from-[#0063a9] to-[#0063a9]/30" />
+    </div>
+  );
+}
+
+/** Small pill toggle used for in-slide interactivity (sort/metric switches),
+ * matching the segmented-control look already used on the Comparison slide. */
+function SlideToggle<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`cursor-pointer rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+            value === opt.value ? 'bg-white text-[#0063a9] shadow-xs' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -167,23 +232,29 @@ function TitleSlide({ slide }: { slide: Extract<Slide, { kind: 'title' }> }) {
 
 function AgendaSlide({ slide }: { slide: Extract<Slide, { kind: 'agenda' }> }) {
   return (
-    <div className="flex h-full w-full flex-col bg-white px-8 py-8 sm:px-14 sm:py-12">
-      <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">What's inside</p>
-      <h2 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Contents</h2>
-      <div className="mt-6 flex-1 overflow-y-auto pr-1">
-        <ol className="space-y-3">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-8 sm:px-14 sm:py-10">
+      <SlideBackdrop />
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
+        <SlideHeader eyebrow="What's inside" title="Contents" />
+        <div className="mt-6 flex flex-1 min-h-0 flex-col justify-center gap-2.5">
           {slide.items.map((item, index) => (
-            <li key={item.label} className="flex items-start gap-4 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0063a9] text-sm font-bold text-white">
+            <motion.div
+              key={item.label}
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3, delay: index * 0.05 }}
+              className="flex max-h-24 flex-1 items-center gap-4 rounded-xl border border-slate-100 bg-slate-50/60 px-4"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0063a9] text-sm font-bold text-white">
                 {index + 1}
               </span>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-800 sm:text-base">{item.label}</p>
-                <p className="text-xs text-slate-500 sm:text-sm">{item.description}</p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-slate-800 sm:text-base">{item.label}</p>
+                <p className="truncate text-xs text-slate-500 sm:text-sm">{item.description}</p>
               </div>
-            </li>
+            </motion.div>
           ))}
-        </ol>
+        </div>
       </div>
     </div>
   );
@@ -234,16 +305,26 @@ function OverviewSlide({
   }, [isSingleSurveyType, slide.standout, responses]);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto bg-gradient-to-b from-white to-blue-50/60 px-8 py-8 sm:px-14 sm:py-10">
-      <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">Overview</p>
-      <h2 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Where things stand</h2>
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-gradient-to-b from-white to-blue-50/60 px-8 py-8 sm:px-14 sm:py-10">
+      <SlideBackdrop />
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
+      <SlideHeader eyebrow={SLIDE_EYEBROWS.overview} title="Where things stand" />
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {slide.kpis.map((kpi) => (
-          <div key={kpi.label} className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{kpi.label}</p>
-            <p className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">{kpi.value}</p>
-          </div>
+      <div className="mt-6 grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-4">
+        {slide.kpis.map((kpi, i) => (
+          <motion.div
+            key={kpi.label}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: i * 0.06 }}
+            className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#0063a9]" />
+              <p className="truncate text-[10px] font-bold uppercase tracking-wider text-slate-400">{kpi.label}</p>
+            </div>
+            <p className="mt-1.5 text-xl font-bold text-slate-900 sm:text-2xl">{kpi.value}</p>
+          </motion.div>
         ))}
       </div>
 
@@ -442,6 +523,7 @@ function OverviewSlide({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -505,11 +587,13 @@ function ComparisonSlide({ slide, responses = [] }: { slide: Extract<Slide, { ki
   );
 
   return (
-    <div className="flex h-full w-full flex-col bg-white px-8 py-6 sm:px-14 sm:py-8 text-slate-900">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-6 sm:px-14 sm:py-8 text-slate-900">
+      <SlideBackdrop />
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
       {/* Slide Header with Interactive Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">Performance Insight</p>
+          <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">{SLIDE_EYEBROWS.comparison}</p>
           <h2 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl leading-tight">
             {performanceMode === 'highest' ? 'Top Rated Companies' : 'Least Rated Companies'}
           </h2>
@@ -612,11 +696,11 @@ function ComparisonSlide({ slide, responses = [] }: { slide: Extract<Slide, { ki
 
         {/* Side Panel: Ranked List View */}
         <div className="rounded-xl border border-slate-100 bg-slate-50/30 p-4 flex flex-col min-h-0 justify-between">
-          <div>
-            <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Ranked List View</p>
-            <div className="space-y-1.5 overflow-y-auto max-h-[180px] sm:max-h-[220px] pr-1">
+          <div className="flex flex-1 min-h-0 flex-col">
+            <p className="mb-2 shrink-0 text-xs font-bold uppercase tracking-wider text-slate-400">Ranked List View</p>
+            <div className="flex flex-1 min-h-0 flex-col justify-center gap-1.5">
               {topCompaniesData.map((item, idx) => (
-                <div key={item.company} className="flex items-center justify-between gap-2 p-1.5 rounded-lg hover:bg-slate-100/50">
+                <div key={item.company} className="flex max-h-9 flex-1 items-center justify-between gap-2 rounded-lg p-1.5 hover:bg-slate-100/50">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-500">
                     {idx + 1}
                   </span>
@@ -648,34 +732,75 @@ function ComparisonSlide({ slide, responses = [] }: { slide: Extract<Slide, { ki
           </div>
         </div>
       </div>
+      </div>
     </div>
   );
 }
 
+function bandColorForScore(score: number): string {
+  if (score >= 85) return '#10b981';
+  if (score >= 70) return '#2563eb';
+  if (score >= 50) return '#f59e0b';
+  return '#ef4444';
+}
+
 function SectionsSlide({ slide }: { slide: Extract<Slide, { kind: 'sections' }> }) {
-  const max = Math.max(4, ...slide.data.map((d) => d.average));
+  const [sortBy, setSortBy] = useState<'score' | 'volume'>('score');
+
+  const sorted = useMemo(() => {
+    const copy = [...slide.data];
+    copy.sort((a, b) => (sortBy === 'volume' ? b.responses - a.responses : b.average - a.average));
+    return copy;
+  }, [slide.data, sortBy]);
+
+  const barSize = sorted.length > 6 ? 16 : sorted.length > 4 ? 22 : 30;
+
   return (
-    <div className="flex h-full w-full flex-col bg-white px-8 py-8 sm:px-14 sm:py-10">
-      <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">Category</p>
-      <h2 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Category Breakdown</h2>
-      <p className="mt-1 text-sm text-slate-500">Average rating by evaluation category, strongest to weakest.</p>
-      <div className="mt-5 flex-1 space-y-3 overflow-y-auto pr-1">
-        {slide.data.map((item, index) => (
-          <div key={item.category} className="flex items-center gap-3">
-            <span className="w-32 shrink-0 truncate text-sm font-semibold text-slate-700 sm:w-40">{item.category}</span>
-            <div className="h-3 flex-1 rounded-full bg-slate-100">
-              <div
-                className="h-3 rounded-full"
-                style={{
-                  width: `${Math.min(100, (item.average / max) * 100)}%`,
-                  backgroundColor: index === 0 ? '#10b981' : index === slide.data.length - 1 ? '#ef4444' : '#2563eb',
-                }}
-              />
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-8 sm:px-14 sm:py-10">
+      <SlideBackdrop />
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
+        <div className="flex items-start justify-between gap-4">
+          <SlideHeader
+            eyebrow={SLIDE_EYEBROWS.sections}
+            title="Category Breakdown"
+            subtitle="Average rating by evaluation category, strongest to weakest."
+          />
+          <SlideToggle
+            options={[
+              { value: 'score' as const, label: 'By Score' },
+              { value: 'volume' as const, label: 'By Volume' },
+            ]}
+            value={sortBy}
+            onChange={setSortBy}
+          />
+        </div>
+        <div className="mt-5 flex-1 min-h-0 rounded-2xl border border-slate-200/90 bg-slate-50/30 p-4">
+          {sorted.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sorted} layout="vertical" margin={{ top: 5, right: 44, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: '#64748b' }} />
+                <YAxis type="category" dataKey="category" width={150} tick={{ fontSize: 11, fill: '#334155', fontWeight: 600 }} />
+                <Tooltip formatter={(value: number) => [`${Number(value).toFixed(2)} / 100`, 'Average']} />
+                <Bar dataKey="average" radius={[0, 8, 8, 0]} barSize={barSize}>
+                  <LabelList
+                    dataKey="average"
+                    position="right"
+                    formatter={(v: number) => v.toFixed(1)}
+                    style={{ fill: '#334155', fontSize: 11, fontWeight: 700 }}
+                  />
+                  {sorted.map((entry) => (
+                    <Cell key={entry.category} fill={bandColorForScore(entry.average)} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+              No category data available.
             </div>
-            <span className="w-14 shrink-0 text-right text-sm font-bold text-slate-800">{item.average.toFixed(2)}</span>
-            <span className="w-20 shrink-0 text-right text-xs text-slate-400">{item.responses} resp.</span>
-          </div>
-        ))}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -713,7 +838,9 @@ function LeaderboardSlide({ slide, responses = [] }: { slide: Extract<Slide, { k
 
   if (selectedCompany) {
     return (
-      <div className="flex h-full w-full flex-col bg-white px-8 py-5 sm:px-14 sm:py-6 text-slate-900">
+      <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-5 sm:px-14 sm:py-6 text-slate-900">
+        <SlideBackdrop />
+        <div className="relative z-10 flex h-full min-h-0 flex-col">
         {/* Top Bar */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-2 bg-white z-10">
           <div className="flex items-center gap-3">
@@ -850,6 +977,7 @@ function LeaderboardSlide({ slide, responses = [] }: { slide: Extract<Slide, { k
             )}
           </div>
         </div>
+        </div>
       </div>
     );
   }
@@ -900,9 +1028,11 @@ function LeaderboardSlide({ slide, responses = [] }: { slide: Extract<Slide, { k
   }, [numGroups]);
 
   return (
-    <div className="flex h-full w-full flex-col bg-white px-8 py-6 sm:px-14 sm:py-8 text-slate-900">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-6 sm:px-14 sm:py-8 text-slate-900">
+      <SlideBackdrop />
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
       <div className="shrink-0">
-        <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">Category</p>
+        <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">{SLIDE_EYEBROWS.leaderboard}</p>
         <h2 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">Company Leaderboard</h2>
         <p className="mt-1 text-sm text-slate-500">
           Top-ranked partners within each survey type. Click a company to view interactive breakdown & trends.
@@ -953,29 +1083,75 @@ function LeaderboardSlide({ slide, responses = [] }: { slide: Extract<Slide, { k
           ))}
         </div>
       </div>
+      </div>
     </div>
   );
 }
 
 function TrendsSlide({ slide }: { slide: Extract<Slide, { kind: 'trends' }> }) {
+  const [metric, setMetric] = useState<'average' | 'responses'>('average');
+  const color = metric === 'average' ? '#0063a9' : '#10b981';
+
   return (
-    <div className="flex h-full w-full flex-col bg-white px-8 py-8 sm:px-14 sm:py-10">
-      <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">Category</p>
-      <h2 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Trends Over Time</h2>
-      <p className="mt-1 text-sm text-slate-500">Monthly average rating and response volume.</p>
-      <div className="mt-6 min-h-[240px] flex-1 rounded-xl border border-slate-100 p-4">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={slide.data}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-            <YAxis yAxisId="left" domain={[0, 4]} tick={{ fontSize: 12 }} />
-            <YAxis yAxisId="right" orientation="right" allowDecimals={false} tick={{ fontSize: 12 }} />
-            <Tooltip />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line yAxisId="left" type="monotone" name="Average rating" dataKey="average" stroke="#2563eb" strokeWidth={3} dot={false} />
-            <Line yAxisId="right" type="monotone" name="Responses" dataKey="responses" stroke="#10b981" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-8 sm:px-14 sm:py-10">
+      <SlideBackdrop />
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
+        <div className="flex items-start justify-between gap-4">
+          <SlideHeader
+            eyebrow={SLIDE_EYEBROWS.trends}
+            title="Trends Over Time"
+            subtitle="Monthly average rating and response volume across the selected window."
+          />
+          <SlideToggle
+            options={[
+              { value: 'average' as const, label: 'Avg Rating' },
+              { value: 'responses' as const, label: 'Volume' },
+            ]}
+            value={metric}
+            onChange={setMetric}
+          />
+        </div>
+        <div className="mt-5 flex-1 min-h-0 rounded-2xl border border-slate-200/90 bg-slate-50/30 p-4">
+          {slide.data.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={slide.data} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={color} stopOpacity={0.35} />
+                    <stop offset="95%" stopColor={color} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} />
+                <YAxis
+                  domain={metric === 'average' ? [0, 100] : [0, 'auto']}
+                  allowDecimals={metric !== 'average'}
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                />
+                <Tooltip
+                  formatter={(value: number) => [
+                    metric === 'average' ? `${Number(value).toFixed(2)} / 100` : value,
+                    metric === 'average' ? 'Average rating' : 'Responses',
+                  ]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey={metric}
+                  name={metric === 'average' ? 'Average rating' : 'Responses'}
+                  stroke={color}
+                  strokeWidth={3}
+                  fill="url(#trendFill)"
+                  dot={{ r: 3, strokeWidth: 0, fill: color }}
+                  activeDot={{ r: 5 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+              Not enough monthly data to chart a trend.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -983,44 +1159,44 @@ function TrendsSlide({ slide }: { slide: Extract<Slide, { kind: 'trends' }> }) {
 
 function QuestionsSlide({ slide }: { slide: Extract<Slide, { kind: 'questions' }> }) {
   const maxValStr = (slide.maxRating ?? 100).toFixed(2);
+  const columns: { label: string; icon: typeof TrendingUp; items: typeof slide.top; tone: 'emerald' | 'rose' }[] = [
+    { label: 'Highest scoring', icon: TrendingUp, items: slide.top, tone: 'emerald' },
+    { label: 'Lowest scoring', icon: TrendingDown, items: slide.bottom, tone: 'rose' },
+  ];
+
   return (
-    <div className="flex h-full w-full flex-col bg-white px-8 py-8 sm:px-14 sm:py-10">
-      <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">Category</p>
-      <h2 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Top & Bottom Questions</h2>
-      <div className="mt-5 grid flex-1 gap-5 overflow-y-auto pr-1 sm:grid-cols-2">
-        <div>
-          <div className="mb-2 flex items-center gap-1.5 text-emerald-600">
-            <TrendingUp size={16} />
-            <span className="text-xs font-bold uppercase tracking-wider">Highest scoring</span>
-          </div>
-          <ol className="space-y-2">
-            {slide.top.map((q, i) => (
-              <li key={q.question} className="rounded-lg bg-emerald-50/60 px-3 py-2">
-                <p className="text-xs text-slate-700">
-                  <span className="font-bold text-emerald-700">{i + 1}. </span>
-                  {q.question}
-                </p>
-                <p className="mt-0.5 text-xs font-bold text-emerald-600">{q.average.toFixed(2)} / {maxValStr}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-        <div>
-          <div className="mb-2 flex items-center gap-1.5 text-rose-600">
-            <TrendingDown size={16} />
-            <span className="text-xs font-bold uppercase tracking-wider">Lowest scoring</span>
-          </div>
-          <ol className="space-y-2">
-            {slide.bottom.map((q, i) => (
-              <li key={q.question} className="rounded-lg bg-rose-50/60 px-3 py-2">
-                <p className="text-xs text-slate-700">
-                  <span className="font-bold text-rose-700">{i + 1}. </span>
-                  {q.question}
-                </p>
-                <p className="mt-0.5 text-xs font-bold text-rose-600">{q.average.toFixed(2)} / {maxValStr}</p>
-              </li>
-            ))}
-          </ol>
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-8 sm:px-14 sm:py-10">
+      <SlideBackdrop />
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
+        <SlideHeader eyebrow={SLIDE_EYEBROWS.questions} title="Top & Bottom Questions" />
+        <div className="mt-5 grid flex-1 min-h-0 gap-5 sm:grid-cols-2">
+          {columns.map((col) => {
+            const Icon = col.icon;
+            const textClass = col.tone === 'emerald' ? 'text-emerald-600' : 'text-rose-600';
+            const bgClass = col.tone === 'emerald' ? 'bg-emerald-50/60' : 'bg-rose-50/60';
+            const numClass = col.tone === 'emerald' ? 'text-emerald-700' : 'text-rose-700';
+            return (
+              <div key={col.label} className="flex min-h-0 flex-col">
+                <div className={`mb-2 flex shrink-0 items-center gap-1.5 ${textClass}`}>
+                  <Icon size={16} />
+                  <span className="text-xs font-bold uppercase tracking-wider">{col.label}</span>
+                </div>
+                <div className="flex flex-1 min-h-0 flex-col justify-center gap-2">
+                  {col.items.map((q, i) => (
+                    <div key={q.question} className={`max-h-20 flex-1 rounded-lg px-3 py-2 ${bgClass}`}>
+                      <p className="line-clamp-2 text-xs text-slate-700">
+                        <span className={`font-bold ${numClass}`}>{i + 1}. </span>
+                        {q.question}
+                      </p>
+                      <p className={`mt-0.5 text-xs font-bold ${textClass}`}>
+                        {q.average.toFixed(2)} / {maxValStr}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -1029,11 +1205,12 @@ function QuestionsSlide({ slide }: { slide: Extract<Slide, { kind: 'questions' }
 
 function SpotlightSlide({ slide }: { slide: Extract<Slide, { kind: 'spotlight' }> }) {
   return (
-    <div className="flex h-full w-full flex-col bg-white px-8 py-8 sm:px-14 sm:py-10">
-      <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#0063a9]">Category</p>
-      <h2 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Company Spotlight</h2>
-      <div className="mt-5 grid flex-1 gap-5 lg:grid-cols-[1fr,1.1fr]">
-        <div className="flex flex-col justify-center rounded-xl border-2 border-slate-100 p-5">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-8 sm:px-14 sm:py-10">
+      <SlideBackdrop />
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
+      <SlideHeader eyebrow={SLIDE_EYEBROWS.spotlight} title="Company Spotlight" />
+      <div className="mt-5 grid flex-1 min-h-0 gap-5 lg:grid-cols-[1fr,1.1fr]">
+        <div className="flex flex-col justify-center rounded-2xl border-2 border-slate-100 p-5">
           <ScoreBadge label={slide.band} hex={slide.hex} />
           <h3 className="mt-3 text-xl font-bold text-slate-900">{slide.company}</h3>
           <p className="text-sm text-slate-500">{slide.surveyType}</p>
@@ -1051,7 +1228,7 @@ function SpotlightSlide({ slide }: { slide: Extract<Slide, { kind: 'spotlight' }
             </div>
           )}
         </div>
-        <div className="min-h-[220px] rounded-xl border border-slate-100 p-3">
+        <div className="min-h-[220px] rounded-2xl border border-slate-200/90 p-3">
           <ResponsiveContainer width="100%" height="100%">
             <RadarChart data={slide.radar} outerRadius="72%">
               <PolarGrid />
@@ -1063,6 +1240,100 @@ function SpotlightSlide({ slide }: { slide: Extract<Slide, { kind: 'spotlight' }
               <Legend wrapperStyle={{ fontSize: 11 }} />
             </RadarChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+      </div>
+    </div>
+  );
+}
+
+function DistributionSlide({ slide }: { slide: Extract<Slide, { kind: 'distribution' }> }) {
+  const topNaCategory = slide.naByCategory[0];
+
+  return (
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-8 sm:px-14 sm:py-10">
+      <SlideBackdrop />
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
+        <SlideHeader
+          eyebrow={SLIDE_EYEBROWS.distribution}
+          title="Distribution & Risk Watch"
+          subtitle="How ratings are spread out, where N/A responses cluster, and who's trailing their peer group."
+        />
+        <div className="mt-5 grid flex-1 min-h-0 gap-5 lg:grid-cols-[1.1fr,0.9fr]">
+          {/* Left: rating distribution */}
+          <div className="flex min-h-0 flex-col rounded-2xl border border-slate-200/90 bg-slate-50/30 p-4">
+            <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Rating Distribution</p>
+              {slide.naPercentage > 0 && (
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                  {slide.naPercentage.toFixed(1)}% marked N/A
+                </span>
+              )}
+            </div>
+            <div className="flex-1 min-h-0">
+              {slide.buckets.some((b) => b.count > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={slide.buckets} margin={{ top: 20, right: 10, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="rating" tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} />
+                    <Tooltip />
+                    <Bar dataKey="count" radius={[8, 8, 0, 0]} barSize={40}>
+                      <LabelList dataKey="count" position="top" style={{ fill: '#334155', fontSize: 11, fontWeight: 700 }} />
+                      {slide.buckets.map((b) => (
+                        <Cell key={b.rating} fill={b.rating === 'N/A' ? '#94a3b8' : '#0063a9'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+                  No rated responses yet.
+                </div>
+              )}
+            </div>
+            {topNaCategory && (
+              <p className="mt-2 shrink-0 text-[11px] text-slate-400">
+                Most N/A responses cluster in{' '}
+                <span className="font-semibold text-slate-600">{topNaCategory.category}</span> ({topNaCategory.count}).
+              </p>
+            )}
+          </div>
+
+          {/* Right: needs attention */}
+          <div className="flex min-h-0 flex-col rounded-2xl border border-slate-200/90 bg-slate-50/30 p-4">
+            <div className="mb-2 flex shrink-0 items-center gap-1.5 text-amber-700">
+              <AlertTriangle size={14} />
+              <p className="text-xs font-bold uppercase tracking-wider">Needs Attention</p>
+            </div>
+            {slide.atRisk.length > 0 ? (
+              <div className="flex flex-1 min-h-0 flex-col justify-center gap-2">
+                {slide.atRisk.map((c, i) => (
+                  <motion.div
+                    key={`${c.company}-${c.surveyType}`}
+                    initial={{ opacity: 0, x: 12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.3, delay: i * 0.05 }}
+                    className="flex max-h-14 flex-1 items-center justify-between gap-3 rounded-xl bg-white px-3 shadow-xs"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-800">{c.company}</p>
+                      <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                        {c.surveyType} · {c.band}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-sm font-bold" style={{ color: c.hex }}>
+                      {c.score.toFixed(1)}
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-slate-400">
+                No partner is meaningfully trailing its peer group in this window.
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1109,6 +1380,8 @@ function SlideContent({ slide, responses = [] }: { slide: Slide; responses?: Sur
       return <QuestionsSlide slide={slide} />;
     case 'spotlight':
       return <SpotlightSlide slide={slide} />;
+    case 'distribution':
+      return <DistributionSlide slide={slide} />;
 
     case 'closing':
       return <ClosingSlide slide={slide} />;

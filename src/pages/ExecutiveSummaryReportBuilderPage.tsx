@@ -402,6 +402,33 @@ export function ExecutiveSummaryReportBuilderPage({
       .filter((row) => row.value > 0);
   }, [surveyPerformance]);
 
+  // Captures the live donut chart (chartWrapperRef) as a PNG for embedding in the PDF export.
+  const captureChartImage = async (): Promise<string | null> => {
+    if (!chartWrapperRef.current) return null;
+    try {
+      const canvas = await html2canvas(chartWrapperRef.current, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        logging: false,
+      });
+      return canvas.toDataURL('image/png');
+    } catch {
+      return null;
+    }
+  };
+
+  // Reads the real pixel dimensions of a captured PNG so it can be embedded at
+  // its true aspect ratio - a hardcoded guessed ratio stretches/squashes the
+  // chart whenever the live wrapper's actual proportions differ from the guess.
+  const dataUrlDimensions = (dataUrl: string): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth || 300, height: img.naturalHeight || 180 });
+      img.onerror = () => resolve({ width: 300, height: 180 });
+      img.src = dataUrl;
+    });
+  };
+
   // Logo fetch helper for pdf export
   const fetchLogoDataUrl = async (): Promise<string | null> => {
     try {
@@ -640,7 +667,7 @@ export function ExecutiveSummaryReportBuilderPage({
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(8);
           doc.setTextColor(100);
-          doc.text('TOTAL SUBMITTED SURVYE EVALUATIONS', marginLeft + 15, cursorY + 35);
+          doc.text('TOTAL SUBMITTED SURVEY EVALUATIONS', marginLeft + 15, cursorY + 35);
 
           doc.setFillColor(248, 250, 252);
           doc.setDrawColor(226, 232, 240);
@@ -682,6 +709,27 @@ export function ExecutiveSummaryReportBuilderPage({
           doc.text('N/A RELEVANCY FREQUENCY RATE', marginLeft + gridColWidth + 35, cursorY + 35);
 
           cursorY += 60;
+        }
+
+        // Submissions volume chart (captured from the live donut chart)
+        if (showChart && chartData.length > 0) {
+          const chartDataUrl = await captureChartImage();
+          if (chartDataUrl) {
+            if (cursorY > pageHeight - 200) {
+              addHeaderAndFooter(doc);
+              cursorY = 95;
+            }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10.5);
+            doc.setTextColor(30);
+            doc.text('Submissions Volume Share', marginLeft, cursorY);
+            cursorY += 12;
+            const { width: natW, height: natH } = await dataUrlDimensions(chartDataUrl);
+            const targetWidth = contentWidth * 0.5;
+            const targetHeight = (natH / natW) * targetWidth;
+            doc.addImage(chartDataUrl, 'PNG', marginLeft + (contentWidth - targetWidth) / 2, cursorY, targetWidth, targetHeight);
+            cursorY += targetHeight + 20;
+          }
         }
 
         // Division break table
@@ -776,6 +824,22 @@ export function ExecutiveSummaryReportBuilderPage({
             styles: { fontSize: 7.5, cellPadding: 4 },
             headStyles: { fillColor: [249, 115, 22], textColor: 255, fontStyle: 'bold' }, // amber/orange focus
             alternateRowStyles: { fillColor: [254, 243, 199] }, // light amber rows
+            // Mirrors the preview's per-row severity badge on the Rating column:
+            // red for critically low scores, amber otherwise.
+            didParseCell: (data) => {
+              if (data.section === 'body' && data.column.index === 2) {
+                const q = criticalQuestions[data.row.index];
+                if (q) {
+                  if (q.average < 75) {
+                    data.cell.styles.textColor = [220, 38, 38];
+                    data.cell.styles.fontStyle = 'bold';
+                  } else {
+                    data.cell.styles.textColor = [180, 83, 9];
+                    data.cell.styles.fontStyle = 'bold';
+                  }
+                }
+              }
+            },
           });
 
           cursorY = (doc as any).lastAutoTable.finalY + 25;
@@ -866,7 +930,22 @@ export function ExecutiveSummaryReportBuilderPage({
             margin: { left: marginLeft, right: marginLeft },
             styles: { fontSize: 8, cellPadding: 4.5 },
             headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' }, // indigo theme
-            alternateRowStyles: { fillColor: [245, 243, 255] },
+            // Mirrors the preview's RETAIN/REVIEW/ACTION badge coloring per recommendation type.
+            didParseCell: (data) => {
+              if (data.section !== 'body') return;
+              const rec = generatedRecommendations[data.row.index];
+              if (!rec) return;
+              if (rec.type === 'success') {
+                data.cell.styles.fillColor = [209, 250, 229];
+                data.cell.styles.textColor = [4, 120, 87];
+              } else if (rec.type === 'alert') {
+                data.cell.styles.fillColor = [254, 243, 199];
+                data.cell.styles.textColor = [180, 83, 9];
+              } else {
+                data.cell.styles.fillColor = [224, 231, 255];
+                data.cell.styles.textColor = [67, 56, 202];
+              }
+            },
           });
         }
 
@@ -1239,36 +1318,23 @@ export function ExecutiveSummaryReportBuilderPage({
             
             {/* Confidential Cover Page Preview if checked */}
             {showCoverPage && (
-              <div className="border-b-4 border-[#0063a9] pb-8 mb-8 animate-fade-in">
-                <div className="flex justify-between items-center mb-6">
-                  <img src={LOGO_URL} alt="Microgenesis" className="h-8 w-auto" referrerPolicy="no-referrer" />
-                  <span className="text-[10px] font-mono font-bold tracking-widest text-red-500 bg-red-50 dark:bg-red-950/20 px-2 py-1 rounded">CONFIDENTIAL</span>
+              <div className="border-b-4 border-[#0063a9] pb-8 mb-8 animate-fade-in text-center">
+                <img src={LOGO_URL} alt="Microgenesis" className="mx-auto h-10 w-auto" referrerPolicy="no-referrer" />
+                <div className="pt-8 pb-4">
+                  <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">Executive Briefing Report</h1>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 font-medium">MBS Partner Comprehensive Evaluation &amp; Diagnostics</p>
                 </div>
-                <div className="pt-8 pb-4 text-center">
-                  <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white uppercase">Executive Briefing Dossier</h1>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 font-medium">MBS Partner Comprehensive Performance Overview</p>
-                </div>
-                
+
                 {/* Briefing stats summary table */}
-                <div className="mt-6 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-lg p-5">
-                  <h4 className="text-xs font-extrabold text-slate-400 tracking-wider uppercase mb-3">Dossier Specifications</h4>
-                  <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-xs text-slate-600 dark:text-slate-300">
-                    <div>
-                      <span className="font-semibold block text-slate-400 text-[10px] uppercase">PREPARED BY</span>
-                      <span className="font-bold">{preparedBy || 'Operations Team'}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold block text-slate-400 text-[10px] uppercase">TARGET AUDIENCE</span>
-                      <span>Steering Committee Operations</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold block text-slate-400 text-[10px] uppercase">SURVEY SCOPE</span>
-                      <span className="font-medium">{activeTypes.join(', ') || 'None selected'}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold block text-slate-400 text-[10px] uppercase">DATE ISSUED</span>
-                      <span>{new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</span>
-                    </div>
+                <div className="mt-6 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-lg p-5 text-left">
+                  <h4 className="text-xs font-extrabold text-slate-400 tracking-wider uppercase mb-3">Executive Dossier Details:</h4>
+                  <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                    <p><span className="font-semibold text-slate-400">Prepared For:</span> MBS Stakeholder Operations Steering Committee</p>
+                    <p><span className="font-semibold text-slate-400">Prepared By:</span> {preparedBy || 'Operations Team'}</p>
+                    <p><span className="font-semibold text-slate-400">Divisions:</span> {activeTypes.join(', ') || 'None selected'}</p>
+                    <p><span className="font-semibold text-slate-400">Sample Size:</span> {summary.totalResponses} submitted surveys</p>
+                    <p><span className="font-semibold text-slate-400">System Rating:</span> {formatNumber(summary.averageRating)}% benchmark</p>
+                    <p><span className="font-semibold text-slate-400">Date Issued:</span> {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                   </div>
                 </div>
               </div>
@@ -1280,17 +1346,9 @@ export function ExecutiveSummaryReportBuilderPage({
                 <img src={LOGO_URL} alt="Microgenesis Logo" className="h-8 w-auto object-contain" referrerPolicy="no-referrer" />
               </div>
               <div className="text-right">
-                <h1 className="text-xs font-extrabold tracking-wider text-[#0063a9] uppercase">Executive Summary Briefing</h1>
-                <p className="text-[9px] text-slate-400 mt-0.5 font-mono">MBS Partner Evaluation & Compliance Diagnostics</p>
+                <h1 className="text-xs font-extrabold tracking-wider text-[#0063a9] uppercase">Executive Briefing Report</h1>
+                <p className="text-[9px] text-slate-400 mt-0.5 font-mono">MBS Partner Evaluation System</p>
               </div>
-            </div>
-
-            {/* Document Header Text */}
-            <div>
-              <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">Survey Performance Integrated Diagnostics</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
-                This document synthesizes strategic key performance indicators (KPIs) alongside critical question-level metrics. It compiles evaluations from courier, supplier, and subcontractor channels to highlight both outstanding divisions and urgent workflow weaknesses.
-              </p>
             </div>
 
             {/* 1. Core KPIs Section */}
@@ -1298,24 +1356,24 @@ export function ExecutiveSummaryReportBuilderPage({
               <div className="space-y-3">
                 <h3 className="text-xs font-extrabold text-[#0063a9] uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-800 pb-1.5">
                   <Zap size={14} />
-                  <span>1. Core System Performance Metrics</span>
+                  <span>1. Operational Overview &amp; KPIs</span>
                 </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                <div className="grid grid-cols-2 gap-3.5">
                   <div className="bg-slate-50 dark:bg-slate-900/30 border border-slate-150 dark:border-slate-800/60 rounded-lg p-3">
-                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Total Responses</span>
-                    <span className="text-lg font-black text-[#0063a9] block mt-0.5">{summary.totalResponses}</span>
+                    <span className="text-lg font-black text-[#0063a9] block">{summary.totalResponses}</span>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mt-0.5">Total Submitted Survey Evaluations</span>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/30 border border-slate-150 dark:border-slate-800/60 rounded-lg p-3">
-                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Average Compliance</span>
-                    <span className="text-lg font-black text-[#0063a9] block mt-0.5">{formatNumber(summary.averageRating)}%</span>
+                    <span className="text-lg font-black text-[#0063a9] block">{formatNumber(summary.averageRating)}%</span>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mt-0.5">Average System Compliance Score</span>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/30 border border-slate-150 dark:border-slate-800/60 rounded-lg p-3">
-                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Satisfaction Score</span>
-                    <span className="text-lg font-black text-[#0063a9] block mt-0.5">{formatNumber(summary.overallSatisfactionScore)}%</span>
+                    <span className="text-lg font-black text-[#0063a9] block">{formatNumber(summary.overallSatisfactionScore)}%</span>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mt-0.5">Overall Partner Satisfaction Index</span>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/30 border border-slate-150 dark:border-slate-800/60 rounded-lg p-3">
-                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">N/A Answer Rate</span>
-                    <span className="text-lg font-black text-[#0063a9] block mt-0.5">{formatNumber(summary.naPercentage)}%</span>
+                    <span className="text-lg font-black text-[#0063a9] block">{formatNumber(summary.naPercentage)}%</span>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mt-0.5">N/A Relevancy Frequency Rate</span>
                   </div>
                 </div>
               </div>
@@ -1340,6 +1398,10 @@ export function ExecutiveSummaryReportBuilderPage({
                             outerRadius={65}
                             paddingAngle={4}
                             dataKey="value"
+                            // Renders immediately instead of animating in - guarantees the
+                            // chart is fully drawn the instant captureChartImage/html2canvas
+                            // grabs it for the PDF export, rather than racing an in-progress entrance animation.
+                            isAnimationActive={false}
                           >
                             {chartData.map((entry) => (
                               <Cell
@@ -1364,24 +1426,21 @@ export function ExecutiveSummaryReportBuilderPage({
                 {showSurveyTable && (
                   <div className="flex flex-col justify-center">
                     <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">
-                      Division-wise Aggregations
+                      Survey Division Breakdown Summary
                     </h4>
                     <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                      <table className="w-full text-left text-xs border-collapse">
+                      <table className="w-full text-left text-[10px] border-collapse">
                         <thead>
                           <tr className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-                            <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Survey Category</th>
-                            <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Avg Score</th>
-                            <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Count</th>
+                            <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Survey Division Category</th>
+                            <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Average Score (%)</th>
+                            <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Total Submitted Evaluations</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-150 dark:divide-slate-800">
                           {surveyPerformance.map((row) => (
                             <tr key={row.surveyType} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                              <td className="p-2 font-medium flex items-center gap-1.5">
-                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: COLORS[row.surveyType] }} />
-                                {row.surveyType}
-                              </td>
+                              <td className="p-2 font-medium">{row.surveyType}</td>
                               <td className="p-2 text-right font-semibold text-[#0063a9]">{formatNumber(row.average)}%</td>
                               <td className="p-2 text-right text-slate-500">{row.responses}</td>
                             </tr>
@@ -1398,17 +1457,12 @@ export function ExecutiveSummaryReportBuilderPage({
             {showCustomNotes && customNotesText && (
               <div className="space-y-2">
                 <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                  Operational Analyst Review
+                  Executive Analyst Commentary
                 </h4>
                 <div className="bg-blue-50/40 border-l-4 border-azure rounded-r-lg p-4 dark:bg-blue-950/20">
-                  <p className="text-xs leading-relaxed italic text-slate-600 dark:text-slate-300">
-                    "{customNotesText}"
+                  <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                    {customNotesText}
                   </p>
-                  {preparedBy && (
-                    <p className="text-[10px] font-mono text-slate-400 mt-2 text-right">
-                      — Submitted by: {preparedBy}
-                    </p>
-                  )}
                 </div>
               </div>
             )}
@@ -1418,18 +1472,18 @@ export function ExecutiveSummaryReportBuilderPage({
               <div className="space-y-3 pt-1">
                 <h3 className="text-xs font-extrabold text-[#0063a9] uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-800 pb-1.5">
                   <FileSpreadsheet size={14} />
-                  <span>2. Core Question Diagnostics (Rated Below {questionThreshold}%)</span>
+                  <span>2. Critical Area Diagnostics (Questions Ranked)</span>
                 </h3>
                 <p className="text-[10px] text-slate-400 leading-relaxed">
-                  The following questions represent evaluating categories currently performing below the target executive compliance threshold.
+                  Showing evaluating questions with composite score benchmarks under {questionThreshold}% threshold.
                 </p>
                 <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                  <table className="w-full text-left text-xs border-collapse">
+                  <table className="w-full text-left text-[9px] border-collapse">
                     <thead>
                       <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800">
-                        <th className="p-2.5 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Evaluating Query Group</th>
-                        <th className="p-2.5 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Channel</th>
-                        <th className="p-2.5 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Average</th>
+                        <th className="p-2.5 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Evaluating Query Focus</th>
+                        <th className="p-2.5 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Division</th>
+                        <th className="p-2.5 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Rating</th>
                         <th className="p-2.5 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Highest Scoring Partner</th>
                         <th className="p-2.5 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Lowest Scoring Partner</th>
                       </tr>
@@ -1485,28 +1539,30 @@ export function ExecutiveSummaryReportBuilderPage({
               <div className="space-y-4 pt-1">
                 <h3 className="text-xs font-extrabold text-[#0063a9] uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-800 pb-1.5">
                   <Award size={14} />
-                  <span>3. High / Low Rated Partner Outliers</span>
+                  <span>3. Partner Performance Rankings</span>
                 </h3>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {/* Top rated */}
                   {topCompanies.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1">
                         <CheckCircle2 size={12} />
-                        <span>Highest Performing (Top {splitCount})</span>
+                        <span>Highest Performing Partners (Top {splitCount})</span>
                       </h4>
                       <div className="rounded-lg border border-emerald-100 dark:border-emerald-950/30 overflow-hidden">
-                        <table className="w-full text-left text-xs border-collapse">
+                        <table className="w-full text-left text-[10px] border-collapse">
                           <thead>
                             <tr className="bg-emerald-50/50 dark:bg-emerald-950/20 border-b border-emerald-100 dark:border-emerald-900/30">
-                              <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase">Company</th>
-                              <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase text-right">Score</th>
+                              <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase">Performance Rank</th>
+                              <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase">Partner Company Name</th>
+                              <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase text-right">Average Score (%)</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-emerald-100/50 dark:divide-emerald-900/20 text-slate-700 dark:text-slate-300">
-                            {topCompanies.map((c) => (
+                            {topCompanies.map((c, idx) => (
                               <tr key={c.company} className="hover:bg-emerald-50/10">
+                                <td className="p-2 font-bold text-emerald-600">#{idx + 1}</td>
                                 <td className="p-2 font-medium">{c.company}</td>
                                 <td className="p-2 text-right font-black text-emerald-600">{formatNumber(c.average)}%</td>
                               </tr>
@@ -1522,19 +1578,21 @@ export function ExecutiveSummaryReportBuilderPage({
                     <div className="space-y-2">
                       <h4 className="text-[10px] font-bold text-rose-500 uppercase tracking-wider flex items-center gap-1">
                         <AlertTriangle size={12} />
-                        <span>Lowest Performing (Needs SLA Review)</span>
+                        <span>Lowest Rated Partners</span>
                       </h4>
                       <div className="rounded-lg border border-rose-100 dark:border-rose-950/30 overflow-hidden">
-                        <table className="w-full text-left text-xs border-collapse">
+                        <table className="w-full text-left text-[10px] border-collapse">
                           <thead>
                             <tr className="bg-rose-50/50 dark:bg-rose-950/20 border-b border-rose-100 dark:border-rose-900/30">
-                              <th className="p-2 font-bold text-rose-700 text-[9px] uppercase">Company</th>
-                              <th className="p-2 font-bold text-rose-700 text-[9px] uppercase text-right">Score</th>
+                              <th className="p-2 font-bold text-rose-700 text-[9px] uppercase">Alert Rank</th>
+                              <th className="p-2 font-bold text-rose-700 text-[9px] uppercase">Partner Company Name</th>
+                              <th className="p-2 font-bold text-rose-700 text-[9px] uppercase text-right">Average Score (%)</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-rose-100/50 dark:divide-rose-900/20 text-slate-700 dark:text-slate-300">
-                            {leastRatedCompanies.map((c) => (
+                            {leastRatedCompanies.map((c, idx) => (
                               <tr key={c.company} className="hover:bg-rose-50/10">
+                                <td className="p-2 font-bold text-rose-500">ALERT #{idx + 1}</td>
                                 <td className="p-2 font-medium">{c.company}</td>
                                 <td className="p-2 text-right font-black text-rose-500">{formatNumber(c.average)}%</td>
                               </tr>
@@ -1553,7 +1611,7 @@ export function ExecutiveSummaryReportBuilderPage({
               <div className="space-y-3 pt-1">
                 <h3 className="text-xs font-extrabold text-[#0063a9] uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-800 pb-1.5">
                   <Sparkles size={14} />
-                  <span>4. Automated Strategic Action Guidelines</span>
+                  <span>4. Strategic Action Guidelines</span>
                 </h3>
                 <div className="grid grid-cols-1 gap-2.5">
                   {generatedRecommendations.map((rec, idx) => {
@@ -1592,50 +1650,61 @@ export function ExecutiveSummaryReportBuilderPage({
               </div>
             )}
 
-            {/* 5. Detailed Question Performance Report */}
+            {/* Detailed Question Performance Report (one page per category in the PDF, with no top-level "5." intro heading) */}
             {showDetailedQuestionReport && activeTypes.length > 0 && (
               <div className="space-y-6 pt-1">
-                <h3 className="text-xs font-extrabold text-[#0063a9] uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-800 pb-1.5">
-                  <FileText size={14} />
-                  <span>5. Detailed Question Performance Report</span>
-                </h3>
-                
                 {(['Courier', 'Supplier', 'Subcontractor'] as SurveyType[])
                   .filter((t) => activeTypes.includes(t))
                   .map((type) => {
                     const label = surveyTypeDisplayLabel[type];
                     const companiesList = evaluatedCompaniesByType[type];
                     const questionsList = statsByType[type];
-                    
+                    // PDF splits the list into a left/right column block (first
+                    // half left, second half right) rather than a row-major CSS
+                    // grid, so which company lands in which column matches exactly.
+                    const half = Math.ceil(companiesList.length / 2);
+                    const leftCompanies = companiesList.slice(0, half);
+                    const rightCompanies = companiesList.slice(half);
+
                     return (
                       <div key={type} className="space-y-4 animate-fade-in">
                         <div className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: COLORS[type] }} />
                           <h4 className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wide">{label} Performance Evaluation</h4>
                         </div>
-                        
+
                         {/* Boxed companies list */}
                         <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-lg p-3">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                            Evaluated Companies ({companiesList.length})
+                            Evaluated Companies ({companiesList.length}):
                           </span>
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-600 dark:text-slate-300">
-                            {companiesList.map((comp) => (
-                              <div key={comp} className="flex items-center gap-1.5">
-                                <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                                <span className="truncate">{comp}</span>
-                              </div>
-                            ))}
+                            <div className="space-y-1">
+                              {leftCompanies.map((comp) => (
+                                <div key={comp} className="flex items-center gap-1.5">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                  <span className="truncate">{comp}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="space-y-1">
+                              {rightCompanies.map((comp) => (
+                                <div key={comp} className="flex items-center gap-1.5">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                  <span className="truncate">{comp}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
 
                         {/* Question Stats Table */}
                         <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                          <table className="w-full text-left text-xs border-collapse">
+                          <table className="w-full text-left text-[10px] border-collapse">
                             <thead>
                               <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800">
                                 <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Question</th>
-                                <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Avg Rating</th>
+                                <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Average Rating</th>
                                 <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Responses</th>
                                 <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Highest Scoring Partner</th>
                                 <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Lowest Scoring Partner</th>
@@ -1676,10 +1745,10 @@ export function ExecutiveSummaryReportBuilderPage({
               </div>
             )}
 
-            {/* Letterhead Confidential Footer */}
+            {/* Letterhead Confidential Footer - matches the running PDF footer text repeated on every content page */}
             <div className="border-t border-slate-100 dark:border-slate-800 pt-5 flex justify-between items-center text-[10px] text-slate-400 font-mono">
-              <span>Microgenesis Supplier Management System</span>
-              <span className="font-bold text-red-500 uppercase tracking-widest text-[9px]">Strictly Confidential</span>
+              <span>Microgenesis Supplier Management System — Strictly Confidential</span>
+              <span>Page {(showCoverPage ? 1 : 0) + 1}</span>
             </div>
 
           </div>
