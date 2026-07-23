@@ -1,22 +1,27 @@
 import * as XLSX from 'xlsx';
-import { SurveyResponse, SurveyType } from '../types/survey';
+import { ArchiveSeries, SurveyResponse, SurveyType } from '../types/survey';
 import { ExportTable, exportTablesAsCSV, exportTablesAsExcel } from './exporters';
 
 // Single source of truth for the archived-response export/import shape, so
 // a file exported here can always be re-imported losslessly by the parser
 // below - every SurveyResponse field, verbatim, one row per response record.
+// 'seriesLabel' is denormalized onto every row (looked up from seriesId) so
+// the spreadsheet is self-describing without needing a second sheet.
 const COLUMNS = [
   'responseId', 'surveyType', 'respondentType', 'submissionDate', 'company',
   'department', 'address', 'questionId', 'questionNumber', 'question',
   'questionCategory', 'rating', 'comment', 'respondentEmail',
   'archived', 'archivedAt', 'archivedBySurveyId', 'archivedBySurveyTitle',
+  'seriesId', 'seriesLabel',
 ] as const;
 
-function toExportTable(responses: SurveyResponse[]): ExportTable {
+function toExportTable(responses: SurveyResponse[], seriesList: ArchiveSeries[]): ExportTable {
+  const labelById = new Map(seriesList.map((s) => [s.id, s.label]));
   return {
     title: 'Archived Responses',
     columns: [...COLUMNS],
     rows: responses.map((r) => COLUMNS.map((col) => {
+      if (col === 'seriesLabel') return r.seriesId ? (labelById.get(r.seriesId) ?? '') : '';
       const value = r[col as keyof SurveyResponse];
       if (value === undefined || value === null) return '';
       return typeof value === 'boolean' ? String(value) : value;
@@ -24,12 +29,12 @@ function toExportTable(responses: SurveyResponse[]): ExportTable {
   };
 }
 
-export function exportArchivedResponsesAsCSV(responses: SurveyResponse[], filenameBase: string) {
-  exportTablesAsCSV([toExportTable(responses)], filenameBase);
+export function exportArchivedResponsesAsCSV(responses: SurveyResponse[], filenameBase: string, seriesList: ArchiveSeries[] = []) {
+  exportTablesAsCSV([toExportTable(responses, seriesList)], filenameBase);
 }
 
-export function exportArchivedResponsesAsExcel(responses: SurveyResponse[], filenameBase: string) {
-  exportTablesAsExcel([toExportTable(responses)], filenameBase);
+export function exportArchivedResponsesAsExcel(responses: SurveyResponse[], filenameBase: string, seriesList: ArchiveSeries[] = []) {
+  exportTablesAsExcel([toExportTable(responses, seriesList)], filenameBase);
 }
 
 /* ------------------------------------------------------------------ */
@@ -94,6 +99,9 @@ function rowToResponse(row: Record<string, unknown>): { response?: SurveyRespons
       archivedAt: row.archivedAt ? String(row.archivedAt) : undefined,
       archivedBySurveyId: row.archivedBySurveyId ? String(row.archivedBySurveyId) : undefined,
       archivedBySurveyTitle: row.archivedBySurveyTitle ? String(row.archivedBySurveyTitle) : undefined,
+      // seriesId is intentionally NOT read from the row here - it's resolved
+      // from seriesLabel in mergeImportedResponses so re-imports land in the
+      // matching series by name rather than trusting a raw id from a hand-edited file.
     },
   };
 }
@@ -114,12 +122,16 @@ function rowKey(responseId: string, questionId: string): string {
 
 export function mergeImportedResponses(
   parsedRows: { row: number; raw: Record<string, unknown> }[],
-  existingResponses: SurveyResponse[]
+  existingResponses: SurveyResponse[],
+  resolveSeriesId?: (label: string) => string
 ): ArchiveImportResult {
   const existingKeys = new Set(existingResponses.map((r) => rowKey(r.responseId, r.questionId)));
   const merged = [...existingResponses];
   const log: ArchiveImportLogEntry[] = [];
   const stats = { totalRows: parsedRows.length, imported: 0, skippedDuplicate: 0, skippedInvalid: 0 };
+  // Resolve each distinct label at most once per import batch, so re-importing
+  // a file with many rows sharing a label doesn't create duplicate series.
+  const seriesIdByLabel = new Map<string, string>();
 
   for (const { row, raw } of parsedRows) {
     const responseId = String(raw.responseId ?? '').trim();
@@ -138,6 +150,17 @@ export function mergeImportedResponses(
       continue;
     }
 
+    const seriesLabel = String(raw.seriesLabel ?? '').trim();
+    if (seriesLabel && resolveSeriesId) {
+      const cacheKey = seriesLabel.toLowerCase();
+      let seriesId = seriesIdByLabel.get(cacheKey);
+      if (!seriesId) {
+        seriesId = resolveSeriesId(seriesLabel);
+        seriesIdByLabel.set(cacheKey, seriesId);
+      }
+      response.seriesId = seriesId;
+    }
+
     merged.push(response);
     existingKeys.add(key);
     log.push({ row, responseId: response.responseId, action: 'imported' });
@@ -149,9 +172,10 @@ export function mergeImportedResponses(
 
 export async function importArchivedResponsesFromFile(
   file: File,
-  existingResponses: SurveyResponse[]
+  existingResponses: SurveyResponse[],
+  resolveSeriesId?: (label: string) => string
 ): Promise<ArchiveImportResult> {
   const buffer = await file.arrayBuffer();
   const rows = parseArchivedResponsesWorkbook(buffer);
-  return mergeImportedResponses(rows, existingResponses);
+  return mergeImportedResponses(rows, existingResponses, resolveSeriesId);
 }

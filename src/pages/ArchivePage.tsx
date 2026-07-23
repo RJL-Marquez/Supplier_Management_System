@@ -1,12 +1,25 @@
 import { useMemo, useRef, useState } from 'react';
-import { Archive, ClipboardList, FileText, RefreshCw, Calendar, Building2, UserCheck, Trash2, ArrowLeft, Search, Download, Upload, Loader2, X, Sparkles } from 'lucide-react';
-import { CustomForm, SurveyResponse, SurveyType } from '../types/survey';
+import { Archive, ClipboardList, FileText, RefreshCw, Calendar, Building2, UserCheck, Trash2, ArrowLeft, Search, Download, Upload, Loader2, X, Sparkles, TrendingUp, Pencil, Check } from 'lucide-react';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { ArchiveSeries, CustomForm, SurveyResponse, SurveyType } from '../types/survey';
 import { exportArchivedResponsesAsExcel } from '../utils/archiveResponseTransfer';
 import type { ArchiveImportResult } from '../utils/archiveResponseTransfer';
+import { ChartCard } from '../components/ChartCard';
+import { seriesTrend, companySeriesTrend } from '../utils/analytics';
 
 interface ArchivePageProps {
   surveys: CustomForm[];
   archivedResponses: SurveyResponse[];
+  archiveSeries?: ArchiveSeries[];
+  onRenameArchiveSeries?: (id: string, newLabel: string) => void;
   onUpdateSurvey?: (survey: CustomForm) => void;
   onRestoreResponseGroup?: (responseId: string) => void;
   onRestoreResponsesForSurvey?: (surveyId: string) => void;
@@ -19,6 +32,8 @@ interface ArchivePageProps {
 export function ArchivePage({
   surveys,
   archivedResponses,
+  archiveSeries = [],
+  onRenameArchiveSeries,
   onUpdateSurvey,
   onRestoreResponseGroup,
   onRestoreResponsesForSurvey,
@@ -38,48 +53,65 @@ export function ArchivePage({
     return surveys.filter((s) => s.status === 'Archived');
   }, [surveys]);
 
-  // Group responses by survey form and date archived
+  // Group responses primarily by named archive series (a period like "1st Half
+  // 2026" can span multiple archive actions/surveys done under the same
+  // label). Rows with no seriesId (pre-existing data from before series
+  // existed) fall back to the old per-event grouping so nothing breaks.
   const groupedArchivedResponses = useMemo(() => {
+    const seriesById = new Map(archiveSeries.map((s) => [s.id, s]));
     const groups: Record<string, {
-      id: string; // `${surveyId}_${archivedAt}`
-      surveyId: string;
-      surveyTitle: string;
-      surveyType: SurveyType;
-      archivedAt: string;
+      id: string;
+      label: string;
+      seriesId?: string;
+      surveyTypes: SurveyType[];
+      sortKey: string;
+      // Distinct (archivedAt, surveyId) event pairs contributing to this
+      // group - needed because a series can merge multiple archive events.
+      eventKeys: { archivedAt: string; surveyId: string }[];
       responsesCount: number;
       responses: SurveyResponse[];
     }> = {};
 
     archivedResponses.forEach((r) => {
+      const seriesId = r.seriesId && seriesById.has(r.seriesId) ? r.seriesId : undefined;
       // Use fallback for older data that doesn't have these properties
-      const surveyId = r.archivedBySurveyId || r.surveyType;
-      const surveyTitle = r.archivedBySurveyTitle || r.surveyType + ' Form';
-      const archivedAt = r.archivedAt || r.submissionDate;
-      const groupId = `${surveyId}_${archivedAt}`;
+      const legacySurveyId = r.archivedBySurveyId || r.surveyType;
+      const legacyArchivedAt = r.archivedAt || r.submissionDate;
+      const groupId = seriesId ?? `legacy_${legacySurveyId}_${legacyArchivedAt}`;
+      const label = seriesId ? seriesById.get(seriesId)!.label : (r.archivedBySurveyTitle || r.surveyType + ' Form');
+      const sortKey = seriesId ? seriesById.get(seriesId)!.createdAt : legacyArchivedAt;
 
       if (!groups[groupId]) {
         groups[groupId] = {
           id: groupId,
-          surveyId,
-          surveyTitle,
-          surveyType: r.surveyType,
-          archivedAt,
+          label,
+          seriesId,
+          surveyTypes: [],
+          sortKey,
+          eventKeys: [],
           responsesCount: 0,
           responses: [],
         };
       }
-      
+
+      if (!groups[groupId].surveyTypes.includes(r.surveyType)) {
+        groups[groupId].surveyTypes.push(r.surveyType);
+      }
+      if (!groups[groupId].eventKeys.some((e) => e.archivedAt === legacyArchivedAt && e.surveyId === legacySurveyId)) {
+        groups[groupId].eventKeys.push({ archivedAt: legacyArchivedAt, surveyId: legacySurveyId });
+      }
+
       // Calculate responsesCount properly (number of unique responseIds)
       const isUniqueResponse = !groups[groupId].responses.some(resp => resp.responseId === r.responseId);
       if (isUniqueResponse) {
         groups[groupId].responsesCount += 1;
       }
-      
+
       groups[groupId].responses.push(r);
     });
 
-    return Object.values(groups).sort((a, b) => b.archivedAt.localeCompare(a.archivedAt));
-  }, [archivedResponses]);
+    return Object.values(groups).sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+  }, [archivedResponses, archiveSeries]);
 
   // Handle restoring an archived survey back to active/running status
   const handleRestoreSurvey = (survey: CustomForm) => {
@@ -123,13 +155,43 @@ export function ArchivePage({
     const needle = searchQuery.toLowerCase();
     return groupedArchivedResponses.filter(
       (g) =>
-        g.surveyTitle.toLowerCase().includes(needle) ||
-        g.surveyType.toLowerCase().includes(needle)
+        g.label.toLowerCase().includes(needle) ||
+        g.surveyTypes.some((t) => t.toLowerCase().includes(needle))
     );
   }, [groupedArchivedResponses, searchQuery]);
 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
+  const [editingSeriesId, setEditingSeriesId] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState('');
+
+  // "Series Trend" panel state: overall trend across periods, or one
+  // company's trend across periods (the "project a company's rating trend
+  // across years" view).
+  const [trendCompany, setTrendCompany] = useState<string>('__overall__');
+  const trendCompanies = useMemo(
+    () => [...new Set(archivedResponses.filter((r) => r.seriesId).map((r) => r.company))].sort(),
+    [archivedResponses]
+  );
+  const seriesTrendData = useMemo(() => {
+    const data = trendCompany === '__overall__'
+      ? seriesTrend(archivedResponses, archiveSeries)
+      : companySeriesTrend(archivedResponses, trendCompany, archiveSeries);
+    return data.map((d) => ({ key: d.label, average: d.average, responses: d.responses }));
+  }, [archivedResponses, archiveSeries, trendCompany]);
+
+  const startRenameSeries = (seriesId: string, currentLabel: string) => {
+    setEditingSeriesId(seriesId);
+    setEditingLabel(currentLabel);
+  };
+
+  const commitRenameSeries = () => {
+    if (editingSeriesId && onRenameArchiveSeries && editingLabel.trim()) {
+      onRenameArchiveSeries(editingSeriesId, editingLabel.trim());
+    }
+    setEditingSeriesId(null);
+    setEditingLabel('');
+  };
 
   const toggleExpand = (id: string) => {
     const next = new Set(expandedGroups);
@@ -166,12 +228,12 @@ export function ArchivePage({
       .filter((g) => selectedGroups.has(g.id))
       .flatMap((g) => g.responses);
     if (rows.length === 0) return;
-    exportArchivedResponsesAsExcel(rows, 'archived_responses_selected');
+    exportArchivedResponsesAsExcel(rows, 'archived_responses_selected', archiveSeries);
   };
 
   const handleExportAll = () => {
     if (archivedResponses.length === 0) return;
-    exportArchivedResponsesAsExcel(archivedResponses, 'archived_responses_all');
+    exportArchivedResponsesAsExcel(archivedResponses, 'archived_responses_all', archiveSeries);
   };
 
   const handleImportFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207,8 +269,8 @@ export function ArchivePage({
     if (selectedGroups.size === 0 || !onRestoreArchivedResponseGroups) return;
     const groups = filteredGroupedResponses
       .filter(g => selectedGroups.has(g.id))
-      .map(g => ({ archivedAt: g.archivedAt, surveyId: g.surveyId }));
-    
+      .flatMap(g => g.eventKeys);
+
     onRestoreArchivedResponseGroups(groups);
     setSelectedGroups(new Set());
     setSuccessMessage('Selected archived forms have been restored to live dataset!');
@@ -223,8 +285,8 @@ export function ArchivePage({
   const confirmBulkDelete = () => {
     const groups = filteredGroupedResponses
       .filter(g => selectedGroups.has(g.id))
-      .map(g => ({ archivedAt: g.archivedAt, surveyId: g.surveyId }));
-    
+      .flatMap(g => g.eventKeys);
+
     onDeleteArchivedResponseGroups!(groups);
     setSelectedGroups(new Set());
     setConfirmDeleteState({ isOpen: false });
@@ -432,7 +494,47 @@ export function ArchivePage({
 
         {/* Tab 2 Content: Responses List */}
         {activeTab === 'responses' && (
-          <div>
+          <div className="space-y-5">
+            {archiveSeries.length > 0 && (
+              <ChartCard
+                title="Series Trend"
+                subtitle="Average score across named archive periods - track a company (or the overall portfolio) year over year"
+                action={
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <TrendingUp size={14} className="text-slate-400" />
+                    <select
+                      value={trendCompany}
+                      onChange={(e) => setTrendCompany(e.target.value)}
+                      className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-[#0063a9] cursor-pointer"
+                    >
+                      <option value="__overall__">Overall (all companies)</option>
+                      {trendCompanies.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                }
+              >
+                {seriesTrendData.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-sm text-slate-400 dark:text-slate-500">
+                    No data for this selection.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={seriesTrendData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="key" />
+                      <YAxis yAxisId="left" domain={[0, 100]} />
+                      <YAxis yAxisId="right" orientation="right" allowDecimals={false} />
+                      <Tooltip />
+                      <Line yAxisId="left" type="monotone" dataKey="average" name="Average Score" stroke="#2563eb" strokeWidth={3} dot={{ r: 4 }} />
+                      <Line yAxisId="right" type="monotone" dataKey="responses" name="Responses" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </ChartCard>
+            )}
+
             {filteredGroupedResponses.length === 0 ? (
               <div className="text-center py-10 text-slate-500">
                 <FileText size={32} className="mx-auto mb-2 text-slate-300" />
@@ -492,16 +594,52 @@ export function ArchivePage({
                             <ClipboardList size={20} />
                           </div>
                           <div>
-                            <h4 className="font-bold text-slate-900 dark:text-white">
-                              {group.surveyTitle}
-                            </h4>
-                            <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                              <span className="inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                {group.surveyType}
-                              </span>
+                            {editingSeriesId === group.seriesId && group.seriesId ? (
+                              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="text"
+                                  value={editingLabel}
+                                  autoFocus
+                                  onChange={(e) => setEditingLabel(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') commitRenameSeries();
+                                    if (e.key === 'Escape') { setEditingSeriesId(null); setEditingLabel(''); }
+                                  }}
+                                  className="rounded-lg border border-[#0063a9] bg-white dark:bg-slate-950 px-2 py-1 text-sm font-bold text-slate-900 dark:text-white focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={commitRenameSeries}
+                                  className="p-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
+                                  aria-label="Save period name"
+                                >
+                                  <Check size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                {group.label}
+                                {group.seriesId && onRenameArchiveSeries && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); startRenameSeries(group.seriesId!, group.label); }}
+                                    className="text-slate-300 hover:text-[#0063a9] dark:text-slate-600 dark:hover:text-blue-400 cursor-pointer"
+                                    aria-label="Rename period"
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
+                                )}
+                              </h4>
+                            )}
+                            <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 flex-wrap">
+                              {group.surveyTypes.map((t) => (
+                                <span key={t} className="inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                  {t}
+                                </span>
+                              ))}
                               <span>•</span>
                               <Calendar size={12} />
-                              <span>Archived: {new Date(group.archivedAt).toLocaleString()}</span>
+                              <span>{group.seriesId ? 'Period created' : 'Archived'}: {new Date(group.sortKey).toLocaleString()}</span>
                             </div>
                           </div>
                         </div>

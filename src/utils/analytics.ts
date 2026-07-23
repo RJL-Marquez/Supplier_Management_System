@@ -1,4 +1,4 @@
-import { CustomForm, FilterState, KpiSummary, PartnerCompany, Rating, SurveyResponse, SurveyType } from '../types/survey';
+import { ArchiveSeries, CustomForm, FilterState, KpiSummary, PartnerCompany, Rating, SurveyResponse, SurveyType } from '../types/survey';
 import { getQuestionMaxPoints, isScoredQuestion } from '../data/questionWeights';
 
 /**
@@ -341,6 +341,59 @@ export function monthlyTrend(responses: SurveyResponse[]) {
       average: Number(formatNumber(monthSubmissions.reduce((sum, item) => sum + item.score, 0) / monthSubmissions.length)),
       responses: monthSubmissions.length,
     }));
+}
+
+export function yearlyTrend(responses: SurveyResponse[]) {
+  const groups = new Map<string, ReturnType<typeof submissionScores>>();
+  submissionScores(responses).forEach((submission) => {
+    const year = submission.submissionDate.slice(0, 4);
+    groups.set(year, [...(groups.get(year) ?? []), submission]);
+  });
+
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([year, yearSubmissions]) => ({
+      year,
+      average: Number(formatNumber(yearSubmissions.reduce((sum, item) => sum + item.score, 0) / yearSubmissions.length)),
+      responses: yearSubmissions.length,
+    }));
+}
+
+/**
+ * Trend across named archive periods (e.g. "1st Half 2026"), ordered by the
+ * series' creation date rather than alphabetically - series aren't
+ * guaranteed to sort correctly as strings (e.g. "2nd Half 2026" vs
+ * "1st Half 2027").
+ */
+export function seriesTrend(responses: SurveyResponse[], seriesList: ArchiveSeries[]) {
+  const seriesById = new Map(seriesList.map((s) => [s.id, s]));
+
+  // submissionScores() drops seriesId, so bucket raw responses by seriesId
+  // first, then compute scores per bucket - mirrors monthlyTrend's shape.
+  const responsesBySeries = new Map<string, SurveyResponse[]>();
+  responses.forEach((r) => {
+    if (!r.seriesId || !seriesById.has(r.seriesId)) return;
+    responsesBySeries.set(r.seriesId, [...(responsesBySeries.get(r.seriesId) ?? []), r]);
+  });
+
+  const groups = new Map<string, ReturnType<typeof submissionScores>>();
+  responsesBySeries.forEach((seriesResponses, seriesId) => {
+    groups.set(seriesId, submissionScores(seriesResponses));
+  });
+
+  return [...groups.entries()]
+    .map(([seriesId, scores]) => ({
+      seriesId,
+      label: seriesById.get(seriesId)?.label ?? 'Unknown',
+      createdAt: seriesById.get(seriesId)?.createdAt ?? '',
+      average: scores.length ? Number(formatNumber(scores.reduce((sum, item) => sum + item.score, 0) / scores.length)) : 0,
+      responses: scores.length,
+    }))
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+export function companySeriesTrend(responses: SurveyResponse[], company: string, seriesList: ArchiveSeries[]) {
+  return seriesTrend(responses.filter((r) => r.company === company), seriesList);
 }
 
 export function questionPerformance(responses: SurveyResponse[]) {

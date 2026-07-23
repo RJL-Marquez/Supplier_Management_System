@@ -231,9 +231,12 @@ export default function App() {
   // 'current' = active period only (today's default, unchanged behavior).
   // 'all-time' = active + every archived period combined, so multi-year
   // company trends accumulate across resets instead of blanking out each time
-  // a survey period is archived. Shared across Dashboard/Analytics so
-  // switching in one keeps the other consistent.
-  const [dataScope, setDataScope] = useState<'current' | 'all-time'>('current');
+  // a survey period is archived. 'custom' = only the archived series picked
+  // in selectedSeriesIds. Shared across Dashboard/Analytics so switching in
+  // one keeps the other consistent (Dashboard doesn't offer 'custom' itself
+  // and falls back to 'current' if it's ever selected elsewhere).
+  const [dataScope, setDataScope] = useState<'current' | 'all-time' | 'custom'>('current');
+  const [selectedSeriesIds, setSelectedSeriesIds] = useState<string[]>([]);
 
   // Accounts Management State
   const [accounts, setAccounts] = useState<AccountProfile[]>(() => {
@@ -316,6 +319,8 @@ export default function App() {
   const {
     responses,
     archivedResponses,
+    archiveSeries,
+    renameArchiveSeries,
     archiveResponsesForSurveys,
     restoreResponseGroup,
     restoreResponsesForSurvey,
@@ -440,9 +445,23 @@ export default function App() {
     () => applyAccessFilter(historyResponsesRaw, profile, effectiveSurveyTypes, activePage),
     [historyResponsesRaw, profile, effectiveSurveyTypes, activePage]
   );
-  // Whichever of the two the current toggle selects - this is what most
+  // Archived responses belonging to the series picked in the Analytics
+  // "Custom" scope. Series only exist on archived rows (stamped at archive
+  // time), so this never includes anything from the current/active period.
+  const customScopedResponsesRaw = useMemo(
+    () => (selectedSeriesIds.length ? historyResponsesRaw.filter((r) => r.seriesId && selectedSeriesIds.includes(r.seriesId)) : []),
+    [historyResponsesRaw, selectedSeriesIds]
+  );
+  const userAccessibleCustomResponses = useMemo(
+    () => applyAccessFilter(customScopedResponsesRaw, profile, effectiveSurveyTypes, activePage),
+    [customScopedResponsesRaw, profile, effectiveSurveyTypes, activePage]
+  );
+  // Whichever of the three the current toggle selects - this is what most
   // scope-aware pages (Dashboard/Reports/Present/Explorer) should consume.
-  const scopedAccessibleResponses = dataScope === 'all-time' ? userAccessibleAllTimeResponses : userAccessibleResponses;
+  const scopedAccessibleResponses =
+    dataScope === 'all-time' ? userAccessibleAllTimeResponses :
+    dataScope === 'custom' ? userAccessibleCustomResponses :
+    userAccessibleResponses;
 
   const userAccessibleAllResponses = useMemo(() => {
     if (!profile) return [];
@@ -497,8 +516,13 @@ export default function App() {
 
   const filteredResponses = useMemo(() => applyFilters(scopedAccessibleResponses, filters), [scopedAccessibleResponses, filters]);
   const analyticsFilteredResponses = useMemo(
-    () => applyFilters(dataScope === 'all-time' ? historyResponsesRaw : responses, filters),
-    [dataScope, historyResponsesRaw, responses, filters]
+    () => applyFilters(
+      dataScope === 'all-time' ? historyResponsesRaw :
+      dataScope === 'custom' ? customScopedResponsesRaw :
+      responses,
+      filters
+    ),
+    [dataScope, historyResponsesRaw, customScopedResponsesRaw, responses, filters]
   );
   
   const activeSurveyTypes = filters.surveyType.length ? filters.surveyType : effectiveSurveyTypes;
@@ -598,7 +622,7 @@ export default function App() {
         responses={filteredResponses}
         allResponses={userAccessibleAllResponses}
         historyResponses={dataScope === 'all-time' ? userAccessibleAllTimeResponses : userAccessibleAllResponses}
-        dataScope={dataScope}
+        dataScope={dataScope === 'custom' ? 'current' : dataScope}
         onChangeDataScope={setDataScope}
         partnerCompanies={userAccessiblePartnerCompanies}
         isLoading={isLoading}
@@ -668,13 +692,16 @@ export default function App() {
     analytics: (
       <AnalyticsPage
         responses={analyticsFilteredResponses}
-        allResponses={dataScope === 'all-time' ? historyResponsesRaw : responses}
+        allResponses={dataScope === 'all-time' ? historyResponsesRaw : dataScope === 'custom' ? customScopedResponsesRaw : responses}
         partnerCompanies={partnerCompanies}
         activeSurveyTypes={allSurveyTypes}
         filters={filters}
         setFilters={setFilters}
         dataScope={dataScope}
         onChangeDataScope={setDataScope}
+        archiveSeries={archiveSeries}
+        selectedSeriesIds={selectedSeriesIds}
+        onChangeSelectedSeriesIds={setSelectedSeriesIds}
       />
     ),
     present: <PresentPage responses={scopedAccessibleResponses} partnerCompanies={userAccessiblePartnerCompanies} />,
@@ -780,6 +807,8 @@ export default function App() {
       <ArchivePage
         surveys={userAccessibleSurveys}
         archivedResponses={archivedResponses}
+        archiveSeries={archiveSeries}
+        onRenameArchiveSeries={renameArchiveSeries}
         onUpdateSurvey={updateSurvey}
         onRestoreResponseGroup={restoreResponseGroup}
         onRestoreResponsesForSurvey={restoreResponsesForSurvey}

@@ -93,6 +93,20 @@ export interface SurveyResponse {
   archivedAt?: string;
   archivedBySurveyId?: string;
   archivedBySurveyTitle?: string;
+  // Named reporting period this response belongs to (e.g. "1st Half 2026"),
+  // set at archive time. Absent on legacy archived rows created before
+  // series existed - those fall back to the surveyId+archivedAt grouping.
+  seriesId?: string;
+}
+
+// A named historical reporting period (e.g. "1st Half 2026"). Not tied to
+// any fixed cadence - admins type a freeform label when archiving, and
+// responses archived later under the same label (case-insensitive) join
+// the same series rather than creating a duplicate.
+export interface ArchiveSeries {
+  id: string;
+  label: string;
+  createdAt: string;
 }
 
 export interface FilterState {

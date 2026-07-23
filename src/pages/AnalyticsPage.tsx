@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Award, Ban, ClipboardList, Star, TrendingUp, Users } from 'lucide-react';
+import { Award, Ban, ClipboardList, Download, Star, TrendingUp, Users } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
   Bar,
@@ -20,7 +20,7 @@ import { CompanyAnalysisPanel } from '../components/CompanyAnalysisPanel';
 import { StateMessage } from '../components/StateMessage';
 import { StatCard } from '../components/StatCard';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { FilterState, PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
+import { ArchiveSeries, FilterState, PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
 import {
   getScoreAxisDomain,
   naFrequency,
@@ -29,10 +29,14 @@ import {
   formatNumber,
   getKpiSummary,
   monthlyTrend,
+  yearlyTrend,
+  seriesTrend,
   getMaxRatingForResponses,
   submissionScores,
+  getCompanyPerformance,
 } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
+import { exportTablesAsCSV, exportTablesAsExcel, ExportTable } from '../utils/exporters';
 
 interface AnalyticsPageProps {
   responses: SurveyResponse[];
@@ -41,8 +45,11 @@ interface AnalyticsPageProps {
   activeSurveyTypes: SurveyType[];
   filters: FilterState;
   setFilters: (filters: FilterState) => void;
-  dataScope?: 'current' | 'all-time';
-  onChangeDataScope?: (scope: 'current' | 'all-time') => void;
+  dataScope?: 'current' | 'all-time' | 'custom';
+  onChangeDataScope?: (scope: 'current' | 'all-time' | 'custom') => void;
+  archiveSeries?: ArchiveSeries[];
+  selectedSeriesIds?: string[];
+  onChangeSelectedSeriesIds?: (ids: string[]) => void;
 }
 
 const surveyTypeColors: Record<SurveyType, string> = {
@@ -207,16 +214,31 @@ export function AnalyticsPage({
   filters,
   setFilters,
   dataScope = 'current',
-  onChangeDataScope
+  onChangeDataScope,
+  archiveSeries = [],
+  selectedSeriesIds = [],
+  onChangeSelectedSeriesIds
 }: AnalyticsPageProps) {
   const isMobile = useIsMobile();
   const [limit, setLimit] = useState<5 | 10>(5);
   const [performanceMode, setPerformanceMode] = useState<'highest' | 'lowest'>('highest');
+  const [trendGranularity, setTrendGranularity] = useState<'monthly' | 'yearly' | 'series'>('monthly');
 
   const comparableResponses = responses;
 
   const summary = useMemo(() => getKpiSummary(responses), [responses]);
-  const trend = useMemo(() => monthlyTrend(responses), [responses]);
+
+  // Unified {key, average, responses} shape so the same LineChart can be fed
+  // by whichever granularity is selected - month-to-month, year-over-year
+  // (for multi-year projections), or by named archive series/period.
+  const monthlyTrendData = useMemo(() => monthlyTrend(responses).map((d) => ({ key: d.month, average: d.average, responses: d.responses })), [responses]);
+  const yearlyTrendData = useMemo(() => yearlyTrend(responses).map((d) => ({ key: d.year, average: d.average, responses: d.responses })), [responses]);
+  const seriesTrendData = useMemo(() => seriesTrend(responses, archiveSeries).map((d) => ({ key: d.label, average: d.average, responses: d.responses })), [responses, archiveSeries]);
+  const trend =
+    trendGranularity === 'yearly' ? yearlyTrendData :
+    trendGranularity === 'series' ? seriesTrendData :
+    monthlyTrendData;
+
   const questions = useMemo(() => questionPerformance(responses), [responses]);
 
   const portfolioMaxRating = useMemo(() => {
@@ -371,10 +393,6 @@ export function AnalyticsPage({
   const bottomQuestions = remainingQuestions.slice(-5);
   const spreadQuestions = [...topQuestions, ...bottomQuestions];
 
-  if (!responses.length) {
-    return <StateMessage title="No analytics available" message="Adjust filters to compare survey groups." />;
-  }
-
   const toggleSurveyType = (type: SurveyType) => {
     let newTypes = [...filters.surveyType];
     if (newTypes.includes(type)) {
@@ -387,12 +405,50 @@ export function AnalyticsPage({
 
   const allSurveyTypes: SurveyType[] = ['Courier', 'Supplier', 'Subcontractor'];
 
-  return (
-    <div className="space-y-5">
-      {onChangeDataScope && (
-        <div className="flex justify-end">
-          <div className="flex rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-1" title="Choose whether these analytics reflect only the current period or every archived period combined">
-            {(['current', 'all-time'] as const).map((scope) => (
+  const toggleSelectedSeries = (id: string) => {
+    if (!onChangeSelectedSeriesIds) return;
+    const next = selectedSeriesIds.includes(id)
+      ? selectedSeriesIds.filter((s) => s !== id)
+      : [...selectedSeriesIds, id];
+    onChangeSelectedSeriesIds(next);
+  };
+
+  const handleExportSnapshot = (format: 'excel' | 'csv') => {
+    const tables: ExportTable[] = [
+      {
+        title: 'KPI Summary',
+        columns: ['Metric', 'Value'],
+        rows: [
+          ['Overall Satisfaction Score', formatNumber(summary.overallSatisfactionScore)],
+          ['Total Responses', summary.totalResponses],
+          ['Average Rating', formatNumber(summary.averageRating)],
+          ['N/A Percentage', `${formatNumber(summary.naPercentage)}%`],
+          ['Highest Rated Question', summary.highestRatedQuestion],
+          ['Lowest Rated Question', summary.lowestRatedQuestion],
+        ],
+      },
+      {
+        title: 'Company Performance',
+        columns: ['Company', 'Average Score', 'Evaluations'],
+        rows: getCompanyPerformance(responses).map((c) => [c.company, formatNumber(c.average), c.evaluations]),
+      },
+      {
+        title: `Trend (${trendGranularity === 'yearly' ? 'Yearly' : trendGranularity === 'series' ? 'By Series' : 'Monthly'})`,
+        columns: ['Period', 'Average Score', 'Responses'],
+        rows: trend.map((t) => [t.key, t.average, t.responses]),
+      },
+    ];
+    const filenameBase = `analytics_snapshot_${dataScope}`;
+    if (format === 'excel') exportTablesAsExcel(tables, filenameBase);
+    else exportTablesAsCSV(tables, filenameBase);
+  };
+
+  const scopeToolbar = (onChangeDataScope || responses.length > 0) && (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {onChangeDataScope && (
+          <div className="flex rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-1" title="Choose whether these analytics reflect only the current period, every archived period combined, or a hand-picked set of periods">
+            {(['current', 'all-time', 'custom'] as const).map((scope) => (
               <button
                 key={scope}
                 type="button"
@@ -403,12 +459,84 @@ export function AnalyticsPage({
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
-                {scope === 'current' ? 'Current Period' : 'All-Time'}
+                {scope === 'current' ? 'Current Period' : scope === 'all-time' ? 'All-Time' : 'Custom'}
               </button>
             ))}
           </div>
+        )}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => handleExportSnapshot('excel')}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
+            title="Export the current KPI summary, company performance, and trend data as an Excel workbook"
+          >
+            <Download size={14} />
+            <span>Export XLSX</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleExportSnapshot('csv')}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
+            title="Export the same snapshot as CSV"
+          >
+            <Download size={14} />
+            <span>CSV</span>
+          </button>
+        </div>
+      </div>
+
+      {dataScope === 'custom' && (
+        <div className="panel p-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Select periods to include</p>
+          {archiveSeries.length === 0 ? (
+            <p className="text-sm text-slate-400">No named archive periods exist yet. Archive a survey with a period label first.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {archiveSeries.map((s) => (
+                <label
+                  key={s.id}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold cursor-pointer border transition ${
+                    selectedSeriesIds.includes(s.id)
+                      ? 'bg-[#0063a9] text-white border-[#0063a9]'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="hidden"
+                    checked={selectedSeriesIds.includes(s.id)}
+                    onChange={() => toggleSelectedSeries(s.id)}
+                  />
+                  {s.label}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
+
+  if (!responses.length) {
+    return (
+      <div className="space-y-5">
+        {scopeToolbar}
+        <StateMessage
+          title="No analytics available"
+          message={
+            dataScope === 'custom'
+              ? 'Select at least one period above to view its analytics.'
+              : 'Adjust filters to compare survey groups.'
+          }
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {scopeToolbar}
       {/* Prominent KPI Section: Overall Satisfaction */}
       <div className={`panel flex flex-col md:flex-row items-center justify-between p-6 md:p-8 border-2 border-slate-100 dark:border-slate-800/40 shadow-lg relative overflow-hidden bg-gradient-to-r from-white to-slate-50/50 dark:from-slate-950 dark:to-slate-900/40 gap-6 md:gap-10`}>
         
@@ -598,7 +726,7 @@ export function AnalyticsPage({
 
       <CompanyLeaderboardPanel responses={comparableResponses} />
 
-      <CompanyAnalysisPanel responses={comparableResponses} />
+      <CompanyAnalysisPanel responses={comparableResponses} archiveSeries={archiveSeries} />
 
       <section className="panel">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -911,20 +1039,57 @@ export function AnalyticsPage({
         </div>
       </div>
 
-      {/* Moved from Dashboard: Monthly Trend */}
+      {/* Moved from Dashboard: Trend (Monthly / Yearly / By Series) */}
       <div className="grid gap-5 grid-cols-1">
-        <ChartCard title="Monthly Trend" subtitle="Average score and response volume over time">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={trend}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="month" />
-              <YAxis yAxisId="left" domain={[0, 100]} />
-              <YAxis yAxisId="right" orientation="right" allowDecimals={false} />
-              <Tooltip />
-              <Line yAxisId="left" type="monotone" dataKey="average" stroke="#2563eb" strokeWidth={3} dot={false} />
-              <Line yAxisId="right" type="monotone" dataKey="responses" stroke="#10b981" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+        <ChartCard
+          title="Rating Trend"
+          subtitle={
+            trendGranularity === 'yearly'
+              ? 'Average score and response volume by year - use this to project a long-run trend'
+              : trendGranularity === 'series'
+                ? 'Average score and response volume by named archive period'
+                : 'Average score and response volume over time'
+          }
+          action={
+            <div className="flex rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-1">
+              {([
+                ['monthly', 'Monthly'],
+                ['yearly', 'Yearly'],
+                ['series', 'By Series'],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setTrendGranularity(key)}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                    trendGranularity === key
+                      ? 'bg-[#0063a9] text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          }
+        >
+          {trend.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-sm text-slate-400 dark:text-slate-500">
+              {trendGranularity === 'series' ? 'No named archive periods yet - archive a survey with a period label to see them here.' : 'No data for this view.'}
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trend}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="key" />
+                <YAxis yAxisId="left" domain={[0, 100]} />
+                <YAxis yAxisId="right" orientation="right" allowDecimals={false} />
+                <Tooltip />
+                <Line yAxisId="left" type="monotone" dataKey="average" stroke="#2563eb" strokeWidth={3} dot={false} />
+                <Line yAxisId="right" type="monotone" dataKey="responses" stroke="#10b981" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </ChartCard>
       </div>
 

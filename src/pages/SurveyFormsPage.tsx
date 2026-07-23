@@ -15,7 +15,7 @@ interface SurveyFormsPageProps {
   onFillForm: (id: string) => void;
   onUpdateSurvey?: (survey: CustomForm) => void;
   onUpdateSurveysBulk?: (updatedSurveysList: CustomForm[]) => void;
-  onArchiveResponses?: (surveyIds: string[]) => void;
+  onArchiveResponses?: (surveyIds: string[], seriesLabel?: string) => void;
   isAdmin?: boolean;
 }
 
@@ -54,6 +54,14 @@ function ddmmToYyyymmdd(ddmm: string): string {
     return `${year}-${month}-${day}`;
   }
   return '';
+}
+
+// Default guess for the archive series label, editable by the admin before
+// confirming. Not a hard rule - the actual cadence is whatever gets typed.
+function suggestSeriesLabel(): string {
+  const now = new Date();
+  const half = now.getMonth() < 6 ? '1st Half' : '2nd Half';
+  return `${half} ${now.getFullYear()}`;
 }
 
 function yyyymmddToDdmm(yyyymmdd: string): string {
@@ -108,6 +116,7 @@ export function SurveyFormsPage({
   const [resetPasscode, setResetPasscode] = useState('');
   const [archiveError, setArchiveError] = useState('');
   const [resetError, setResetError] = useState('');
+  const [resetSeriesLabel, setResetSeriesLabel] = useState('');
 
   // Notification configuration states
   const [modifyStep, setModifyStep] = useState<1 | 2>(1);
@@ -434,7 +443,7 @@ export function SurveyFormsPage({
     }
 
     if (onArchiveResponses) {
-      onArchiveResponses([...selectedSurveyIds]);
+      onArchiveResponses([...selectedSurveyIds], resetSeriesLabel);
       alert("Selected survey responses have been archived successfully, and the forms have been reset!");
       setIsSelectMode(false);
       setSelectedSurveyIds(new Set());
@@ -442,6 +451,7 @@ export function SurveyFormsPage({
       setIsResetConfirmOpen(false);
       setResetPasscode('');
       setResetError('');
+      setResetSeriesLabel('');
     } else {
       setResetError('Response archiver callback is not configured.');
     }
@@ -1250,6 +1260,7 @@ export function SurveyFormsPage({
                       onClick={() => {
                         setResetPasscode('');
                         setResetError('');
+                        setResetSeriesLabel(suggestSeriesLabel());
                         setIsResetConfirmOpen(true);
                       }}
                       className="px-4 py-2.5 rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-600 dark:border-rose-900/30 dark:hover:bg-rose-950/20 text-xs font-bold uppercase tracking-wider cursor-pointer transition"
@@ -1492,6 +1503,22 @@ export function SurveyFormsPage({
                     <p className="font-bold">⚠️ CRITICAL WARNING:</p>
                     <p>Resetting these forms will archive all previous responses submitted by employees for these specific survey questions.</p>
                     <p>This allows employees to answer the evaluation forms completely fresh, while previous answers are moved securely to historical archives.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block uppercase tracking-wider">
+                      Period / Series Label:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 1st Half 2026"
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      value={resetSeriesLabel}
+                      onChange={(e) => setResetSeriesLabel(e.target.value)}
+                    />
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                      Names this batch of archived responses so it shows up as its own period in Archive Center's history and trend charts. Reusing an existing label merges into that same period.
+                    </p>
                   </div>
 
                   <div className="space-y-1.5">

@@ -1,4 +1,4 @@
-import { SurveyResponse, SurveyType } from '../types/survey';
+import { ArchiveSeries, SurveyResponse, SurveyType } from '../types/survey';
 import { numericRating, submissionScores } from './analytics';
 import { ScoreBand, getBand, questionWeights, getCanonicalQuestionId } from '../data/questionWeights';
 
@@ -225,5 +225,37 @@ export function getPeerAverageTrend(responses: SurveyResponse[], surveyType: Sur
       .filter((s): s is number => typeof s === 'number');
     const average = scores.length ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)) : 0;
     return { month, score: average };
+  });
+}
+
+/** One company's composite score by named archive period, ordered chronologically by the series' createdAt. */
+export function getCompanyTrendBySeries(responses: SurveyResponse[], company: string, surveyType: SurveyType, seriesList: ArchiveSeries[]) {
+  const seriesById = new Map(seriesList.map((s) => [s.id, s]));
+  const filtered = responses.filter((r) => r.company === company && r.surveyType === surveyType && r.seriesId && seriesById.has(r.seriesId));
+  const seriesIds = [...new Set(filtered.map((r) => r.seriesId as string))]
+    .sort((a, b) => (seriesById.get(a)?.createdAt ?? '').localeCompare(seriesById.get(b)?.createdAt ?? ''));
+
+  return seriesIds.map((seriesId) => {
+    const seriesResponses = filtered.filter((r) => r.seriesId === seriesId);
+    const composite = computeCompanyComposite(company, surveyType, seriesResponses);
+    return { seriesId, label: seriesById.get(seriesId)?.label ?? 'Unknown', score: composite?.compositeScore ?? 0, responses: submissionScores(seriesResponses).length };
+  });
+}
+
+/** Average composite score by named archive period across every company of a survey type (optionally excluding one). */
+export function getPeerAverageTrendBySeries(responses: SurveyResponse[], surveyType: SurveyType, seriesList: ArchiveSeries[], excludeCompany?: string) {
+  const seriesById = new Map(seriesList.map((s) => [s.id, s]));
+  const filtered = responses.filter((r) => r.surveyType === surveyType && r.company !== excludeCompany && r.seriesId && seriesById.has(r.seriesId));
+  const seriesIds = [...new Set(filtered.map((r) => r.seriesId as string))]
+    .sort((a, b) => (seriesById.get(a)?.createdAt ?? '').localeCompare(seriesById.get(b)?.createdAt ?? ''));
+
+  return seriesIds.map((seriesId) => {
+    const seriesResponses = filtered.filter((r) => r.seriesId === seriesId);
+    const companies = [...new Set(seriesResponses.map((r) => r.company))];
+    const scores = companies
+      .map((company) => computeCompanyComposite(company, surveyType, seriesResponses)?.compositeScore)
+      .filter((s): s is number => typeof s === 'number');
+    const average = scores.length ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)) : 0;
+    return { seriesId, label: seriesById.get(seriesId)?.label ?? 'Unknown', score: average };
   });
 }

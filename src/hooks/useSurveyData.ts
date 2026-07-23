@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { sharePointService } from '../services/sharepointService';
-import { QuestionDefinition, ResponseNotification, SurveyResponse, SurveyType, CustomForm, Rating, PartnerCompany, PartnerCompanyType, BranchRecord } from '../types/survey';
+import { QuestionDefinition, ResponseNotification, SurveyResponse, SurveyType, CustomForm, Rating, PartnerCompany, PartnerCompanyType, BranchRecord, ArchiveSeries } from '../types/survey';
 import { surveyQuestions } from '../data/questions';
 import { generateMockResponses, generateAllMockResponses, generateSingleMockResponse, generateBulkMockResponses } from '../data/mockResponses';
 import { importMasterListFromFile, ImportResult } from '../utils/masterListImport';
@@ -333,6 +333,42 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
       return [];
     }
   });
+
+  const [archiveSeries, setArchiveSeries] = useState<ArchiveSeries[]>(() => {
+    try {
+      const data = localStorage.getItem('survey_archive_series_v1');
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Resolves a freeform label to an existing series (case-insensitive match)
+  // or creates+persists a new one. Returns the series id to stamp onto
+  // responses being archived.
+  const getOrCreateSeries = (label: string): string => {
+    const trimmed = label.trim();
+    const existing = archiveSeries.find((s) => s.label.trim().toLowerCase() === trimmed.toLowerCase());
+    if (existing) return existing.id;
+
+    const newSeries: ArchiveSeries = {
+      id: `series-${Date.now()}`,
+      label: trimmed,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...archiveSeries, newSeries];
+    setArchiveSeries(updated);
+    safeSetItem('survey_archive_series_v1', JSON.stringify(updated));
+    return newSeries.id;
+  };
+
+  const renameArchiveSeries = (id: string, newLabel: string) => {
+    const trimmed = newLabel.trim();
+    if (!trimmed) return;
+    const updated = archiveSeries.map((s) => (s.id === id ? { ...s, label: trimmed } : s));
+    setArchiveSeries(updated);
+    safeSetItem('survey_archive_series_v1', JSON.stringify(updated));
+  };
 
   useEffect(() => {
     const handleNotificationsUpdated = () => {
@@ -1492,11 +1528,12 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     return responses.filter(r => r.archived);
   }, [responses]);
 
-  const archiveResponsesForSurveys = (surveyIds: string[]) => {
+  const archiveResponsesForSurveys = (surveyIds: string[], seriesLabel?: string) => {
     const targetSurveys = surveys.filter(s => surveyIds.includes(s.id));
     const questionIdsToArchive = new Map<string, { id: string; title: string }>();
     const archiveDate = new Date().toISOString();
-    
+    const seriesId = seriesLabel && seriesLabel.trim() ? getOrCreateSeries(seriesLabel) : undefined;
+
     targetSurveys.forEach(s => {
       s.questions.forEach(q => {
         questionIdsToArchive.set(q.questionId, { id: s.id, title: s.title });
@@ -1509,12 +1546,13 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     const updatedResponses = responses.map(r => {
       const surveyInfo = questionIdsToArchive.get(r.questionId);
       if (surveyInfo) {
-        return { 
-          ...r, 
+        return {
+          ...r,
           archived: true,
           archivedAt: archiveDate,
           archivedBySurveyId: surveyInfo.id,
-          archivedBySurveyTitle: surveyInfo.title
+          archivedBySurveyTitle: surveyInfo.title,
+          ...(seriesId ? { seriesId } : {}),
         };
       }
       return r;
@@ -1586,7 +1624,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
   // regardless of what the file says, and duplicates (by responseId) are
   // skipped - see mergeImportedResponses for the exact rules.
   const importArchivedResponses = async (file: File): Promise<ArchiveImportResult> => {
-    const result = await importArchivedResponsesFromFile(file, responses);
+    const result = await importArchivedResponsesFromFile(file, responses, getOrCreateSeries);
     setResponses(result.responses);
     safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(result.responses)));
     return result;
@@ -1700,6 +1738,8 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
   return {
     responses: activeResponses,
     archivedResponses,
+    archiveSeries,
+    renameArchiveSeries,
     archiveResponsesForSurveys,
     restoreResponseGroup,
     restoreResponsesForSurvey,

@@ -18,12 +18,13 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { SurveyResponse, SurveyType } from '../types/survey';
+import { ArchiveSeries, SurveyResponse, SurveyType } from '../types/survey';
 import { surveyTypeDisplayLabel } from '../data/questionWeights';
-import { getCompanyTrend, getLeaderboard, getPeerAverageTrend, getSectionPeerAverages } from '../utils/scoring';
+import { getCompanyTrend, getCompanyTrendBySeries, getLeaderboard, getPeerAverageTrend, getPeerAverageTrendBySeries, getSectionPeerAverages } from '../utils/scoring';
 
 interface CompanyAnalysisPanelProps {
   responses: SurveyResponse[];
+  archiveSeries?: ArchiveSeries[];
 }
 
 const surveyTypes: SurveyType[] = ['Courier', 'Supplier', 'Subcontractor'];
@@ -67,7 +68,7 @@ function formatMonthLabel(month: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 }
 
-export function CompanyAnalysisPanel({ responses }: CompanyAnalysisPanelProps) {
+export function CompanyAnalysisPanel({ responses, archiveSeries = [] }: CompanyAnalysisPanelProps) {
   const isMobile = useIsMobile();
   const [surveyType, setSurveyType] = useState<SurveyType>('Courier');
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
@@ -166,7 +167,34 @@ export function CompanyAnalysisPanel({ responses }: CompanyAnalysisPanelProps) {
     });
   }, [activeComposite, primaryTrend, compareTrend, compareLabel]);
 
-  const [trendGranularity, setTrendGranularity] = useState<'default' | 'monthly' | 'yearly'>('default');
+  const [trendGranularity, setTrendGranularity] = useState<'default' | 'monthly' | 'yearly' | 'series'>('default');
+
+  // By-series view: one point per named archive period (e.g. "1st Half 2026"),
+  // ordered chronologically - the concrete "project this company's rating
+  // trend across periods/years" view.
+  const seriesTrendData = useMemo(() => {
+    if (!activeComposite) return [];
+    const primary = getCompanyTrendBySeries(responses, activeComposite.company, surveyType, archiveSeries);
+    const compare = compareComposite
+      ? getCompanyTrendBySeries(responses, compareComposite.company, surveyType, archiveSeries)
+      : getPeerAverageTrendBySeries(responses, surveyType, archiveSeries, selectedCompany ?? undefined);
+
+    const seriesIds = [...new Set([...primary.map((t) => t.seriesId), ...compare.map((t) => t.seriesId)])];
+    const createdAtById = new Map(archiveSeries.map((s) => [s.id, s.createdAt]));
+    seriesIds.sort((a, b) => (createdAtById.get(a) ?? '').localeCompare(createdAtById.get(b) ?? ''));
+
+    return seriesIds.map((seriesId) => {
+      const p = primary.find((t) => t.seriesId === seriesId);
+      const c = compare.find((t) => t.seriesId === seriesId);
+      const label = p?.label ?? c?.label ?? 'Unknown';
+      return {
+        month: seriesId,
+        label,
+        [activeComposite.company]: p?.score ?? null,
+        [compareLabel]: c?.score ?? null,
+      };
+    });
+  }, [responses, activeComposite, compareComposite, surveyType, archiveSeries, selectedCompany, compareLabel]);
 
   // Yearly view: average every month that falls in the same year into one point per key.
   const yearlyTrendData = useMemo(() => {
@@ -198,7 +226,10 @@ export function CompanyAnalysisPanel({ responses }: CompanyAnalysisPanelProps) {
       });
   }, [trendData, activeComposite, compareLabel]);
 
-  const displayedTrendData = trendGranularity === 'yearly' ? yearlyTrendData : trendData;
+  const displayedTrendData =
+    trendGranularity === 'yearly' ? yearlyTrendData :
+    trendGranularity === 'series' ? seriesTrendData :
+    trendData;
 
   const handleSelectCompany = (company: string) => {
     setSelectedCompany(company);
@@ -510,7 +541,7 @@ export function CompanyAnalysisPanel({ responses }: CompanyAnalysisPanelProps) {
                 Score trend vs {compareLabel.toLowerCase()}
               </h4>
               <div className="flex shrink-0 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden">
-                {(['default', 'monthly', 'yearly'] as const).map((option, idx) => (
+                {(['default', 'monthly', 'yearly', 'series'] as const).map((option, idx) => (
                   <button
                     key={option}
                     type="button"
@@ -528,6 +559,11 @@ export function CompanyAnalysisPanel({ responses }: CompanyAnalysisPanelProps) {
               </div>
             </div>
             <div className="h-56 md:h-64">
+              {trendGranularity === 'series' && displayedTrendData.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-sm text-slate-400 dark:text-slate-500 text-center px-4">
+                  No named archive periods for this company yet - archive a survey with a period label to see it here.
+                </div>
+              ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={displayedTrendData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -554,6 +590,7 @@ export function CompanyAnalysisPanel({ responses }: CompanyAnalysisPanelProps) {
                   />
                 </LineChart>
               </ResponsiveContainer>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-4 text-xs text-slate-500 dark:text-slate-400 mt-4">
