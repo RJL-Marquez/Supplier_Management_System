@@ -6,7 +6,15 @@ import { generateMockResponses, generateAllMockResponses, generateSingleMockResp
 import { importMasterListFromFile, ImportResult } from '../utils/masterListImport';
 import { seedPartnerCompanies } from '../data/partnerCompaniesSeed';
 import { importArchivedResponsesFromFile, ArchiveImportResult } from '../utils/archiveResponseTransfer';
+import {
+  previewRawEvaluationImport as previewRawEvaluationImportFile,
+  commitRawEvaluationImport as commitRawEvaluationImportRows,
+  RawEvalPreview,
+  RawEvalImportSummary,
+  CompanyDecision,
+} from '../utils/rawEvaluationImport';
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
+import { logAdminActivity } from '../utils/adminActivityLog';
 
 // Bumped from _v6: the baseline registry changed from a 41-company hand-typed
 // demo list to the full Master List snapshot (partnerCompaniesSeed.ts, ~1129
@@ -1643,6 +1651,49 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     return result;
   };
 
+  // Parses a raw Microsoft Forms export of one of the three official
+  // evaluation forms (Supplier/Subcontractor/Courier) and resolves each row's
+  // company name against the full Partner Registry (any type/archived state -
+  // a perfect name match sitting there Uncategorized/archived is still the
+  // same company, just misclassified). Nothing is committed yet - genuinely
+  // unmatched companies are returned for the caller to decide skip/add-as-partner
+  // via commitRawEvaluations.
+  const previewRawEvaluations = async (file: File, surveyType: SurveyType): Promise<RawEvalPreview> => {
+    const accountProfiles = accounts.map((a) => ({ email: a.email, designation: a.designation, department: a.department }));
+    return previewRawEvaluationImportFile(file, surveyType, partnerCompanies, accountProfiles);
+  };
+
+  // Commits a previously-parsed import. Re-uploading the same file is safe:
+  // each source row's own "ID" column becomes part of a deterministic
+  // responseId (IMPORT-{TYPE}-{id}), so a re-run replaces those exact rows in
+  // place instead of duplicating them. Companies the admin chose "add as
+  // partner" for are created as minimal, unaccredited registry entries.
+  const commitRawEvaluations = (preview: RawEvalPreview, decisions: Record<string, CompanyDecision>): RawEvalImportSummary => {
+    const { responses: newRows, newPartnerCompanies, summary } = commitRawEvaluationImportRows(preview, decisions);
+
+    const newIds = new Set(newRows.map((r) => r.responseId));
+    const replaced = new Set(responses.filter((r) => newIds.has(r.responseId)).map((r) => r.responseId)).size;
+    const untouched = responses.filter((r) => !newIds.has(r.responseId));
+    const updatedResponses = [...untouched, ...newRows];
+    setResponses(updatedResponses);
+    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
+
+    if (newPartnerCompanies.length) {
+      const normalizedNew = newPartnerCompanies.map(normalizePartnerCompany);
+      const updatedCompanies = [...partnerCompanies, ...normalizedNew];
+      setPartnerCompanies(updatedCompanies);
+      safeSetItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(updatedCompanies));
+    }
+
+    const finalSummary: RawEvalImportSummary = { ...summary, replaced };
+    logAdminActivity(
+      `Imported ${preview.surveyType} evaluation responses`,
+      `${summary.imported} submissions from "${preview.fileName}"${replaced ? ` (${replaced} replaced)` : ''}` +
+        `${newPartnerCompanies.length ? `, ${newPartnerCompanies.length} new partner(s) added` : ''}`
+    );
+    return finalSummary;
+  };
+
   // Derive unique active survey types (Courier, Supplier, Subcontractor)
   const surveyTypes = useMemo<SurveyType[]>(() => {
     return ['Courier', 'Supplier', 'Subcontractor'];
@@ -1758,6 +1809,8 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     deleteArchivedResponseGroups,
     restoreArchivedResponseGroups,
     importArchivedResponses,
+    previewRawEvaluations,
+    commitRawEvaluations,
     surveys,
     surveyTypes,
     questions,

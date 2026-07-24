@@ -41,7 +41,7 @@ import { computeDocumentStatus } from '../utils/compliance';
 import { ImportResult } from '../utils/masterListImport';
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
 
-function typeBadgeClasses(type: PartnerCompanyType): string {
+export function typeBadgeClasses(type: PartnerCompanyType): string {
   switch (type) {
     case 'Courier':
       return 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-950/20 dark:text-blue-400';
@@ -84,6 +84,9 @@ interface PartnerCompaniesPageProps {
   onImportMasterList?: (file: File) => Promise<ImportResult>;
   isAdmin?: boolean;
   simClock?: SimClock | null;
+  /** Deep-link support: opens this company's detail/edit panel on arrival (e.g. from the Data Completeness reminder page). */
+  initialFocusCompanyId?: string | null;
+  onFocusConsumed?: () => void;
 }
 
 export function PartnerCompaniesPage({
@@ -95,6 +98,8 @@ export function PartnerCompaniesPage({
   onImportMasterList,
   isAdmin,
   simClock = null,
+  initialFocusCompanyId,
+  onFocusConsumed,
 }: PartnerCompaniesPageProps) {
   // Tabs: Active, Expired, Archived
   const [statusTab, setStatusTab] = useState<'Active' | 'Expired' | 'Archived'>('Active');
@@ -414,6 +419,29 @@ export function PartnerCompaniesPage({
     setThresholdMonths(company.reminderFirstThresholdMonths ?? 1);
     setReminderFreq(company.reminderFrequency ?? 'weekly');
   };
+
+  // Edits one field on one branch of the currently-open company (used by the
+  // Address/Contact Person/Mobile Phone/Email inputs in the branch card -
+  // these are exactly the fields the Data Completeness reminder page checks).
+  const updateBranchField = (branchId: string, field: 'address' | 'contactPerson' | 'mobilePhone' | 'email', value: string) => {
+    if (!selectedCompany) return;
+    const updatedBranches = (selectedCompany.branches ?? []).map((b) =>
+      b.id === branchId ? { ...b, [field]: value } : b
+    );
+    const updated = { ...selectedCompany, branches: updatedBranches };
+    setSelectedCompany(updated);
+    onUpdateCompany(updated);
+  };
+
+  // Deep-link: another page (e.g. the Data Completeness reminder list) can
+  // request this company's detail panel open on arrival.
+  useEffect(() => {
+    if (!initialFocusCompanyId) return;
+    const company = partnerCompanies.find((c) => c.id === initialFocusCompanyId);
+    if (company) handleCompanyClick(company);
+    onFocusConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFocusCompanyId]);
 
   // Update company notification thresholds
   const handleSaveReminderSettings = () => {
@@ -1150,7 +1178,7 @@ export function PartnerCompaniesPage({
             </div>
 
             {/* Branches & Compliance Documents (from Master List import) */}
-            {(selectedCompany.branches ?? []).some((b) => b.bpCode || Object.keys(b.documents ?? {}).length > 0) && (
+            {(selectedCompany.branches ?? []).length > 0 && (
               <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800">
                 <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5 mb-3">
                   <ClipboardList size={14} />
@@ -1182,13 +1210,57 @@ export function PartnerCompaniesPage({
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                        {branch.address && <p className="truncate" title={branch.address}>{branch.address}</p>}
-                        {branch.contactPerson && <p>Contact: <span className="font-semibold text-slate-600 dark:text-slate-300">{branch.contactPerson}</span></p>}
-                        {branch.mobilePhone && <p>Mobile: {branch.mobilePhone}</p>}
-                        {branch.email && <p className="truncate">{branch.email}</p>}
-                        {branch.industry && <p>Industry: {branch.industry}</p>}
-                        {branch.dateAccredited && <p>Accredited: {formatDate(branch.dateAccredited)}</p>}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                        <div className="sm:col-span-2">
+                          <label className="field-label text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                            Address {!branch.address && <span className="text-amber-500 dark:text-amber-400 normal-case font-semibold">- missing</span>}
+                          </label>
+                          <input
+                            type="text"
+                            value={branch.address || ''}
+                            onChange={(e) => updateBranchField(branch.id, 'address', e.target.value)}
+                            placeholder="Add branch address"
+                            className={`field text-xs py-1.5 ${!branch.address ? 'border-amber-300 dark:border-amber-800' : ''}`}
+                          />
+                        </div>
+                        <div>
+                          <label className="field-label text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                            Contact Person {!branch.contactPerson && <span className="text-amber-500 dark:text-amber-400 normal-case font-semibold">- missing</span>}
+                          </label>
+                          <input
+                            type="text"
+                            value={branch.contactPerson || ''}
+                            onChange={(e) => updateBranchField(branch.id, 'contactPerson', e.target.value)}
+                            placeholder="Add contact person"
+                            className={`field text-xs py-1.5 ${!branch.contactPerson ? 'border-amber-300 dark:border-amber-800' : ''}`}
+                          />
+                        </div>
+                        <div>
+                          <label className="field-label text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                            Mobile Phone {!branch.mobilePhone && <span className="text-amber-500 dark:text-amber-400 normal-case font-semibold">- missing</span>}
+                          </label>
+                          <input
+                            type="text"
+                            value={branch.mobilePhone || ''}
+                            onChange={(e) => updateBranchField(branch.id, 'mobilePhone', e.target.value)}
+                            placeholder="Add mobile phone"
+                            className={`field text-xs py-1.5 ${!branch.mobilePhone ? 'border-amber-300 dark:border-amber-800' : ''}`}
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="field-label text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                            Branch Email {!branch.email && <span className="text-amber-500 dark:text-amber-400 normal-case font-semibold">- missing</span>}
+                          </label>
+                          <input
+                            type="email"
+                            value={branch.email || ''}
+                            onChange={(e) => updateBranchField(branch.id, 'email', e.target.value)}
+                            placeholder="Add branch email"
+                            className={`field text-xs py-1.5 ${!branch.email ? 'border-amber-300 dark:border-amber-800' : ''}`}
+                          />
+                        </div>
+                        {branch.industry && <p className="sm:col-span-2 text-[11px] text-slate-500 dark:text-slate-400">Industry: {branch.industry}</p>}
+                        {branch.dateAccredited && <p className="sm:col-span-2 text-[11px] text-slate-500 dark:text-slate-400">Accredited: {formatDate(branch.dateAccredited)}</p>}
                       </div>
 
                       {Object.keys(branch.documents ?? {}).length > 0 ? (

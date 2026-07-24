@@ -12,7 +12,9 @@ export type PageModuleKey =
   | 'account-management'
   | 'notifications'
   | 'archive'
-  | 'simulator';
+  | 'simulator'
+  | 'import-evaluations'
+  | 'partner-data-completeness';
 
 export interface UserPermissions {
   pages: PageModuleKey[];
@@ -34,34 +36,36 @@ export function getDefaultPermissions(designation: string, department: string): 
   let pages: PageModuleKey[] = [];
 
   if (rank === 'Rank & File') {
-    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'notifications'];
+    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'partner-data-completeness', 'notifications'];
   } else if (rank === 'Supervisory') {
     // Supervisor gets Dashboard, Analytics, Survey Forms, Partner Companies, Partners Feedback Hub, and optionally Reports for basic exports
-    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'partners-feedback-hub', 'reports', 'notifications'];
+    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'partner-data-completeness', 'partners-feedback-hub', 'reports', 'notifications'];
   } else if (rank === 'Managerial') {
     pages = [
-      'dashboard', 
-      'analytics', 
-      'survey-forms', 
-      'partner-companies', 
+      'dashboard',
+      'analytics',
+      'survey-forms',
+      'partner-companies',
+      'partner-data-completeness',
       'partners-feedback-hub',
-      'explorer', 
-      'reports', 
-      'present', 
+      'explorer',
+      'reports',
+      'present',
       'archive',
       'notifications'
     ];
   } else if (rank === 'Director') {
     pages = [
-      'dashboard', 
-      'analytics', 
-      'survey-forms', 
-      'partner-companies', 
+      'dashboard',
+      'analytics',
+      'survey-forms',
+      'partner-companies',
+      'partner-data-completeness',
       'partners-feedback-hub',
-      'explorer', 
-      'reports', 
-      'present', 
-      'archive', 
+      'explorer',
+      'reports',
+      'present',
+      'archive',
       'notifications'
     ];
   } else if (rank === 'Executive') {
@@ -69,18 +73,20 @@ export function getDefaultPermissions(designation: string, department: string): 
   } else {
     // Default fallback or Admin
     pages = [
-      'dashboard', 
-      'survey-forms', 
-      'explorer', 
-      'analytics', 
-      'reports', 
-      'present', 
-      'partner-companies', 
+      'dashboard',
+      'survey-forms',
+      'explorer',
+      'analytics',
+      'reports',
+      'present',
+      'partner-companies',
+      'partner-data-completeness',
       'partners-feedback-hub',
-      'account-management', 
-      'notifications', 
-      'archive', 
-      'simulator'
+      'account-management',
+      'notifications',
+      'archive',
+      'simulator',
+      'import-evaluations'
     ];
   }
 
@@ -99,28 +105,30 @@ export function getDepartmentDefaultPermissions(department: string): UserPermiss
     pages = ['dashboard', 'analytics', 'reports', 'present', 'notifications'];
   } else if (dept === 'Business Solutions Manager') {
     pages = [
-      'dashboard', 
-      'survey-forms', 
-      'explorer', 
-      'analytics', 
-      'reports', 
-      'present', 
-      'partner-companies', 
+      'dashboard',
+      'survey-forms',
+      'explorer',
+      'analytics',
+      'reports',
+      'present',
+      'partner-companies',
+      'partner-data-completeness',
       'partners-feedback-hub',
-      'notifications', 
+      'notifications',
       'archive'
     ];
   } else {
     // AP - Trade, Logistics, Procurement Group, TASS
     pages = [
-      'dashboard', 
-      'analytics', 
-      'survey-forms', 
-      'partner-companies', 
+      'dashboard',
+      'analytics',
+      'survey-forms',
+      'partner-companies',
+      'partner-data-completeness',
       'partners-feedback-hub',
-      'explorer', 
-      'reports', 
-      'present', 
+      'explorer',
+      'reports',
+      'present',
       'notifications'
     ];
     if (dept === 'TASS') {

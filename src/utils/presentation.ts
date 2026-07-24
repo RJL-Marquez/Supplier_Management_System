@@ -1,15 +1,13 @@
 import { PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
 import { surveyTypeDisplayLabel } from '../data/questionWeights';
-import { getLeaderboard, getOutliers, getSectionPeerAverages } from './scoring';
+import { computeCompanyComposite, getLeaderboard, getOutliers, getSectionPeerAverages } from './scoring';
 import {
   averageBySurveyType,
   categoryPerformance,
   formatNumber,
   getKpiSummary,
   monthlyTrend,
-  naFrequency,
   questionPerformance,
-  ratingDistribution,
   responseVolume,
   getMaxRatingForResponses,
   submissionScores,
@@ -122,7 +120,7 @@ export const SLIDE_EYEBROWS: Record<Slide['kind'], string> = {
   trends: 'Historical View',
   questions: 'Question Insights',
   spotlight: 'Featured Partner',
-  distribution: 'Data Quality & Risk',
+  distribution: 'Needs Attention',
   closing: 'Closing',
 };
 
@@ -159,8 +157,8 @@ export const PRESENTATION_CATEGORIES: PresentationCategoryDef[] = [
   },
   {
     id: 'distribution',
-    label: 'Distribution & Risk Watch',
-    description: 'How ratings are spread out, where N/A responses cluster, and every partner trailing its peer group',
+    label: 'Needs Attention',
+    description: 'Every partner trailing its peer group, and the specific category dragging each one down',
   },
 ];
 
@@ -208,10 +206,16 @@ export type Slide =
     }
   | {
       kind: 'distribution';
-      buckets: { rating: string; count: number }[];
-      naByCategory: { category: string; count: number }[];
       naPercentage: number;
-      atRisk: { company: string; surveyType: SurveyType; score: number; band: string; hex: string }[];
+      atRisk: {
+        company: string;
+        surveyType: SurveyType;
+        score: number;
+        band: string;
+        hex: string;
+        weakestSection?: string;
+        weakestPercent?: number;
+      }[];
     }
   | { kind: 'closing'; takeaways: string[] };
 
@@ -389,7 +393,11 @@ export function buildSlides(options: BuildSlidesOptions): Slide[] {
     }
 
     if (id === 'sections') {
-      slides.push({ kind: 'sections', data: categoryPerformance(responses) });
+      // "General" only covers unscored metadata questions (e.g. "Period
+      // Covered") - it has no rating data behind it, so it always renders as
+      // an empty bar. Excluded here rather than in categoryPerformance()
+      // itself since other consumers (Analytics page) may still want it.
+      slides.push({ kind: 'sections', data: categoryPerformance(responses).filter((c) => c.category !== 'General') });
     }
 
     if (id === 'leaderboard') {
@@ -427,11 +435,6 @@ export function buildSlides(options: BuildSlidesOptions): Slide[] {
     }
 
     if (id === 'distribution') {
-      const buckets = ratingDistribution(responses).map((b) => ({ rating: b.rating, count: b.count }));
-      const naByCategory = naFrequency(responses)
-        .filter((c) => c.count > 0)
-        .sort((a, b) => b.count - a.count);
-
       // "Needs attention" across every selected survey type, not just one -
       // each type's own peer group is used (a Courier is only ever compared
       // to other Couriers), then merged and ranked so the lowest overall
@@ -447,12 +450,28 @@ export function buildSlides(options: BuildSlidesOptions): Slide[] {
         })
         .sort((a, b) => a.compositeScore - b.compositeScore)
         .slice(0, 6)
-        .map((c) => ({ company: c.company, surveyType: c.surveyType, score: c.compositeScore, band: c.band.label, hex: c.band.hex }));
+        .map((c) => {
+          // The specific category dragging this company down - the "why",
+          // not just the "who" - is what makes this slide actionable instead
+          // of just a scoreboard of names.
+          const composite = computeCompanyComposite(c.company, c.surveyType, responses);
+          const weakest = composite?.sections
+            .filter((s) => s.responses > 0)
+            .sort((a, b) => a.percent - b.percent)[0];
+
+          return {
+            company: c.company,
+            surveyType: c.surveyType,
+            score: c.compositeScore,
+            band: c.band.label,
+            hex: c.band.hex,
+            weakestSection: weakest?.section,
+            weakestPercent: weakest?.percent,
+          };
+        });
 
       slides.push({
         kind: 'distribution',
-        buckets,
-        naByCategory,
         naPercentage: summary.naPercentage,
         atRisk,
       });

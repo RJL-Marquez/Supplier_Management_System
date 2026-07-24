@@ -13,6 +13,7 @@ import {
   RefreshCw,
   RotateCcw,
   Sun,
+  UploadCloud,
   UserCog,
   Users,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ interface SettingsPageProps {
   darkMode: boolean;
   onToggleDarkMode: () => void;
   onOpenSimulator: () => void;
+  onOpenImportEvaluations: () => void;
   onResetSystemData: () => void;
   onLogout: () => void;
   accountsCount: number;
@@ -50,6 +52,7 @@ export function SettingsPage({
   darkMode,
   onToggleDarkMode,
   onOpenSimulator,
+  onOpenImportEvaluations,
   onResetSystemData,
   onLogout,
   accountsCount,
@@ -212,6 +215,20 @@ export function SettingsPage({
               <div>
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Database Simulator</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Simulate submissions and time-travel the system clock.</p>
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={onOpenImportEvaluations}
+            type="button"
+            className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-900 transition cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <UploadCloud size={18} className="text-[#0063a9] dark:text-blue-400 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Import Evaluation Responses</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Bulk-import raw Microsoft Forms survey exports into analytics.</p>
               </div>
             </div>
           </button>

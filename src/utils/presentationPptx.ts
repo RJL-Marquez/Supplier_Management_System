@@ -465,74 +465,58 @@ function renderSlide(pres: PptxGenJS, slide: Slide, pdfMaxRating: number) {
       const contentTop = addHeader(
         pptxSlide,
         SLIDE_EYEBROWS.distribution,
-        'Distribution & Risk Watch',
-        `How ratings are spread out${slide.naPercentage > 0 ? `, ${slide.naPercentage.toFixed(1)}% marked N/A` : ''}, and who's trailing their peer group.`,
+        'Partners Needing Attention',
+        `Companies trailing their own peer group, and the specific category dragging each one down${slide.naPercentage > 0 ? ` (${slide.naPercentage.toFixed(1)}% of ratings marked N/A)` : ''}.`,
       );
-      const colGap = 0.3;
-      const colW = (CONTENT_W - colGap) / 2;
       const colH = CONTENT_BOTTOM - contentTop;
 
-      pptxSlide.addText('RATING DISTRIBUTION', {
-        x: MARGIN, y: contentTop, w: colW, h: 0.24, fontSize: 10, bold: true, color: INK, fontFace: FONT,
-      });
-      pptxSlide.addChart(
-        pres.ChartType.bar,
-        [
-          {
-            name: 'Responses',
-            labels: slide.buckets.map((b) => String(b.rating)),
-            values: slide.buckets.map((b) => b.count),
-          },
-        ],
-        {
-          x: MARGIN, y: contentTop + 0.3, w: colW, h: colH - 0.3,
-          barDir: 'col',
-          chartColors: [BRAND],
-          valAxisMinVal: 0,
-          showValue: true,
-          dataLabelPosition: 'outEnd',
-          dataLabelFontSize: 9,
-          dataLabelColor: INK,
-          catAxisLabelFontSize: 9.5,
-          catAxisLabelColor: INK,
-          valAxisLabelFontSize: 8.5,
-          valAxisLabelColor: MUTED,
-          showLegend: false,
-          barGapWidthPct: 35,
-          gridLineColor: BORDER,
-        },
-      );
-
-      const rightX = MARGIN + colW + colGap;
-      pptxSlide.addText('NEEDS ATTENTION', {
-        x: rightX, y: contentTop, w: colW, h: 0.24, fontSize: 10, bold: true, color: 'B45309', fontFace: FONT,
-      });
       if (slide.atRisk.length === 0) {
         pptxSlide.addText('No partner is meaningfully trailing its peer group in this window.', {
-          x: rightX, y: contentTop + 0.32, w: colW, h: 0.6, fontSize: 9.5, italic: true, color: MUTED, fontFace: FONT,
+          x: MARGIN, y: contentTop, w: CONTENT_W, h: 0.6, fontSize: 11, italic: true, color: MUTED, fontFace: FONT,
         });
-      } else {
-        const rowTop = contentTop + 0.32;
-        const rowH = Math.min(0.6, (colH - 0.32) / slide.atRisk.length);
-        slide.atRisk.forEach((c, i) => {
-          const y = rowTop + i * rowH;
-          pptxSlide.addShape('roundRect', {
-            x: rightX, y: y + 0.03, w: colW, h: rowH - 0.06, rectRadius: 0.05,
-            fill: { color: SURFACE }, line: { color: BORDER, width: 1 },
-          });
-          pptxSlide.addText(
-            [
-              { text: `${c.company}\n`, options: { bold: true, color: INK, breakLine: true } },
-              { text: `${c.surveyType} · ${c.band}`, options: { fontSize: 8, color: MUTED } },
-            ],
-            { x: rightX + 0.12, y: y + 0.08, w: colW - 0.9, h: rowH - 0.16, fontSize: 10, fontFace: FONT, valign: 'top' },
-          );
-          pptxSlide.addText(c.score.toFixed(1), {
-            x: rightX + colW - 0.7, y: y + 0.08, w: 0.58, h: rowH - 0.16, align: 'right', valign: 'middle',
-            fontSize: 11, bold: true, color: c.hex.replace('#', ''), fontFace: FONT,
-          });
-        });
+        break;
       }
+
+      const cols = slide.atRisk.length <= 4 ? 2 : 3;
+      const cardGap = 0.2;
+      const cardW = (CONTENT_W - cardGap * (cols - 1)) / cols;
+      const rows = Math.ceil(slide.atRisk.length / cols);
+      const cardH = Math.min(1.15, (colH - cardGap * (rows - 1)) / rows);
+
+      slide.atRisk.forEach((c, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = MARGIN + col * (cardW + cardGap);
+        const y = contentTop + row * (cardH + cardGap);
+
+        pptxSlide.addShape('roundRect', {
+          x, y, w: cardW, h: cardH, rectRadius: 0.06,
+          fill: { color: 'FFFBEB' }, line: { color: 'FDE68A', width: 1 },
+        });
+        pptxSlide.addText(c.company, {
+          x: x + 0.14, y: y + 0.08, w: cardW - 0.9, h: 0.26, fontSize: 11, bold: true, color: INK, fontFace: FONT,
+        });
+        pptxSlide.addText(`${c.surveyType} · ${c.band}`, {
+          x: x + 0.14, y: y + 0.32, w: cardW - 0.9, h: 0.2, fontSize: 8, color: MUTED, fontFace: FONT,
+        });
+        pptxSlide.addText(c.score.toFixed(0), {
+          x: x + cardW - 0.8, y: y + 0.06, w: 0.68, h: 0.36, align: 'right', valign: 'top',
+          fontSize: 16, bold: true, color: c.hex.replace('#', ''), fontFace: FONT,
+        });
+        if (c.weakestSection) {
+          pptxSlide.addText(`Weakest: ${c.weakestSection} (${(c.weakestPercent ?? 0).toFixed(0)}%)`, {
+            x: x + 0.14, y: y + cardH - 0.36, w: cardW - 0.28, h: 0.18, fontSize: 8, bold: true, color: 'B45309', fontFace: FONT,
+          });
+          pptxSlide.addShape('roundRect', {
+            x: x + 0.14, y: y + cardH - 0.16, w: cardW - 0.28, h: 0.06, rectRadius: 0.03,
+            fill: { color: 'FDE68A' }, line: { type: 'none' },
+          });
+          pptxSlide.addShape('roundRect', {
+            x: x + 0.14, y: y + cardH - 0.16, w: Math.max(0.05, (cardW - 0.28) * ((c.weakestPercent ?? 0) / 100)), h: 0.06, rectRadius: 0.03,
+            fill: { color: 'F59E0B' }, line: { type: 'none' },
+          });
+        }
+      });
       break;
     }
 

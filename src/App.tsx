@@ -15,10 +15,12 @@ import { CreateSurveyPage } from './pages/CreateSurveyPage';
 import { SurveyDetailsPage } from './pages/SurveyDetailsPage';
 import { SurveyFillerPage, SurveyFillerHandle } from './pages/SurveyFillerPage';
 import { PartnerCompaniesPage } from './pages/PartnerCompaniesPage';
+import { PartnerDataCompletenessPage } from './pages/PartnerDataCompletenessPage';
 import { SurveyFormsPage } from './pages/SurveyFormsPage';
 import { PresentPage } from './pages/PresentPage';
 import { ArchivePage } from './pages/ArchivePage';
 import { SimulatorPage } from './pages/SimulatorPage';
+import { ImportEvaluationsPage } from './pages/ImportEvaluationsPage';
 import { AccountManagementPage } from './pages/AccountManagementPage';
 import { PartnersFeedbackHubPage } from './pages/PartnersFeedbackHubPage';
 import { MySubmissionsPage } from './pages/MySubmissionsPage';
@@ -207,7 +209,7 @@ const DEFAULT_ACCOUNTS: AccountProfile[] = [
   }
 ];
 
-type PageKey = 'dashboard' | 'partner-companies' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings';
+type PageKey = 'dashboard' | 'partner-companies' | 'partner-data-completeness' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'import-evaluations' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings';
 
 // Admin sidebar: grouped by workflow stage (raw data -> insight -> output)
 // rather than flat/alphabetical, per the dashboard IA redesign.
@@ -223,6 +225,7 @@ const adminNavItems: NavItem<PageKey>[] = [
     icon: Users,
     children: [
       { key: 'partner-companies', label: 'Partner Companies' },
+      { key: 'partner-data-completeness', label: 'Data Completeness' },
       { key: 'partners-feedback-hub', label: 'Feedback Hub' },
     ],
   },
@@ -343,7 +346,7 @@ export default function App() {
       return {
         pages: [
           'dashboard', 'survey-forms', 'explorer', 'analytics', 'reports', 'present', 
-          'partner-companies', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'simulator'
+          'partner-companies', 'partner-data-completeness', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'simulator', 'import-evaluations'
         ] as PageModuleKey[],
         surveyTypes: ['Courier', 'Supplier', 'Subcontractor'] as SurveyType[]
       };
@@ -373,6 +376,8 @@ export default function App() {
     deleteArchivedResponseGroups,
     restoreArchivedResponseGroups,
     importArchivedResponses,
+    previewRawEvaluations,
+    commitRawEvaluations,
     surveys,
     questions,
     companies,
@@ -438,6 +443,10 @@ export default function App() {
     }
   };
   const [editingSurveyId, setEditingSurveyId] = useState<string | null>(null);
+
+  // Deep-link from the Data Completeness reminder list into Partner
+  // Companies' detail/edit panel for one specific company.
+  const [focusCompanyId, setFocusCompanyId] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [darkMode, setDarkMode] = useState(false);
 
@@ -612,6 +621,7 @@ export default function App() {
       return 'Dashboard';
     }
     if (activePage === 'partner-companies') return 'Administrative Partner Registry';
+    if (activePage === 'partner-data-completeness') return 'Data Completeness';
     if (activePage === 'account-management') return 'Account Management';
     if (activePage === 'create-form') return editingSurveyId ? 'Edit Survey Form' : 'Create Survey Form';
     if (activePage === 'view-form') {
@@ -619,6 +629,8 @@ export default function App() {
       return selected ? `Survey: ${selected.title}` : 'Survey Details';
     }
     if (activePage === 'fill-form') return 'Fill Out Stakeholder Survey';
+    if (activePage === 'simulator') return 'Database Simulator';
+    if (activePage === 'import-evaluations') return 'Import Evaluation Responses';
     return flatNavLeaves.find((page) => page.key === activePage)?.label ?? 'Dashboard';
   }, [activePage, selectedSurveyId, surveys, editingSurveyId, profile, flatNavLeaves]);
 
@@ -702,6 +714,17 @@ export default function App() {
         onUpdateCompany={updatePartnerCompany}
         onImportMasterList={importMasterList}
         isAdmin={isAdmin}
+        initialFocusCompanyId={focusCompanyId}
+        onFocusConsumed={() => setFocusCompanyId(null)}
+      />
+    ),
+    'partner-data-completeness': (
+      <PartnerDataCompletenessPage
+        partnerCompanies={partnerCompanies}
+        onEditCompany={(id) => {
+          setFocusCompanyId(id);
+          setActivePage('partner-companies');
+        }}
       />
     ),
     'partners-feedback-hub': (
@@ -810,6 +833,7 @@ export default function App() {
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode((value) => !value)}
         onOpenSimulator={() => setActivePage('simulator')}
+        onOpenImportEvaluations={() => setActivePage('import-evaluations')}
         onResetSystemData={handleResetAllData}
         onLogout={() => {
           setAccount(null);
@@ -940,6 +964,9 @@ export default function App() {
         onSetSimClock={(isoDateTime) => setSimClock({ anchorIso: isoDateTime, activatedAtMs: Date.now() })}
         onClearSimClock={() => setSimClock(null)}
       />
+    ),
+    'import-evaluations': (
+      <ImportEvaluationsPage onPreview={previewRawEvaluations} onCommit={commitRawEvaluations} />
     ),
   }[activePage];
 

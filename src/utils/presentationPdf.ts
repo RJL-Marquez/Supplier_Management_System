@@ -356,62 +356,61 @@ function renderSlide(doc: jsPDF, slide: Slide, pdfMaxRating: number) {
       drawHeader(
         doc,
         SLIDE_EYEBROWS.distribution,
-        'Distribution & Risk Watch',
-        `How ratings are spread out${slide.naPercentage > 0 ? `, ${slide.naPercentage.toFixed(1)}% marked N/A` : ''}, and who's trailing their peer group.`,
+        'Partners Needing Attention',
+        `Companies trailing their own peer group, and the specific category dragging each one down${slide.naPercentage > 0 ? ` (${slide.naPercentage.toFixed(1)}% of ratings marked N/A)` : ''}.`,
       );
-      const colGap = 30;
-      const colW = (CONTENT_W - colGap) / 2;
-      const top = 165;
+      const top = 155;
       const bottom = PAGE_H - MARGIN;
 
-      // Left column: rating distribution bars
-      setText(doc, INK);
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text('RATING DISTRIBUTION', MARGIN, 150);
-      const maxCount = Math.max(1, ...slide.buckets.map((b) => b.count));
-      const bucketRowH = Math.min(40, (bottom - top) / Math.max(1, slide.buckets.length));
-      slide.buckets.forEach((bucket, i) => {
-        const y = top + i * bucketRowH + bucketRowH * 0.6;
-        setText(doc, INK);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'bold');
-        doc.text(String(bucket.rating), MARGIN, y);
-        setText(doc, '#64748b');
-        doc.setFont('helvetica', 'normal');
-        doc.text(String(bucket.count), MARGIN + colW - 30, y);
-        bar(doc, MARGIN, y + 6, colW - 60, 8, bucket.count / maxCount, bucket.rating === 'N/A' ? '#94a3b8' : BRAND);
-      });
-
-      // Right column: needs attention list
-      const rightX = MARGIN + colW + colGap;
-      setText(doc, '#b45309');
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text('NEEDS ATTENTION', rightX, 150);
       if (slide.atRisk.length === 0) {
         setText(doc, '#64748b');
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.text('No partner is meaningfully trailing its peer group in this window.', rightX, top, { maxWidth: colW });
-      } else {
-        const riskRowH = Math.min(34, (bottom - top) / slide.atRisk.length);
-        slide.atRisk.forEach((c, i) => {
-          const y = top + i * riskRowH;
-          setText(doc, INK);
-          doc.setFontSize(9.5);
-          doc.setFont('helvetica', 'bold');
-          doc.text(c.company, rightX, y, { maxWidth: colW - 60 });
-          setText(doc, '#64748b');
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.text(`${c.surveyType} · ${c.band}`, rightX, y + 12);
-          setText(doc, c.hex);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(10);
-          doc.text(c.score.toFixed(1), rightX + colW - 4, y, { align: 'right' });
-        });
+        doc.setFontSize(10);
+        doc.text('No partner is meaningfully trailing its peer group in this window.', MARGIN, top + 10);
+        break;
       }
+
+      // Two-column card grid, cards growing to fill the available height.
+      const cols = slide.atRisk.length <= 4 ? 2 : 3;
+      const cardGap = 16;
+      const cardW = (CONTENT_W - cardGap * (cols - 1)) / cols;
+      const rows = Math.ceil(slide.atRisk.length / cols);
+      const cardH = Math.min(90, (bottom - top - cardGap * (rows - 1)) / rows);
+
+      slide.atRisk.forEach((c, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = MARGIN + col * (cardW + cardGap);
+        const y = top + row * (cardH + cardGap);
+
+        setFill(doc, '#fffbeb');
+        doc.roundedRect(x, y, cardW, cardH, 8, 8, 'F');
+
+        setText(doc, INK);
+        doc.setFontSize(10.5);
+        doc.setFont('helvetica', 'bold');
+        doc.text(c.company, x + 14, y + 22, { maxWidth: cardW - 60 });
+
+        setText(doc, '#94a3b8');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.text(`${c.surveyType} · ${c.band}`, x + 14, y + 36);
+
+        setText(doc, c.hex);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(18);
+        doc.text(c.score.toFixed(0), x + cardW - 14, y + 28, { align: 'right' });
+
+        if (c.weakestSection) {
+          setText(doc, '#b45309');
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'bold');
+          doc.text(`Weakest: ${c.weakestSection} (${(c.weakestPercent ?? 0).toFixed(0)}%)`, x + 14, y + 54, {
+            maxWidth: cardW - 28,
+          });
+          bar(doc, x + 14, y + 62, cardW - 28, 5, (c.weakestPercent ?? 0) / 100, '#f59e0b');
+        }
+      });
       break;
     }
 

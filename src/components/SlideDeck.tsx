@@ -12,10 +12,12 @@ import {
   Minimize2,
   Presentation,
   Sparkles,
+  Star,
   Trophy,
   TrendingDown,
   TrendingUp,
   AlertTriangle,
+  Users,
   X,
 } from 'lucide-react';
 import {
@@ -60,6 +62,39 @@ const surveyTypeColors: Record<string, string> = {
   Subcontractor: '#f97316',
 };
 
+/**
+ * One shared visual spec every chart in the deck draws from, so bars, lines,
+ * areas, and radars all read as one consistent system instead of each slide
+ * inventing its own grid color / tick size / tooltip chrome. Values chosen to
+ * be legible once the whole 1280x720 canvas is scaled down to fit a laptop
+ * screen (see SLIDE_WIDTH/SLIDE_HEIGHT above).
+ */
+const CHART_GRID = { stroke: '#eef2f7', strokeDasharray: '3 3' };
+const CHART_TICK = { fontSize: 11, fill: '#64748b' };
+const CHART_TICK_STRONG = { fontSize: 11, fill: '#334155', fontWeight: 600 };
+const CHART_LABEL_STYLE = { fill: '#334155', fontSize: 11, fontWeight: 700 };
+const CHART_TOOLTIP_STYLE = {
+  fontSize: 12,
+  borderRadius: 10,
+  border: '1px solid #e2e8f0',
+  boxShadow: '0 8px 24px -6px rgba(15,23,42,0.15)',
+  padding: '8px 12px',
+};
+const CHART_TOOLTIP_LABEL_STYLE = { color: '#334155', fontWeight: 700, marginBottom: 2 };
+
+/** Renders a numeric value at each radar vertex so scores read at a glance
+ * instead of requiring a hover - the same "always-labeled" treatment every
+ * other chart in the deck already uses. */
+function RadarValueLabel(props: { x?: number; y?: number; value?: number; fill?: string }) {
+  const { x, y, value, fill = '#334155' } = props;
+  if (x === undefined || y === undefined || value === undefined) return null;
+  return (
+    <text x={x} y={y - 8} textAnchor="middle" fontSize={10} fontWeight={700} fill={fill}>
+      {Math.round(value)}
+    </text>
+  );
+}
+
 // Every slide is laid out once at this fixed "design" resolution, then the
 // whole canvas is uniformly scaled (CSS transform) to whatever space is
 // actually available. This is the same "fit to window" technique
@@ -91,7 +126,7 @@ function slideTitleFor(slide: Slide, index: number): string {
     case 'spotlight':
       return 'Spotlight';
     case 'distribution':
-      return 'Data Quality & Risk';
+      return 'Needs Attention';
     case 'closing':
       return 'Key Takeaways';
     default:
@@ -311,21 +346,53 @@ function OverviewSlide({
       <SlideHeader eyebrow={SLIDE_EYEBROWS.overview} title="Where things stand" />
 
       <div className="mt-6 grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-4">
-        {slide.kpis.map((kpi, i) => (
-          <motion.div
-            key={kpi.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: i * 0.06 }}
-            className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm"
-          >
-            <div className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#0063a9]" />
-              <p className="truncate text-[10px] font-bold uppercase tracking-wider text-slate-400">{kpi.label}</p>
-            </div>
-            <p className="mt-1.5 text-xl font-bold text-slate-900 sm:text-2xl">{kpi.value}</p>
-          </motion.div>
-        ))}
+        {slide.kpis.map((kpi, i) => {
+          const Icon = [Sparkles, Star, Users, AlertTriangle][i] ?? Sparkles;
+          const isNaRate = i === 3;
+          const isElevatedNa = isNaRate && parseFloat(kpi.value) > 15;
+
+          // The lead KPI (Overall Satisfaction) gets the hero treatment so the
+          // eye has one obvious place to land first; the rest stay as
+          // supporting tiles with a colored top accent instead of all four
+          // competing at equal visual weight.
+          if (i === 0) {
+            return (
+              <motion.div
+                key={kpi.label}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.06 }}
+                className="rounded-2xl bg-gradient-to-br from-[#0063a9] to-[#00457a] p-4 shadow-md shadow-blue-900/10"
+              >
+                <div className="flex items-center gap-1.5 text-blue-100">
+                  <Icon size={13} className="shrink-0" />
+                  <p className="truncate text-[10px] font-bold uppercase tracking-wider">{kpi.label}</p>
+                </div>
+                <p className="mt-1.5 text-xl font-bold text-white sm:text-2xl">{kpi.value}</p>
+              </motion.div>
+            );
+          }
+
+          const accentColor = isElevatedNa ? '#f59e0b' : '#0063a9';
+          const accentBadgeClass = isElevatedNa ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-[#0063a9]';
+
+          return (
+            <motion.div
+              key={kpi.label}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: i * 0.06 }}
+              className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-4 pt-3.5 shadow-sm"
+            >
+              <span className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: accentColor }} />
+              <div className={`inline-flex h-6 w-6 items-center justify-center rounded-lg ${accentBadgeClass}`}>
+                <Icon size={12} />
+              </div>
+              <p className="mt-2 truncate text-[10px] font-bold uppercase tracking-wider text-slate-400">{kpi.label}</p>
+              <p className="mt-0.5 text-xl font-bold text-slate-900 sm:text-2xl">{kpi.value}</p>
+            </motion.div>
+          );
+        })}
       </div>
 
       {isSingleSurveyType ? (
@@ -405,9 +472,10 @@ function OverviewSlide({
                         stroke={bandColor}
                         fill={bandColor}
                         fillOpacity={0.2}
+                        label={<RadarValueLabel fill={bandColor} />}
                       />
                       <Radar name="Peer Average" dataKey="peer" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.05} />
-                      <Tooltip wrapperStyle={{ fontSize: 8 }} />
+                      <Tooltip wrapperStyle={{ fontSize: 8 }} contentStyle={{ ...CHART_TOOLTIP_STYLE, fontSize: 10, padding: '4px 8px' }} />
                     </RadarChart>
                   </ResponsiveContainer>
                 ) : (
@@ -430,7 +498,7 @@ function OverviewSlide({
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="month" tick={{ fontSize: 7, fill: '#64748b' }} />
                       <YAxis domain={[0, 100]} tick={{ fontSize: 7, fill: '#64748b' }} />
-                      <Tooltip wrapperStyle={{ fontSize: 8 }} />
+                      <Tooltip wrapperStyle={{ fontSize: 8 }} contentStyle={{ ...CHART_TOOLTIP_STYLE, fontSize: 10, padding: '4px 8px' }} />
                       <Line
                         type="monotone"
                         name="Score"
@@ -666,20 +734,16 @@ function ComparisonSlide({ slide, responses = [] }: { slide: Extract<Slide, { ki
             {topCompaniesData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={topCompaniesData} margin={{ top: 20, right: 10, left: -25, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <CartesianGrid {...CHART_GRID} vertical={false} />
                   <XAxis
                     dataKey="company"
                     tickFormatter={(v) => truncateCompanyName(v, limit === 10 ? 10 : 14)}
-                    tick={{ fontSize: 9, fill: '#475569', fontWeight: 'bold' }}
+                    tick={{ ...CHART_TICK_STRONG, fontSize: 9 }}
                   />
-                  <YAxis domain={topCompaniesAxisDomain} tick={{ fontSize: 9, fill: '#64748b' }} />
-                  <Tooltip />
+                  <YAxis domain={topCompaniesAxisDomain} tick={{ ...CHART_TICK, fontSize: 9 }} />
+                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelStyle={CHART_TOOLTIP_LABEL_STYLE} />
                   <Bar dataKey="score" radius={[6, 6, 0, 0]} barSize={limit === 10 ? 24 : 36}>
-                    <LabelList
-                      dataKey="score"
-                      position="top"
-                      style={{ fill: '#475569', fontSize: 9, fontWeight: 'bold' }}
-                    />
+                    <LabelList dataKey="score" position="top" style={{ ...CHART_LABEL_STYLE, fontSize: 9 }} />
                     {topCompaniesData.map((entry, idx) => (
                       <Cell key={`cell-${idx}`} fill={surveyTypeColors[entry.surveyType] ?? '#2563eb'} />
                     ))}
@@ -701,7 +765,10 @@ function ComparisonSlide({ slide, responses = [] }: { slide: Extract<Slide, { ki
             <div className="flex flex-1 min-h-0 flex-col justify-center gap-1.5">
               {topCompaniesData.map((item, idx) => (
                 <div key={item.company} className="flex max-h-9 flex-1 items-center justify-between gap-2 rounded-lg p-1.5 hover:bg-slate-100/50">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-500">
+                  <span
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-500"
+                    style={idx + 1 <= 3 ? { backgroundColor: MEDAL_COLORS[idx + 1].bg, color: MEDAL_COLORS[idx + 1].text } : undefined}
+                  >
                     {idx + 1}
                   </span>
                   <span className="text-xs font-semibold text-slate-700 truncate flex-1">{item.company}</span>
@@ -736,6 +803,15 @@ function ComparisonSlide({ slide, responses = [] }: { slide: Extract<Slide, { ki
     </div>
   );
 }
+
+// Gold/silver/bronze treatment for the top 3 leaderboard spots so rank 1
+// reads instantly instead of blending into a column of identical gray
+// circles - everyone past 3rd keeps the plain numbered style.
+const MEDAL_COLORS: Record<number, { bg: string; text: string }> = {
+  1: { bg: '#fbbf24', text: '#78350f' },
+  2: { bg: '#cbd5e1', text: '#334155' },
+  3: { bg: '#fb923c', text: '#7c2d12' },
+};
 
 function bandColorForScore(score: number): string {
   if (score >= 85) return '#10b981';
@@ -778,16 +854,20 @@ function SectionsSlide({ slide }: { slide: Extract<Slide, { kind: 'sections' }> 
           {sorted.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={sorted} layout="vertical" margin={{ top: 5, right: 44, left: 10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: '#64748b' }} />
-                <YAxis type="category" dataKey="category" width={150} tick={{ fontSize: 11, fill: '#334155', fontWeight: 600 }} />
-                <Tooltip formatter={(value: number) => [`${Number(value).toFixed(2)} / 100`, 'Average']} />
+                <CartesianGrid {...CHART_GRID} horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} tick={CHART_TICK} />
+                <YAxis type="category" dataKey="category" width={150} tick={CHART_TICK_STRONG} />
+                <Tooltip
+                  contentStyle={CHART_TOOLTIP_STYLE}
+                  labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                  formatter={(value: any) => [`${Number(value).toFixed(2)} / 100`, 'Average']}
+                />
                 <Bar dataKey="average" radius={[0, 8, 8, 0]} barSize={barSize}>
                   <LabelList
                     dataKey="average"
                     position="right"
-                    formatter={(v: number) => v.toFixed(1)}
-                    style={{ fill: '#334155', fontSize: 11, fontWeight: 700 }}
+                    formatter={(v: any) => Number(v).toFixed(1)}
+                    style={CHART_LABEL_STYLE}
                   />
                   {sorted.map((entry) => (
                     <Cell key={entry.category} fill={bandColorForScore(entry.average)} />
@@ -835,6 +915,58 @@ function LeaderboardSlide({ slide, responses = [] }: { slide: Extract<Slide, { k
     if (!selectedCompany) return [];
     return getCompanyTrend(responses, selectedCompany.company, selectedCompany.surveyType);
   }, [selectedCompany, responses]);
+
+  // numGroups/layoutConfig must be computed before any early return below -
+  // this component previously called this useMemo AFTER the `if
+  // (selectedCompany)` branch's return, which meant the number of hooks
+  // called differed between "showing the list" and "showing a company's
+  // detail view" renders. React detects that hook-count mismatch and throws,
+  // which crashed this slide (and unmounted it) the instant a company was
+  // clicked. Hooks must run unconditionally, in the same order, every render.
+  const numGroups = slide.groups.length;
+
+  const layoutConfig = useMemo(() => {
+    if (numGroups === 1) {
+      return {
+        containerClass: "mt-4 max-w-2xl mx-auto w-full flex-1 flex flex-col justify-center",
+        gridClass: "grid grid-cols-1",
+        groupBlockClass: "rounded-2xl border-2 border-slate-100 p-8 bg-slate-50/40 shadow-md",
+        titleClass: "mb-6 text-lg sm:text-2xl font-black uppercase tracking-[0.2em] text-center block",
+        listSpacingClass: "space-y-3.5",
+        buttonPaddingClass: "py-3 px-4",
+        rankClass: "flex h-9 w-9 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs sm:text-lg font-bold text-slate-500 group-hover:bg-[#0063a9]/10 group-hover:text-[#0063a9] transition-colors",
+        companyClass: "min-w-0 flex-1 truncate text-sm sm:text-lg font-bold text-slate-800 group-hover:text-[#0063a9] group-hover:underline transition-all",
+        scoreClass: "shrink-0 text-sm sm:text-lg font-extrabold transition-all group-hover:scale-105",
+        noDataClass: "text-base sm:text-lg text-slate-400 text-center py-6",
+      };
+    } else if (numGroups === 2) {
+      return {
+        containerClass: "mt-4 max-w-5xl mx-auto w-full flex-1 flex flex-col justify-center",
+        gridClass: "grid grid-cols-1 sm:grid-cols-2 gap-8",
+        groupBlockClass: "rounded-xl border-2 border-slate-100 p-6 bg-slate-50/30 shadow-sm",
+        titleClass: "mb-5 text-sm sm:text-lg font-extrabold uppercase tracking-wider text-center block",
+        listSpacingClass: "space-y-2.5",
+        buttonPaddingClass: "py-2 px-3",
+        rankClass: "flex h-7 w-7 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs sm:text-base font-bold text-slate-500 group-hover:bg-[#0063a9]/10 group-hover:text-[#0063a9] transition-colors",
+        companyClass: "min-w-0 flex-1 truncate text-xs sm:text-base font-semibold text-slate-700 group-hover:text-[#0063a9] group-hover:underline transition-all",
+        scoreClass: "shrink-0 text-xs sm:text-base font-bold transition-all group-hover:scale-105",
+        noDataClass: "text-xs sm:text-sm text-slate-400 text-center py-4",
+      };
+    } else {
+      return {
+        containerClass: "mt-4 w-full flex-1",
+        gridClass: "grid grid-cols-1 sm:grid-cols-3 gap-4",
+        groupBlockClass: "rounded-xl border border-slate-100 p-4 bg-slate-50/30",
+        titleClass: "mb-3 text-xs sm:text-sm font-extrabold uppercase tracking-wider text-center block",
+        listSpacingClass: "space-y-1.5",
+        buttonPaddingClass: "py-1.5 px-2.5",
+        rankClass: "flex h-5 w-5 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] sm:text-xs font-bold text-slate-500 group-hover:bg-[#0063a9]/10 group-hover:text-[#0063a9] transition-colors",
+        companyClass: "min-w-0 flex-1 truncate text-xs sm:text-sm font-bold text-slate-700 group-hover:text-[#0063a9] group-hover:underline transition-all",
+        scoreClass: "shrink-0 text-xs sm:text-sm font-bold transition-all group-hover:scale-105",
+        noDataClass: "text-xs text-slate-400 text-center py-2",
+      };
+    }
+  }, [numGroups]);
 
   if (selectedCompany) {
     return (
@@ -896,9 +1028,9 @@ function LeaderboardSlide({ slide, responses = [] }: { slide: Extract<Slide, { k
           </div>
         </div>
 
-        {/* Main Content Area: Two Columns */}
-        <div className="mt-3.5 grid flex-1 min-h-0 gap-4 grid-cols-2">
-          {/* Left Column: Radar Chart */}
+        {/* Main Content Area: Radar, Trend, and Section Scores side by side */}
+        <div className="mt-3.5 grid flex-1 min-h-0 gap-4 grid-cols-3">
+          {/* Column 1: Radar Chart */}
           <div className="flex flex-col rounded-xl border border-slate-100 bg-slate-50/40 p-2.5 min-h-0">
             <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 text-center">
               Section Breakdown vs Peer Average
@@ -915,52 +1047,74 @@ function LeaderboardSlide({ slide, responses = [] }: { slide: Extract<Slide, { k
                     stroke={composite?.band.hex ?? '#2563eb'}
                     fill={composite?.band.hex ?? '#2563eb'}
                     fillOpacity={0.25}
+                    label={<RadarValueLabel fill={composite?.band.hex ?? '#2563eb'} />}
                   />
                   <Radar name="Peer Average" dataKey="peer" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.08} />
-                  <Tooltip wrapperStyle={{ fontSize: 9 }} />
+                  <Tooltip wrapperStyle={{ fontSize: 9 }} contentStyle={{ ...CHART_TOOLTIP_STYLE, fontSize: 10, padding: '4px 8px' }} />
                   <Legend wrapperStyle={{ fontSize: 9, paddingTop: 4 }} />
                 </RadarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Right Column: Trend Chart / Stats */}
+          {/* Column 2: Trend Chart */}
+          <div className="flex flex-col rounded-xl border border-slate-100 bg-slate-50/40 p-2.5 min-h-0">
+            <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 text-center">
+              Score Trend Over Time
+            </p>
+            <div className="flex-1 min-h-0">
+              {trendData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ top: 8, right: 10, left: -28, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="month" tick={{ fontSize: 8, fill: '#64748b' }} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 8, fill: '#64748b' }} />
+                    <Tooltip wrapperStyle={{ fontSize: 9 }} contentStyle={{ ...CHART_TOOLTIP_STYLE, fontSize: 10, padding: '4px 8px' }} />
+                    <Line
+                      type="monotone"
+                      name="Composite Score"
+                      dataKey="score"
+                      stroke={composite?.band.hex ?? '#2563eb'}
+                      strokeWidth={2}
+                      dot={{ r: 3, strokeWidth: 1 }}
+                      activeDot={{ r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+                  Insufficient data to calculate monthly trend.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Column 3: Section score bars + quick metrics */}
           <div className="flex flex-col gap-2.5 min-h-0">
-            {/* Trend Chart Panel */}
-            <div className="flex flex-col rounded-xl border border-slate-100 bg-slate-50/40 p-2.5 flex-1 min-h-0">
-              <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 text-center">
-                Score Trend Over Time
+            <div className="flex flex-1 min-h-0 flex-col rounded-xl border border-slate-100 bg-slate-50/40 p-2.5">
+              <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 text-center">
+                Section Scores
               </p>
-              <div className="flex-1 min-h-0">
-                {trendData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={trendData} margin={{ top: 8, right: 10, left: -28, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="month" tick={{ fontSize: 8, fill: '#64748b' }} />
-                      <YAxis domain={[0, 100]} tick={{ fontSize: 8, fill: '#64748b' }} />
-                      <Tooltip wrapperStyle={{ fontSize: 9 }} />
-                      <Line
-                        type="monotone"
-                        name="Composite Score"
-                        dataKey="score"
-                        stroke={composite?.band.hex ?? '#2563eb'}
-                        strokeWidth={2}
-                        dot={{ r: 3, strokeWidth: 1 }}
-                        activeDot={{ r: 5 }}
+              <div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-0.5">
+                {composite?.sections.map((s) => (
+                  <div key={s.section}>
+                    <div className="flex items-center justify-between gap-2 text-[9px] font-semibold text-slate-500">
+                      <span className="truncate">{s.section}</span>
+                      <span className="shrink-0 text-slate-700">{s.percent.toFixed(0)}%</span>
+                    </div>
+                    <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${Math.max(2, s.percent)}%`, backgroundColor: composite.band.hex }}
                       />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                    Insufficient data to calculate monthly trend.
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
             </div>
 
-            {/* Quick Metrics Badge row */}
             {composite && (
-              <div className="grid grid-cols-3 gap-1.5 text-center">
+              <div className="grid shrink-0 grid-cols-3 gap-1.5 text-center">
                 <div className="rounded-lg border border-slate-100 bg-slate-50/30 p-1">
                   <p className="text-[7px] font-bold uppercase tracking-wider text-slate-400">Rated Criteria</p>
                   <p className="text-xs font-bold text-slate-700 mt-0.5">{composite.ratedQuestionCount}</p>
@@ -981,51 +1135,6 @@ function LeaderboardSlide({ slide, responses = [] }: { slide: Extract<Slide, { k
       </div>
     );
   }
-
-  const numGroups = slide.groups.length;
-
-  const layoutConfig = useMemo(() => {
-    if (numGroups === 1) {
-      return {
-        containerClass: "mt-4 max-w-2xl mx-auto w-full flex-1 flex flex-col justify-center",
-        gridClass: "grid grid-cols-1",
-        groupBlockClass: "rounded-2xl border-2 border-slate-100 p-8 bg-slate-50/40 shadow-md",
-        titleClass: "mb-6 text-lg sm:text-2xl font-black uppercase tracking-[0.2em] text-center block",
-        listSpacingClass: "space-y-3.5",
-        buttonPaddingClass: "py-3 px-4",
-        rankClass: "flex h-9 w-9 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs sm:text-lg font-bold text-slate-500 group-hover:bg-[#0063a9]/10 group-hover:text-[#0063a9] transition-colors",
-        companyClass: "min-w-0 flex-1 truncate text-sm sm:text-lg font-bold text-slate-800 group-hover:text-[#0063a9] group-hover:underline transition-all",
-        scoreClass: "shrink-0 text-sm sm:text-lg font-extrabold transition-all group-hover:scale-105",
-        noDataClass: "text-base sm:text-lg text-slate-400 text-center py-6",
-      };
-    } else if (numGroups === 2) {
-      return {
-        containerClass: "mt-4 max-w-5xl mx-auto w-full flex-1 flex flex-col justify-center",
-        gridClass: "grid grid-cols-1 sm:grid-cols-2 gap-8",
-        groupBlockClass: "rounded-xl border-2 border-slate-100 p-6 bg-slate-50/30 shadow-sm",
-        titleClass: "mb-5 text-sm sm:text-lg font-extrabold uppercase tracking-wider text-center block",
-        listSpacingClass: "space-y-2.5",
-        buttonPaddingClass: "py-2 px-3",
-        rankClass: "flex h-7 w-7 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs sm:text-base font-bold text-slate-500 group-hover:bg-[#0063a9]/10 group-hover:text-[#0063a9] transition-colors",
-        companyClass: "min-w-0 flex-1 truncate text-xs sm:text-base font-semibold text-slate-700 group-hover:text-[#0063a9] group-hover:underline transition-all",
-        scoreClass: "shrink-0 text-xs sm:text-base font-bold transition-all group-hover:scale-105",
-        noDataClass: "text-xs sm:text-sm text-slate-400 text-center py-4",
-      };
-    } else {
-      return {
-        containerClass: "mt-4 w-full flex-1",
-        gridClass: "grid grid-cols-1 sm:grid-cols-3 gap-4",
-        groupBlockClass: "rounded-xl border border-slate-100 p-4 bg-slate-50/30",
-        titleClass: "mb-3 text-xs sm:text-sm font-extrabold uppercase tracking-wider text-center block",
-        listSpacingClass: "space-y-1.5",
-        buttonPaddingClass: "py-1.5 px-2.5",
-        rankClass: "flex h-5 w-5 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] sm:text-xs font-bold text-slate-500 group-hover:bg-[#0063a9]/10 group-hover:text-[#0063a9] transition-colors",
-        companyClass: "min-w-0 flex-1 truncate text-xs sm:text-sm font-bold text-slate-700 group-hover:text-[#0063a9] group-hover:underline transition-all",
-        scoreClass: "shrink-0 text-xs sm:text-sm font-bold transition-all group-hover:scale-105",
-        noDataClass: "text-xs text-slate-400 text-center py-2",
-      };
-    }
-  }, [numGroups]);
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-6 sm:px-14 sm:py-8 text-slate-900">
@@ -1063,7 +1172,10 @@ function LeaderboardSlide({ slide, responses = [] }: { slide: Extract<Slide, { k
                         title={`Click to view detailed metrics for ${row.company}`}
                         className={`flex w-full items-center gap-2.5 rounded-lg text-left transition hover:bg-slate-100 group cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500/50 ${layoutConfig.buttonPaddingClass}`}
                       >
-                        <span className={layoutConfig.rankClass}>
+                        <span
+                          className={layoutConfig.rankClass}
+                          style={row.rank <= 3 ? { backgroundColor: MEDAL_COLORS[row.rank].bg, color: MEDAL_COLORS[row.rank].text } : undefined}
+                        >
                           {row.rank}
                         </span>
                         <span className={layoutConfig.companyClass}>
@@ -1121,15 +1233,17 @@ function TrendsSlide({ slide }: { slide: Extract<Slide, { kind: 'trends' }> }) {
                     <stop offset="95%" stopColor={color} stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} />
+                <CartesianGrid {...CHART_GRID} vertical={false} />
+                <XAxis dataKey="month" tick={CHART_TICK} />
                 <YAxis
                   domain={metric === 'average' ? [0, 100] : [0, 'auto']}
                   allowDecimals={metric !== 'average'}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tick={CHART_TICK}
                 />
                 <Tooltip
-                  formatter={(value: number) => [
+                  contentStyle={CHART_TOOLTIP_STYLE}
+                  labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                  formatter={(value: any) => [
                     metric === 'average' ? `${Number(value).toFixed(2)} / 100` : value,
                     metric === 'average' ? 'Average rating' : 'Responses',
                   ]}
@@ -1234,9 +1348,9 @@ function SpotlightSlide({ slide }: { slide: Extract<Slide, { kind: 'spotlight' }
               <PolarGrid />
               <PolarAngleAxis dataKey="section" tick={{ fontSize: 10 }} />
               <PolarRadiusAxis domain={[0, 100]} tick={{ fontSize: 9 }} />
-              <Radar name={slide.company} dataKey="value" stroke={slide.hex} fill={slide.hex} fillOpacity={0.35} />
+              <Radar name={slide.company} dataKey="value" stroke={slide.hex} fill={slide.hex} fillOpacity={0.35} label={<RadarValueLabel fill={slide.hex} />} />
               <Radar name="Peer average" dataKey="peer" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.15} />
-              <Tooltip />
+              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelStyle={CHART_TOOLTIP_LABEL_STYLE} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
             </RadarChart>
           </ResponsiveContainer>
@@ -1247,94 +1361,83 @@ function SpotlightSlide({ slide }: { slide: Extract<Slide, { kind: 'spotlight' }
   );
 }
 
-function DistributionSlide({ slide }: { slide: Extract<Slide, { kind: 'distribution' }> }) {
-  const topNaCategory = slide.naByCategory[0];
+/** Replaces the old rating-distribution histogram (a confusing mashup of
+ * every survey type's differently-scaled ratings in one chart) with a
+ * single, actionable question: which partners are trailing their own peer
+ * group, and in which specific category. */
+function NeedsAttentionSlide({ slide }: { slide: Extract<Slide, { kind: 'distribution' }> }) {
+  const gridColsClass = slide.atRisk.length <= 1 ? 'lg:grid-cols-1' : slide.atRisk.length <= 4 ? 'lg:grid-cols-2' : 'lg:grid-cols-3';
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-white px-8 py-8 sm:px-14 sm:py-10">
       <SlideBackdrop />
       <div className="relative z-10 flex h-full min-h-0 flex-col">
-        <SlideHeader
-          eyebrow={SLIDE_EYEBROWS.distribution}
-          title="Distribution & Risk Watch"
-          subtitle="How ratings are spread out, where N/A responses cluster, and who's trailing their peer group."
-        />
-        <div className="mt-5 grid flex-1 min-h-0 gap-5 lg:grid-cols-[1.1fr,0.9fr]">
-          {/* Left: rating distribution */}
-          <div className="flex min-h-0 flex-col rounded-2xl border border-slate-200/90 bg-slate-50/30 p-4">
-            <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Rating Distribution</p>
-              {slide.naPercentage > 0 && (
-                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                  {slide.naPercentage.toFixed(1)}% marked N/A
-                </span>
-              )}
-            </div>
-            <div className="flex-1 min-h-0">
-              {slide.buckets.some((b) => b.count > 0) ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={slide.buckets} margin={{ top: 20, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="rating" tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} />
-                    <Tooltip />
-                    <Bar dataKey="count" radius={[8, 8, 0, 0]} barSize={40}>
-                      <LabelList dataKey="count" position="top" style={{ fill: '#334155', fontSize: 11, fontWeight: 700 }} />
-                      {slide.buckets.map((b) => (
-                        <Cell key={b.rating} fill={b.rating === 'N/A' ? '#94a3b8' : '#0063a9'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                  No rated responses yet.
-                </div>
-              )}
-            </div>
-            {topNaCategory && (
-              <p className="mt-2 shrink-0 text-[11px] text-slate-400">
-                Most N/A responses cluster in{' '}
-                <span className="font-semibold text-slate-600">{topNaCategory.category}</span> ({topNaCategory.count}).
-              </p>
-            )}
-          </div>
-
-          {/* Right: needs attention */}
-          <div className="flex min-h-0 flex-col rounded-2xl border border-slate-200/90 bg-slate-50/30 p-4">
-            <div className="mb-2 flex shrink-0 items-center gap-1.5 text-amber-700">
-              <AlertTriangle size={14} />
-              <p className="text-xs font-bold uppercase tracking-wider">Needs Attention</p>
-            </div>
-            {slide.atRisk.length > 0 ? (
-              <div className="flex flex-1 min-h-0 flex-col justify-center gap-2">
-                {slide.atRisk.map((c, i) => (
-                  <motion.div
-                    key={`${c.company}-${c.surveyType}`}
-                    initial={{ opacity: 0, x: 12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3, delay: i * 0.05 }}
-                    className="flex max-h-14 flex-1 items-center justify-between gap-3 rounded-xl bg-white px-3 shadow-xs"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-slate-800">{c.company}</p>
-                      <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                        {c.surveyType} · {c.band}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-sm font-bold" style={{ color: c.hex }}>
-                      {c.score.toFixed(1)}
-                    </span>
-                  </motion.div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-slate-400">
-                No partner is meaningfully trailing its peer group in this window.
-              </div>
-            )}
-          </div>
+        <div className="flex items-start justify-between gap-4">
+          <SlideHeader
+            eyebrow={SLIDE_EYEBROWS.distribution}
+            title="Partners Needing Attention"
+            subtitle="Companies trailing their own peer group (same survey type only), and the specific category dragging each one down."
+          />
+          {slide.naPercentage > 0 && (
+            <span className="mt-1 shrink-0 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-500">
+              {slide.naPercentage.toFixed(1)}% of ratings marked N/A
+            </span>
+          )}
         </div>
+
+        {slide.atRisk.length > 0 ? (
+          <div className={`mt-5 grid flex-1 min-h-0 auto-rows-fr grid-cols-1 gap-4 ${gridColsClass}`}>
+            {slide.atRisk.map((c, i) => (
+              <motion.div
+                key={`${c.company}-${c.surveyType}`}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
+                className="flex flex-col justify-between rounded-2xl border border-amber-100 bg-amber-50/30 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-800">{c.company}</p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                      <span style={{ color: surveyTypeColors[c.surveyType] }}>{c.surveyType}</span>
+                      <span className="text-slate-300">·</span>
+                      <span style={{ color: c.hex }}>{c.band}</span>
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-2xl font-bold leading-none" style={{ color: c.hex }}>
+                    {c.score.toFixed(0)}
+                  </span>
+                </div>
+
+                {c.weakestSection ? (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-[10px] font-semibold text-amber-700">
+                      <span className="flex items-center gap-1 truncate">
+                        <AlertTriangle size={10} className="shrink-0" />
+                        <span className="truncate">Weakest: {c.weakestSection}</span>
+                      </span>
+                      <span className="shrink-0">{(c.weakestPercent ?? 0).toFixed(0)}%</span>
+                    </div>
+                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-amber-100">
+                      <div
+                        className="h-full rounded-full bg-amber-500"
+                        style={{ width: `${Math.max(2, Math.min(100, c.weakestPercent ?? 0))}%` }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-[10px] text-slate-400">Below peer average overall.</p>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-5 flex flex-1 flex-col items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/40 text-center">
+            <Trophy size={22} className="text-emerald-500" />
+            <p className="text-sm font-semibold text-emerald-700">No partner is meaningfully trailing its peer group.</p>
+            <p className="text-xs text-slate-400">Every company is performing in line with (or above) its peers this period.</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1381,7 +1484,7 @@ function SlideContent({ slide, responses = [] }: { slide: Slide; responses?: Sur
     case 'spotlight':
       return <SpotlightSlide slide={slide} />;
     case 'distribution':
-      return <DistributionSlide slide={slide} />;
+      return <NeedsAttentionSlide slide={slide} />;
 
     case 'closing':
       return <ClosingSlide slide={slide} />;
