@@ -82,7 +82,7 @@ export interface ScoreBand {
 }
 
 // Composite scores are already normalized to a shared 0-100 scale for every
-// survey type (see normalizeScoreTo100 in analytics.ts), so all three forms
+// survey type (see submissionScores in analytics.ts), so all three forms
 // - Courier, Supplier, Subcontractor - are ranked against the exact same
 // 8-tier scorecard instead of type-specific thresholds.
 const UNIFIED_BANDS: ScoreBand[] = [

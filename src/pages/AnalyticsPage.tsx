@@ -35,6 +35,7 @@ import {
   getMaxRatingForResponses,
   submissionScores,
   getCompanyPerformance,
+  computeRankScore,
 } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
 import { exportTablesAsCSV, exportTablesAsExcel, ExportTable } from '../utils/exporters';
@@ -289,14 +290,28 @@ export function AnalyticsPage({
   // and "top performer" standings should only ever consider partners that
   // have actually been evaluated, not registry entries sitting at a default
   // 0/100 because nobody has scored them yet.
-  const evaluatedCompanyAverages = useMemo(() => companyAverages.filter((c) => c.count > 0), [companyAverages]);
+  //
+  // Ranked by a volume-weighted score, not the raw average, so a company
+  // with one lucky evaluation can't outrank one with dozens - see
+  // computeRankScore in analytics.ts. `peers` is whatever group is being
+  // compared, so a type-scoped ranking (e.g. "top Courier") pulls toward
+  // that type's own mean rather than the mean across all three forms.
+  const rankCompanies = (list: typeof companyAverages) => {
+    const peers = list.map((c) => ({ score: c.scorePercentage, count: c.count }));
+    return list
+      .map((c) => ({ ...c, rankScore: computeRankScore(c.scorePercentage, c.count, peers) }))
+      .sort((a, b) => b.rankScore - a.rankScore);
+  };
+
+  const evaluatedCompanyAverages = useMemo(
+    () => rankCompanies(companyAverages.filter((c) => c.count > 0)),
+    [companyAverages]
+  );
 
   const categoryCompanyAverages = useMemo(() => {
-    return evaluatedCompanyAverages.filter((c) => {
-      if (activeCategory === 'All') return true;
-      return c.type === activeCategory;
-    });
-  }, [evaluatedCompanyAverages, activeCategory]);
+    if (activeCategory === 'All') return evaluatedCompanyAverages;
+    return rankCompanies(companyAverages.filter((c) => c.count > 0 && c.type === activeCategory));
+  }, [companyAverages, evaluatedCompanyAverages, activeCategory]);
 
   const highestCompany = useMemo(() => {
     return categoryCompanyAverages[0] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, count: 0, type: 'N/A' };
@@ -329,9 +344,18 @@ export function AnalyticsPage({
     return evaluatedCompanyAverages[0] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, type: 'N/A', count: 0 };
   }, [evaluatedCompanyAverages]);
 
-  const topContractor = useMemo(() => evaluatedCompanyAverages.find((c) => c.type === 'Courier'), [evaluatedCompanyAverages]);
-  const topSupplier = useMemo(() => evaluatedCompanyAverages.find((c) => c.type === 'Supplier'), [evaluatedCompanyAverages]);
-  const topSubcontractor = useMemo(() => evaluatedCompanyAverages.find((c) => c.type === 'Subcontractor'), [evaluatedCompanyAverages]);
+  const topContractor = useMemo(
+    () => rankCompanies(companyAverages.filter((c) => c.count > 0 && c.type === 'Courier'))[0],
+    [companyAverages]
+  );
+  const topSupplier = useMemo(
+    () => rankCompanies(companyAverages.filter((c) => c.count > 0 && c.type === 'Supplier'))[0],
+    [companyAverages]
+  );
+  const topSubcontractor = useMemo(
+    () => rankCompanies(companyAverages.filter((c) => c.count > 0 && c.type === 'Subcontractor'))[0],
+    [companyAverages]
+  );
 
   const displayedCompany = useMemo(() => {
     if (selectedChampionType === 'Overall') return topCompany;
@@ -370,23 +394,30 @@ export function AnalyticsPage({
         if (composites.length === 0) return null;
 
         const avgScore = composites.reduce((sum, c) => sum + c.compositeScore, 0) / composites.length;
+        const evaluationCount = composites.reduce((sum, c) => sum + c.evaluationCount, 0);
         const mainType = composites[0].surveyType;
 
         return {
           company,
           score: Number(avgScore.toFixed(1)),
+          evaluationCount,
           surveyType: mainType,
         };
       })
       .filter((s): s is NonNullable<typeof s> => s !== null);
 
+    // Rank by volume-weighted score so a company with a single evaluation
+    // can't sit at the top (or bottom) purely on a small sample.
+    const peers = stats.map((s) => ({ score: s.score, count: s.evaluationCount }));
+    const ranked = stats.map((s) => ({ ...s, rankScore: computeRankScore(s.score, s.evaluationCount, peers) }));
+
     if (performanceMode === 'highest') {
-      stats.sort((a, b) => b.score - a.score);
+      ranked.sort((a, b) => b.rankScore - a.rankScore);
     } else {
-      stats.sort((a, b) => a.score - b.score);
+      ranked.sort((a, b) => a.rankScore - b.rankScore);
     }
 
-    return stats.slice(0, limit);
+    return ranked.slice(0, limit);
   }, [comparableResponses, activeSurveyTypes, performanceMode, limit]);
 
   const topCompaniesAxisDomain = useMemo(

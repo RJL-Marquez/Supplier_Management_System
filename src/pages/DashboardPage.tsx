@@ -30,6 +30,7 @@ import {
   submissionScores,
   questionPerformance,
   getSurveyEvaluationCompanies,
+  computeRankScore,
 } from '../utils/analytics';
 
 // ----------------------------------------------------
@@ -368,7 +369,7 @@ export function DashboardPage({
       }
     });
 
-    return Object.values(companyMap)
+    const evaluated = Object.values(companyMap)
       .map((c) => {
         const average = c.count > 0 ? c.sum / c.count : 0;
         return {
@@ -379,8 +380,15 @@ export function DashboardPage({
           type: c.type,
         };
       })
-      .filter((c) => c.count > 0)
-      .sort((a, b) => b.average - a.average);
+      .filter((c) => c.count > 0);
+
+    // Rank by a volume-weighted score, not the raw average, so a company
+    // with a single (possibly lucky) evaluation can't outrank one with many
+    // - see computeRankScore in analytics.ts.
+    const peers = evaluated.map((c) => ({ score: c.scorePercentage, count: c.count }));
+    return evaluated
+      .map((c) => ({ ...c, rankScore: computeRankScore(c.scorePercentage, c.count, peers) }))
+      .sort((a, b) => b.rankScore - a.rankScore);
   }, [effectiveHistoryResponses, partnerCompanies]);
 
   const topPartner = useMemo(() => {

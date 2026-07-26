@@ -1,5 +1,5 @@
 import { ArchiveSeries, SurveyResponse, SurveyType } from '../types/survey';
-import { numericRating, submissionScores } from './analytics';
+import { numericRating, submissionScores, computeRankScore } from './analytics';
 import { ScoreBand, getBand, questionWeights, getCanonicalQuestionId } from '../data/questionWeights';
 
 export interface SectionScore {
@@ -20,6 +20,11 @@ export interface CompanyComposite {
   evaluationCount: number; // total question ratings (submissions) rolled into this score
   stdDev: number; // population std dev of per-question percent scores - consistency signal
   naRate: number; // % of applicable questions marked N/A
+  // Volume-weighted variant of compositeScore, pulled toward the peer mean
+  // when evaluationCount is low. Use this (not compositeScore) for ranking/
+  // sorting a leaderboard; keep showing compositeScore as the company's
+  // actual rating everywhere else - see computeRankScore in analytics.ts.
+  rankScore: number;
 }
 
 export interface OutlierFlag {
@@ -143,16 +148,29 @@ export function computeCompanyComposite(
     evaluationCount: normalizedSubmissionScores.length,
     stdDev: Number(Math.sqrt(variance).toFixed(1)),
     naRate: applicableCount ? Number(((naCount / applicableCount) * 100).toFixed(1)) : 0,
+    // No peer group available in isolation - getLeaderboard recomputes this
+    // against the full peer set once every company's composite is known.
+    rankScore: compositeScore,
   };
 }
 
-/** Every company of a given survey type, ranked highest composite score first. */
+/**
+ * Every company of a given survey type, ranked by volume-weighted rankScore
+ * (highest first) so a company with one or two evaluations can't outrank one
+ * with dozens purely on a small, possibly-lucky sample. compositeScore -
+ * each company's actual rating - is left untouched for display.
+ */
 export function getLeaderboard(responses: SurveyResponse[], surveyType: SurveyType): CompanyComposite[] {
   const companies = [...new Set(responses.filter((r) => r.surveyType === surveyType).map((r) => r.company))];
-  return companies
+  const composites = companies
     .map((company) => computeCompanyComposite(company, surveyType, responses))
-    .filter((c): c is CompanyComposite => c !== null)
-    .sort((a, b) => b.compositeScore - a.compositeScore);
+    .filter((c): c is CompanyComposite => c !== null);
+
+  const peers = composites.map((c) => ({ score: c.compositeScore, count: c.evaluationCount }));
+
+  return composites
+    .map((c) => ({ ...c, rankScore: computeRankScore(c.compositeScore, c.evaluationCount, peers) }))
+    .sort((a, b) => b.rankScore - a.rankScore);
 }
 
 /**

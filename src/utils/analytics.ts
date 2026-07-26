@@ -30,12 +30,6 @@ export function getSurveyEvaluationCompanies(
   return companiesOfType.filter((c) => selectedIds.has(c.id));
 }
 
-const SURVEY_TOTAL_POINTS: Record<SurveyType, number> = {
-  Courier: 100,
-  Supplier: 100,
-  Subcontractor: 32,
-};
-
 export const initialFilters: FilterState = {
   surveyType: [],
   questionId: '',
@@ -160,16 +154,6 @@ export function averageRating(responses: SurveyResponse[]) {
   return scores.length ? scores.reduce((sum, item) => sum + item.score, 0) / scores.length : 0;
 }
 
-export function getSurveyTotalPoints(surveyType: SurveyType): number {
-  return SURVEY_TOTAL_POINTS[surveyType];
-}
-
-export function normalizeScoreTo100(score: number, surveyType: SurveyType): number {
-  const totalPoints = getSurveyTotalPoints(surveyType);
-  if (totalPoints <= 0) return 0;
-  return Math.min(100, Math.max(0, (score / totalPoints) * 100));
-}
-
 function getSubmissionKey(response: SurveyResponse) {
   return [
     response.responseId,
@@ -180,31 +164,66 @@ function getSubmissionKey(response: SurveyResponse) {
   ].join('|');
 }
 
+/**
+ * Rolls each submission (one respondent's full form) into a single 0-100
+ * score. An N/A answer is excluded from both the earned and possible points
+ * for that submission, instead of being scored as a zero against the form's
+ * full point total - so answering one 7-point question "N/A" out of a
+ * 100-point form re-bases that respondent's score out of 93, not out of 100
+ * with a missing 7 points. This mirrors the per-section math already used
+ * in computeCompanyComposite (scoring.ts).
+ */
 export function submissionScores(responses: SurveyResponse[]) {
-  const groups = new Map<string, { surveyType: SurveyType; company: string; submissionDate: string; score: number; answers: number }>();
+  const groups = new Map<string, { surveyType: SurveyType; company: string; submissionDate: string; earned: number; possible: number; answers: number }>();
 
   responses.forEach((response) => {
     const rating = numericRating(response.rating);
-    if (rating === null) return;
+    if (rating === null) return; // N/A - excluded from both earned and possible points
 
+    const maxPoints = getQuestionMaxPoints(response.surveyType, response.questionId);
     const key = getSubmissionKey(response);
     const current = groups.get(key) ?? {
       surveyType: response.surveyType,
       company: response.company,
       submissionDate: response.submissionDate,
-      score: 0,
+      earned: 0,
+      possible: 0,
       answers: 0,
     };
 
-    current.score += rating;
+    current.earned += rating;
+    current.possible += maxPoints;
     current.answers += 1;
     groups.set(key, current);
   });
 
   return [...groups.values()].map((item) => ({
     ...item,
-    score: normalizeScoreTo100(item.score, item.surveyType),
+    score: item.possible > 0 ? Math.min(100, Math.max(0, (item.earned / item.possible) * 100)) : 0,
   }));
+}
+
+/**
+ * Confidence-weighted score that pulls low-volume results toward the peer
+ * mean, the same idea as IMDb's weighted rating: a company with just one or
+ * two evaluations shouldn't be able to outrank one with dozens purely
+ * because its tiny sample happened to be perfect. `peers` should be every
+ * company being ranked together (the same list this score will be sorted
+ * within) so the peer mean and "typical" evaluation count reflect that
+ * specific comparison group.
+ */
+export function computeRankScore(score: number, count: number, peers: { score: number; count: number }[]): number {
+  const scoredPeers = peers.filter((p) => p.count > 0);
+  if (!scoredPeers.length || count <= 0) return score;
+
+  const counts = scoredPeers.map((p) => p.count).sort((a, b) => a - b);
+  const mid = Math.floor(counts.length / 2);
+  const median = counts.length % 2 ? counts[mid] : (counts[mid - 1] + counts[mid]) / 2;
+  const m = Math.max(median, 3); // never require fewer than 3 evaluations of "confidence"
+
+  const peerMean = scoredPeers.reduce((sum, p) => sum + p.score, 0) / scoredPeers.length;
+
+  return (count / (count + m)) * score + (m / (count + m)) * peerMean;
 }
 
 export function submissionCount(responses: SurveyResponse[]) {

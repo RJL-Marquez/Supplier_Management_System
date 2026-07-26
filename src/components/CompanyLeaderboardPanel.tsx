@@ -79,7 +79,7 @@ export function CompanyLeaderboardPanel({ responses }: CompanyLeaderboardPanelPr
         <div>
           <h3 className="text-base font-semibold">Company Leaderboards</h3>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Composite scores weighted to match each form's actual point values, ranked within their own peer group.
+            Composite scores weighted to match each form's actual point values, ranked within their own peer group and adjusted for evaluation volume so a handful of reviews can't outrank dozens.
           </p>
         </div>
 
