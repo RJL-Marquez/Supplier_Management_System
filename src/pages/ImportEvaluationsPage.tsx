@@ -16,7 +16,7 @@ import {
 import { SurveyType } from '../types/survey';
 import { RawEvalImportSummary, RawEvalPreview, CompanyDecision } from '../utils/rawEvaluationImport';
 
-const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls'];
+const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls', '.csv'];
 
 function hasAcceptedExtension(fileName: string) {
   const lower = fileName.toLowerCase();
@@ -111,7 +111,7 @@ export function ImportEvaluationsPage({ onPreview, onCommit }: ImportEvaluations
   // file is a one-click undo (the X) instead of an already-started import.
   const stageFile = (surveyType: SurveyType, file: File) => {
     if (!hasAcceptedExtension(file.name)) {
-      patchCard(surveyType, { error: `"${file.name}" isn't an Excel file (.xlsx/.xls).`, stagedFile: null });
+      patchCard(surveyType, { error: `"${file.name}" isn't an Excel or CSV file (.xlsx/.xls/.csv).`, stagedFile: null });
       return;
     }
     patchCard(surveyType, { stagedFile: file, error: '', result: null });
@@ -238,7 +238,7 @@ export function ImportEvaluationsPage({ onPreview, onCommit }: ImportEvaluations
               <input
                 ref={fileInputs[surveyType]}
                 type="file"
-                accept=".xlsx,.xls"
+                accept=".xlsx,.xls,.csv"
                 className="hidden"
                 onChange={(e) => handleFileSelected(surveyType, e)}
               />
@@ -298,11 +298,11 @@ export function ImportEvaluationsPage({ onPreview, onCommit }: ImportEvaluations
                     <UploadCloud size={20} className={isDragOver ? 'text-[#0063a9] dark:text-blue-400' : 'text-slate-400'} />
                   )}
                   <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                    {card.isImporting ? 'Importing…' : isDragOver ? 'Drop to import' : 'Drag & drop Excel file here'}
+                    {card.isImporting ? 'Importing…' : isDragOver ? 'Drop to import' : 'Drag & drop Excel or CSV file here'}
                   </p>
                   {!card.isImporting && (
                     <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                      or <span className="font-semibold text-[#0063a9] dark:text-blue-400">browse (.xlsx/.xls)</span>
+                      or <span className="font-semibold text-[#0063a9] dark:text-blue-400">browse (.xlsx/.xls/.csv)</span>
                     </p>
                   )}
                 </div>
