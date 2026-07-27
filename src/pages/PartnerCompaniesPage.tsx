@@ -555,21 +555,6 @@ export function PartnerCompaniesPage({
 
   return (
     <div className="space-y-6" id="partner-companies-page">
-      {/* Page Header */}
-      <div className="panel bg-[#0063a9]/5 border-blue-100 dark:border-blue-900/30 p-6">
-        <div className="flex items-start gap-4">
-          <div className="rounded-lg bg-[#0063a9] p-2 text-white shrink-0 mt-0.5 animate-pulse">
-            <Building size={20} />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-bold text-[#0063a9] dark:text-blue-300">Administrative Partner Registry</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-              Define and monitor the master roster of active, expired-document, and archived contractors, suppliers, and subcontractors. A company with any expired required compliance document (Business Permit, AFS, SIF, etc.) is automatically excluded from active survey evaluations. Click any company to review or renew its documents.
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Messages */}
       {successMessage && (
         <div className="rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 text-xs font-semibold flex items-center gap-2 dark:bg-emerald-950/20 dark:border-emerald-900 dark:text-emerald-400">
