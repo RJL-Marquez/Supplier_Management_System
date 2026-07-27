@@ -32,15 +32,27 @@ import {
   Search,
   Globe,
   MapPin,
-  HelpCircle
+  HelpCircle,
+  Tag,
+  Mail,
+  User,
+  Phone
 } from 'lucide-react';
-import { BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SurveyResponse, SurveyType } from '../types/survey';
+import { AccreditationStatus, BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SupplierOrigin, SurveyResponse, SurveyType } from '../types/survey';
 import { getMaxRatingForResponses } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
 import { computeDocumentStatus, computeCompanyDocumentSummary, CompanyDocumentSummary } from '../utils/compliance';
 import { getRequiredDocumentKeys, isExpiryDocument } from '../utils/documentRequirements';
+import { findMissingProfileFields, MISSING_FIELD_LABELS, MissingProfileField } from '../utils/dataCompleteness';
 import { ImportResult } from '../utils/masterListImport';
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
+
+const MISSING_FIELD_ICONS: Record<MissingProfileField, typeof MapPin> = {
+  address: MapPin,
+  contact: User,
+  email: Mail,
+  phone: Phone,
+};
 
 export function typeBadgeClasses(type: PartnerCompanyType): string {
   switch (type) {
@@ -67,6 +79,13 @@ const DOCUMENT_STATUS_STYLES: Record<DocumentStatus, string> = {
   Missing: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700',
 };
 
+const STATUS_TAB_LABELS: Record<'Active' | 'Expired' | 'Incomplete' | 'Archived', string> = {
+  Active: 'Active',
+  Expired: 'Expired',
+  Incomplete: 'Incomplete Profile',
+  Archived: 'Archived',
+};
+
 interface PartnerCompaniesPageProps {
   partnerCompanies: PartnerCompany[];
   responses: SurveyResponse[];
@@ -83,7 +102,7 @@ interface PartnerCompaniesPageProps {
   /** Distinct from isAdmin - can be granted to a role without full Admin access (Account Management -> "Renew Compliance Documents"). */
   canRenewDocuments?: boolean;
   simClock?: SimClock | null;
-  /** Deep-link support: opens this company's detail/edit panel on arrival (e.g. from the Data Completeness reminder page). */
+  /** Deep-link support: opens this company's detail/edit panel on arrival. */
   initialFocusCompanyId?: string | null;
   onFocusConsumed?: () => void;
 }
@@ -103,7 +122,7 @@ export function PartnerCompaniesPage({
 }: PartnerCompaniesPageProps) {
   const canRenew = isAdmin || canRenewDocuments;
   // Tabs: Active, Expired, Archived
-  const [statusTab, setStatusTab] = useState<'Active' | 'Expired' | 'Archived'>('Active');
+  const [statusTab, setStatusTab] = useState<'Active' | 'Expired' | 'Incomplete' | 'Archived'>('Active');
   const [currentPage, setCurrentPage] = useState(1);
   // Affiliation filter
   const [activeTab, setActiveTab] = useState<PartnerCompanyType | 'All'>('All');
@@ -249,6 +268,18 @@ export function PartnerCompaniesPage({
     return { active, expired, archived };
   }, [partnerCompanies, effectiveNow]);
 
+  // Cross-cutting filter, not a partition: a company can be both Expired
+  // (document status) and Incomplete (profile) at once, so this pulls from
+  // every non-archived company rather than being mutually exclusive with
+  // Active/Expired the way those two are with each other.
+  const incompleteCompanies = useMemo(
+    () =>
+      [...classifiedCompanies.active, ...classifiedCompanies.expired].filter(
+        (c) => findMissingProfileFields(c).length > 0
+      ),
+    [classifiedCompanies]
+  );
+
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -359,6 +390,8 @@ export function PartnerCompaniesPage({
       baseList = classifiedCompanies.active;
     } else if (statusTab === 'Expired') {
       baseList = classifiedCompanies.expired;
+    } else if (statusTab === 'Incomplete') {
+      baseList = incompleteCompanies;
     } else {
       baseList = classifiedCompanies.archived;
     }
@@ -399,7 +432,7 @@ export function PartnerCompaniesPage({
       });
     }
     return baseList;
-  }, [classifiedCompanies, statusTab, activeTab, originFilter, searchQuery, sortConfig, effectiveNow]);
+  }, [classifiedCompanies, incompleteCompanies, statusTab, activeTab, originFilter, searchQuery, sortConfig, effectiveNow]);
 
   // Jump back to page 1 whenever a filter/search/sort narrows or reshuffles
   // the result set - otherwise the user can land on a now-empty page.
@@ -423,7 +456,7 @@ export function PartnerCompaniesPage({
 
   // Edits one field on one branch of the currently-open company (used by the
   // Address/Contact Person/Mobile Phone/Email inputs in the branch card -
-  // these are exactly the fields the Data Completeness reminder page checks).
+  // these are exactly the fields the Incomplete Profiles tab checks).
   const updateBranchField = (branchId: string, field: 'address' | 'contactPerson' | 'mobilePhone' | 'email', value: string) => {
     if (!selectedCompany) return;
     const updatedBranches = (selectedCompany.branches ?? []).map((b) =>
@@ -434,8 +467,7 @@ export function PartnerCompaniesPage({
     onUpdateCompany(updated);
   };
 
-  // Deep-link: another page (e.g. the Data Completeness reminder list) can
-  // request this company's detail panel open on arrival.
+  // Deep-link: a caller can request this company's detail panel open on arrival.
   useEffect(() => {
     if (!initialFocusCompanyId) return;
     const company = partnerCompanies.find((c) => c.id === initialFocusCompanyId);
@@ -473,6 +505,29 @@ export function PartnerCompaniesPage({
     const updated: PartnerCompany = { ...selectedCompany, branches: updatedBranches };
     onUpdateCompany(updated);
     setSelectedCompany(updated);
+  };
+
+  // Assigns/changes a partner's type (and origin, for Suppliers) - the
+  // category that determines which compliance documents apply. Moving a
+  // company out of Uncategorized also accredits and unarchives it, mirroring
+  // what a Master List import does when a row's category is recognized.
+  const handleClassifyCompany = (newType: PartnerCompanyType, newOrigin?: SupplierOrigin) => {
+    if (!selectedCompany || !canRenew) return;
+    const becomingCategorized = newType !== 'Uncategorized' && selectedCompany.type === 'Uncategorized';
+    const updated: PartnerCompany = {
+      ...selectedCompany,
+      type: newType,
+      supplierOrigin: newType === 'Supplier' ? (newOrigin ?? selectedCompany.supplierOrigin ?? 'Local') : undefined,
+      ...(becomingCategorized
+        ? { accreditationStatus: 'Accredited' as AccreditationStatus, isArchived: false }
+        : {}),
+    };
+    onUpdateCompany(updated);
+    setSelectedCompany(updated);
+    setSuccessMessage(
+      `"${selectedCompany.name}" classified as ${newType}${newType === 'Supplier' ? ` (${updated.supplierOrigin})` : ''}.`
+    );
+    setTimeout(() => setSuccessMessage(''), 4000);
   };
 
   const handleConfirmDocumentRenewal = () => {
@@ -530,10 +585,11 @@ export function PartnerCompaniesPage({
       )}
 
       {/* Primary Status Tabs Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { key: 'Active', label: 'Active Partners', count: classifiedCompanies.active.length, color: 'text-emerald-600 border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10' },
           { key: 'Expired', label: 'Expired Documents', count: classifiedCompanies.expired.length, color: 'text-rose-600 border-rose-200 bg-rose-50/30 dark:bg-rose-950/10' },
+          { key: 'Incomplete', label: 'Incomplete Profiles', count: incompleteCompanies.length, color: 'text-amber-600 border-amber-200 bg-amber-50/30 dark:bg-amber-950/10' },
           { key: 'Archived', label: 'Archived Partners', count: classifiedCompanies.archived.length, color: 'text-slate-500 border-slate-200 bg-slate-50/30 dark:bg-slate-900/10' }
         ].map((tab) => (
           <button
@@ -550,6 +606,7 @@ export function PartnerCompaniesPage({
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-1">
                 {tab.key === 'Active' && 'Active evaluation partners'}
                 {tab.key === 'Expired' && 'Has an expired required document'}
+                {tab.key === 'Incomplete' && 'Missing address, contact, email, or phone'}
                 {tab.key === 'Archived' && 'Permanently shelved partners'}
               </p>
             </div>
@@ -650,7 +707,7 @@ export function PartnerCompaniesPage({
       {/* Registry Header & Controls Block */}
       <div className="panel px-5 py-4 flex flex-wrap justify-between items-center gap-3">
         <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-          {statusTab} Registry List ({filteredCompanies.length}) &bull; Click card to edit/renew
+          {STATUS_TAB_LABELS[statusTab]} Registry List ({filteredCompanies.length}) &bull; Click card to edit/renew
         </span>
         <div className="flex rounded-lg border border-slate-200 bg-white p-1 dark:border-transparent dark:bg-slate-950">
           <button
@@ -687,6 +744,7 @@ export function PartnerCompaniesPage({
           <p className="text-xs mt-1 text-slate-400">
             {statusTab === 'Active' && 'There are no active partners.'}
             {statusTab === 'Expired' && 'No companies currently have an expired document.'}
+            {statusTab === 'Incomplete' && 'Every partner profile is fully filled in.'}
             {statusTab === 'Archived' && 'The archive is currently empty.'}
           </p>
         </div>
@@ -736,10 +794,11 @@ export function PartnerCompaniesPage({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {paginatedCompanies.map((c) => {
                   const docSummary = computeCompanyDocumentSummary(c, effectiveNow);
+                  const missingProfileFields = findMissingProfileFields(c);
 
                   return (
-                    <tr 
-                      key={c.id} 
+                    <tr
+                      key={c.id}
                       onClick={() => handleCompanyClick(c)}
                       className="hover:bg-slate-50/80 dark:hover:bg-slate-900/20 cursor-pointer group transition-colors"
                     >
@@ -747,6 +806,14 @@ export function PartnerCompaniesPage({
                         <div className="flex items-center gap-2">
                           <Building size={14} className="text-slate-400 group-hover:text-[#0063a9]" />
                           <span>{c.name}</span>
+                          {missingProfileFields.length > 0 && (
+                            <span
+                              title={`Missing ${missingProfileFields.map((f) => MISSING_FIELD_LABELS[f]).join(', ')}`}
+                              className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50 px-1.5 py-0.5 text-[9px] font-bold"
+                            >
+                              {missingProfileFields.length} missing
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-5 py-3">
@@ -783,7 +850,7 @@ export function PartnerCompaniesPage({
                       </td>
                       <td className="px-5 py-3 text-right">
                         <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          {statusTab === 'Expired' && canRenew && (
+                          {docSummary.status === 'Expired' && canRenew && (
                             <button
                               onClick={() => handleCompanyClick(c)}
                               className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1 px-2.5 rounded flex items-center gap-1 cursor-pointer transition"
@@ -817,6 +884,7 @@ export function PartnerCompaniesPage({
             const score = getCompanyScoreDetails(c.name, c.type);
             const docSummary = computeCompanyDocumentSummary(c, effectiveNow);
             const isExpiringSoon = !c.isArchived && docSummary.status === 'Expiring Soon';
+            const missingProfileFields = findMissingProfileFields(c);
 
             return (
               <div 
@@ -826,7 +894,7 @@ export function PartnerCompaniesPage({
               >
                 {/* Card Status Indicator Border */}
                 <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${
-                  c.isArchived ? 'bg-slate-300' : statusTab === 'Expired' ? 'bg-rose-500' : isExpiringSoon ? 'bg-amber-400' : 'bg-emerald-500'
+                  c.isArchived ? 'bg-slate-300' : docSummary.status === 'Expired' ? 'bg-rose-500' : isExpiringSoon ? 'bg-amber-400' : 'bg-emerald-500'
                 }`} />
 
                 {/* Top segment: Title, prominent badges and Action */}
@@ -892,7 +960,7 @@ export function PartnerCompaniesPage({
                   <div className="shrink-0">
                     {c.isArchived ? (
                       <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">Archived</span>
-                    ) : statusTab === 'Expired' ? (
+                    ) : docSummary.status === 'Expired' ? (
                       <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-950 dark:text-rose-400 dark:border-rose-900 animate-pulse">Expired</span>
                     ) : isExpiringSoon ? (
                       <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-900 animate-pulse">Expiring Soon</span>
@@ -923,6 +991,24 @@ export function PartnerCompaniesPage({
                     </strong>
                   </div>
                 </div>
+
+                {/* Missing Profile Fields */}
+                {missingProfileFields.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {missingProfileFields.map((field) => {
+                      const Icon = MISSING_FIELD_ICONS[field];
+                      return (
+                        <span
+                          key={field}
+                          className="inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400"
+                        >
+                          <Icon size={10} />
+                          Missing {MISSING_FIELD_LABELS[field]}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* Multi-column specs details grid */}
                 <div className="mt-4 grid grid-cols-2 gap-4 pt-3 border-t border-slate-100 dark:border-slate-800/60 text-xs">
@@ -1028,6 +1114,62 @@ export function PartnerCompaniesPage({
                   )}
                 </div>
                 <p className="text-xs text-slate-400 mt-1">ID: {selectedCompany.id} &bull; Scope: {selectedCompany.affiliation || 'General partnership'}</p>
+              </div>
+            </div>
+
+            {/* Partner Classification - which document set applies (Courier/Supplier-Local/
+                Supplier-Foreign/Subcontractor) is driven entirely by this, so it's editable
+                by the same role that can renew documents. Master-List rows that imported with
+                no recognizable category land here as Uncategorized/archived until classified. */}
+            <div className="mt-6">
+              <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Tag size={14} />
+                <span>Partner Classification</span>
+              </h4>
+              <div className="mt-2 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-3">
+                {selectedCompany.type === 'Uncategorized' && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1.5">
+                    <AlertCircle size={12} />
+                    <span>Uncategorized partners are archived and excluded from surveys until classified.</span>
+                  </p>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="classify-type-sel" className="field-label text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Partner Type</label>
+                    <select
+                      id="classify-type-sel"
+                      className="field text-xs py-2"
+                      value={selectedCompany.type}
+                      disabled={!canRenew}
+                      onChange={(e) => handleClassifyCompany(e.target.value as PartnerCompanyType)}
+                    >
+                      <option value="Uncategorized">Uncategorized</option>
+                      <option value="Courier">Courier</option>
+                      <option value="Supplier">Supplier</option>
+                      <option value="Subcontractor">Subcontractor</option>
+                    </select>
+                  </div>
+                  {selectedCompany.type === 'Supplier' && (
+                    <div>
+                      <label htmlFor="classify-origin-sel" className="field-label text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Supplier Origin</label>
+                      <select
+                        id="classify-origin-sel"
+                        className="field text-xs py-2"
+                        value={selectedCompany.supplierOrigin ?? 'Local'}
+                        disabled={!canRenew}
+                        onChange={(e) => handleClassifyCompany('Supplier', e.target.value as SupplierOrigin)}
+                      >
+                        <option value="Local">Local</option>
+                        <option value="Foreign">Foreign</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {canRenew
+                    ? 'Determines which compliance documents apply to this partner (see Branches & Compliance Documents below). Classifying an Uncategorized partner also unarchives and accredits it.'
+                    : 'Reclassifying requires the Document Renewal permission.'}
+                </p>
               </div>
             </div>
 

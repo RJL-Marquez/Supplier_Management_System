@@ -1,6 +1,6 @@
 import { SurveyType } from '../types/survey';
 
-export type PageModuleKey = 
+export type PageModuleKey =
   | 'dashboard'
   | 'survey-forms'
   | 'explorer'
@@ -14,7 +14,6 @@ export type PageModuleKey =
   | 'archive'
   | 'simulator'
   | 'import-evaluations'
-  | 'partner-data-completeness'
   | 'document-register'
   // Action permission (not a nav page): allowed to update compliance
   // document expiry/renewal in Partner Companies and the Document Register.
@@ -40,17 +39,16 @@ export function getDefaultPermissions(designation: string, department: string): 
   let pages: PageModuleKey[] = [];
 
   if (rank === 'Rank & File') {
-    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'partner-data-completeness', 'document-register', 'notifications'];
+    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'document-register', 'notifications'];
   } else if (rank === 'Supervisory') {
     // Supervisor gets Dashboard, Analytics, Survey Forms, Partner Companies, Partners Feedback Hub, and optionally Reports for basic exports
-    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'partner-data-completeness', 'document-register', 'partners-feedback-hub', 'reports', 'notifications'];
+    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'document-register', 'partners-feedback-hub', 'reports', 'notifications'];
   } else if (rank === 'Managerial') {
     pages = [
       'dashboard',
       'analytics',
       'survey-forms',
       'partner-companies',
-      'partner-data-completeness',
       'document-register',
       'partners-feedback-hub',
       'explorer',
@@ -65,7 +63,6 @@ export function getDefaultPermissions(designation: string, department: string): 
       'analytics',
       'survey-forms',
       'partner-companies',
-      'partner-data-completeness',
       'document-register',
       'partners-feedback-hub',
       'explorer',
@@ -86,7 +83,6 @@ export function getDefaultPermissions(designation: string, department: string): 
       'reports',
       'present',
       'partner-companies',
-      'partner-data-completeness',
       'partners-feedback-hub',
       'document-register',
       'renew-documents',
@@ -120,7 +116,6 @@ export function getDepartmentDefaultPermissions(department: string): UserPermiss
       'reports',
       'present',
       'partner-companies',
-      'partner-data-completeness',
       'document-register',
       'partners-feedback-hub',
       'notifications',
@@ -133,7 +128,6 @@ export function getDepartmentDefaultPermissions(department: string): UserPermiss
       'analytics',
       'survey-forms',
       'partner-companies',
-      'partner-data-completeness',
       'document-register',
       'partners-feedback-hub',
       'explorer',
@@ -160,7 +154,7 @@ export function hasPageAccess(
   if (isAdmin && pageKey !== 'fill-form' && pageKey !== 'view-form' && pageKey !== 'create-form') {
     return true; // Admin has full access by default
   }
-  
+
   // Custom sub-views mapping
   if (pageKey === 'create-form') {
     return userPages.includes('survey-forms') && isAdmin; // Keep creation admin-restricted by default unless allowed

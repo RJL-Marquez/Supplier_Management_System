@@ -16,7 +16,6 @@ import { SurveyDetailsPage } from './pages/SurveyDetailsPage';
 import { SurveyFillerPage, SurveyFillerHandle } from './pages/SurveyFillerPage';
 import { PartnerCompaniesPage } from './pages/PartnerCompaniesPage';
 import { DocumentRegisterPage } from './pages/DocumentRegisterPage';
-import { PartnerDataCompletenessPage } from './pages/PartnerDataCompletenessPage';
 import { SurveyFormsPage } from './pages/SurveyFormsPage';
 import { PresentPage } from './pages/PresentPage';
 import { ArchivePage } from './pages/ArchivePage';
@@ -210,7 +209,7 @@ const DEFAULT_ACCOUNTS: AccountProfile[] = [
   }
 ];
 
-type PageKey = 'dashboard' | 'partner-companies' | 'partner-data-completeness' | 'document-register' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'import-evaluations' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings';
+type PageKey = 'dashboard' | 'partner-companies' | 'document-register' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'import-evaluations' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings';
 
 // Admin sidebar: grouped by workflow stage (raw data -> insight -> output)
 // rather than flat/alphabetical, per the dashboard IA redesign.
@@ -227,7 +226,6 @@ const adminNavItems: NavItem<PageKey>[] = [
     children: [
       { key: 'partner-companies', label: 'Partner Companies' },
       { key: 'document-register', label: 'Document Register' },
-      { key: 'partner-data-completeness', label: 'Data Completeness' },
       { key: 'partners-feedback-hub', label: 'Feedback Hub' },
     ],
   },
@@ -348,7 +346,7 @@ export default function App() {
       return {
         pages: [
           'dashboard', 'survey-forms', 'explorer', 'analytics', 'reports', 'present',
-          'partner-companies', 'partner-data-completeness', 'document-register', 'renew-documents', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'simulator', 'import-evaluations'
+          'partner-companies', 'document-register', 'renew-documents', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'simulator', 'import-evaluations'
         ] as PageModuleKey[],
         surveyTypes: ['Courier', 'Supplier', 'Subcontractor'] as SurveyType[]
       };
@@ -450,8 +448,8 @@ export default function App() {
   };
   const [editingSurveyId, setEditingSurveyId] = useState<string | null>(null);
 
-  // Deep-link from the Data Completeness reminder list into Partner
-  // Companies' detail/edit panel for one specific company.
+  // Deep-link into Partner Companies' detail/edit panel for one specific
+  // company (e.g. from a notification click-through).
   const [focusCompanyId, setFocusCompanyId] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [darkMode, setDarkMode] = useState(false);
@@ -628,7 +626,6 @@ export default function App() {
     }
     if (activePage === 'partner-companies') return 'Administrative Partner Registry';
     if (activePage === 'document-register') return 'Document Register';
-    if (activePage === 'partner-data-completeness') return 'Data Completeness';
     if (activePage === 'account-management') return 'Account Management';
     if (activePage === 'create-form') return editingSurveyId ? 'Edit Survey Form' : 'Create Survey Form';
     if (activePage === 'view-form') {
@@ -732,15 +729,6 @@ export default function App() {
         simClock={simClock}
         canRenewDocuments={canRenewDocuments}
         onUpdateCompany={updatePartnerCompany}
-      />
-    ),
-    'partner-data-completeness': (
-      <PartnerDataCompletenessPage
-        partnerCompanies={partnerCompanies}
-        onEditCompany={(id) => {
-          setFocusCompanyId(id);
-          setActivePage('partner-companies');
-        }}
       />
     ),
     'partners-feedback-hub': (
