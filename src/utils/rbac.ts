@@ -14,7 +14,11 @@ export type PageModuleKey =
   | 'archive'
   | 'simulator'
   | 'import-evaluations'
-  | 'partner-data-completeness';
+  | 'partner-data-completeness'
+  | 'document-register'
+  // Action permission (not a nav page): allowed to update compliance
+  // document expiry/renewal in Partner Companies and the Document Register.
+  | 'renew-documents';
 
 export interface UserPermissions {
   pages: PageModuleKey[];
@@ -36,10 +40,10 @@ export function getDefaultPermissions(designation: string, department: string): 
   let pages: PageModuleKey[] = [];
 
   if (rank === 'Rank & File') {
-    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'partner-data-completeness', 'notifications'];
+    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'partner-data-completeness', 'document-register', 'notifications'];
   } else if (rank === 'Supervisory') {
     // Supervisor gets Dashboard, Analytics, Survey Forms, Partner Companies, Partners Feedback Hub, and optionally Reports for basic exports
-    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'partner-data-completeness', 'partners-feedback-hub', 'reports', 'notifications'];
+    pages = ['dashboard', 'analytics', 'survey-forms', 'partner-companies', 'partner-data-completeness', 'document-register', 'partners-feedback-hub', 'reports', 'notifications'];
   } else if (rank === 'Managerial') {
     pages = [
       'dashboard',
@@ -47,6 +51,7 @@ export function getDefaultPermissions(designation: string, department: string): 
       'survey-forms',
       'partner-companies',
       'partner-data-completeness',
+      'document-register',
       'partners-feedback-hub',
       'explorer',
       'reports',
@@ -61,6 +66,7 @@ export function getDefaultPermissions(designation: string, department: string): 
       'survey-forms',
       'partner-companies',
       'partner-data-completeness',
+      'document-register',
       'partners-feedback-hub',
       'explorer',
       'reports',
@@ -82,6 +88,8 @@ export function getDefaultPermissions(designation: string, department: string): 
       'partner-companies',
       'partner-data-completeness',
       'partners-feedback-hub',
+      'document-register',
+      'renew-documents',
       'account-management',
       'notifications',
       'archive',
@@ -113,6 +121,7 @@ export function getDepartmentDefaultPermissions(department: string): UserPermiss
       'present',
       'partner-companies',
       'partner-data-completeness',
+      'document-register',
       'partners-feedback-hub',
       'notifications',
       'archive'
@@ -125,6 +134,7 @@ export function getDepartmentDefaultPermissions(department: string): UserPermiss
       'survey-forms',
       'partner-companies',
       'partner-data-completeness',
+      'document-register',
       'partners-feedback-hub',
       'explorer',
       'reports',

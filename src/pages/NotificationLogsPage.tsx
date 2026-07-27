@@ -254,17 +254,17 @@ export function NotificationLogsPage({ notifications, unreadCount }: Notificatio
                         </div>
                       </td>
                       <td className={`px-4 py-3 font-mono text-xs ${isChat ? 'text-indigo-600 dark:text-indigo-400' : 'text-[#0063a9] dark:text-blue-400'}`}>
-                        {item.designation === 'Contract Alert' ? '⚠️ SYSTEM ALERT' : item.respondentEmail}
+                        {item.designation === 'Document Alert' ? '⚠️ SYSTEM ALERT' : item.respondentEmail}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300 font-semibold text-xs">
-                        {item.designation === 'Contract Alert' ? (item.respondentType === 'Contract Expired' ? 'Expired Agreement' : 'Expiring Soon') : item.department}
+                        {item.designation === 'Document Alert' ? (item.respondentType === 'Document Expired' ? 'Expired Document(s)' : 'Expiring Soon') : item.department}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300 text-xs">
                         <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-extrabold ${
                           isChat
                             ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400'
-                            : (item.designation === 'Contract Alert'
-                              ? (item.respondentType === 'Contract Expired'
+                            : (item.designation === 'Document Alert'
+                              ? (item.respondentType === 'Document Expired'
                                 ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
                                 : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400')
                               : 'bg-slate-150 dark:bg-slate-800 text-slate-700 dark:text-slate-200')

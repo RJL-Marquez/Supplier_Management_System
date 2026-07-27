@@ -89,19 +89,21 @@ export function NotificationBell({ notifications, unreadCount, onOpen, onViewAll
                     ) : (
                       <span
                         className="mt-1.5 h-2 w-2 shrink-0 rounded-full animate-pulse"
-                        style={{ backgroundColor: item.respondentType.includes('Contract') ? (item.respondentType.includes('Expired') ? '#ef4444' : '#f59e0b') : surveyTypeColors[item.surveyType] }}
+                        style={{ backgroundColor: item.respondentType.includes('Document') ? (item.respondentType.includes('Expired') ? '#ef4444' : '#f59e0b') : surveyTypeColors[item.surveyType] }}
                       />
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">{item.company}</p>
                       <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                        {isChat ? 'Support Chat' : item.surveyType} &middot; <span className={item.respondentType.includes('Contract') ? 'text-amber-600 dark:text-amber-400 font-bold' : ''}>{item.respondentType}</span>
+                        {isChat ? 'Support Chat' : item.surveyType} &middot; <span className={item.respondentType.includes('Document') ? 'text-amber-600 dark:text-amber-400 font-bold' : ''}>{item.respondentType}</span>
                       </p>
                       <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500 font-semibold italic truncate">
                         {isChat
                           ? `"${(item as any).comment || 'New message received'}"`
-                          : (item.respondentType.includes('Contract')
-                            ? (item.respondentType.includes('Expired') ? '⚠️ Contract has EXPIRED. Please renew.' : '⏳ Contract is expiring soon.')
+                          : (item.respondentType.includes('Document')
+                            ? (item.respondentType.includes('Expired')
+                              ? `⚠️ ${item.questionCount} document${item.questionCount === 1 ? '' : 's'} EXPIRED. Please renew.`
+                              : `⏳ ${item.questionCount} document${item.questionCount === 1 ? '' : 's'} expiring soon.`)
                             : (item.questionCount > 1
                               ? `Answered ${item.questionCount} questions`
                               : 'Answered 1 question'))}

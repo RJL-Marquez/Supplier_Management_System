@@ -37,7 +37,8 @@ import {
 import { BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SurveyResponse, SurveyType } from '../types/survey';
 import { getMaxRatingForResponses } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
-import { computeDocumentStatus } from '../utils/compliance';
+import { computeDocumentStatus, computeCompanyDocumentSummary, CompanyDocumentSummary } from '../utils/compliance';
+import { getRequiredDocumentKeys, isExpiryDocument } from '../utils/documentRequirements';
 import { ImportResult } from '../utils/masterListImport';
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
 
@@ -73,16 +74,14 @@ interface PartnerCompaniesPageProps {
     name: string,
     type: SurveyType,
     affiliation?: string,
-    registeredAt?: string,
-    renewedAt?: string,
-    expirationDate?: string,
-    reminderFirstThresholdMonths?: number,
-    reminderFrequency?: 'daily' | 'weekly' | 'none'
+    registeredAt?: string
   ) => void;
   onRemoveCompany: (id: string) => void;
   onUpdateCompany: (company: PartnerCompany) => void;
   onImportMasterList?: (file: File) => Promise<ImportResult>;
   isAdmin?: boolean;
+  /** Distinct from isAdmin - can be granted to a role without full Admin access (Account Management -> "Renew Compliance Documents"). */
+  canRenewDocuments?: boolean;
   simClock?: SimClock | null;
   /** Deep-link support: opens this company's detail/edit panel on arrival (e.g. from the Data Completeness reminder page). */
   initialFocusCompanyId?: string | null;
@@ -97,10 +96,12 @@ export function PartnerCompaniesPage({
   onUpdateCompany,
   onImportMasterList,
   isAdmin,
+  canRenewDocuments,
   simClock = null,
   initialFocusCompanyId,
   onFocusConsumed,
 }: PartnerCompaniesPageProps) {
+  const canRenew = isAdmin || canRenewDocuments;
   // Tabs: Active, Expired, Archived
   const [statusTab, setStatusTab] = useState<'Active' | 'Expired' | 'Archived'>('Active');
   const [currentPage, setCurrentPage] = useState(1);
@@ -116,17 +117,14 @@ export function PartnerCompaniesPage({
   // Detail Modal State
   const [selectedCompany, setSelectedCompany] = useState<PartnerCompany | null>(null);
   
-  // Custom Renewal Date Picker State - defaults to the effective "today"
-  // (simulated date when a simulation is active, otherwise real today).
-  const [isRenewalPickerOpen, setIsRenewalPickerOpen] = useState(false);
+  // Document Renewal Date Picker State - which branch/document is being
+  // renewed (null = closed), defaulting to the effective "today" (simulated
+  // date when a simulation is active, otherwise real today).
+  const [renewalTarget, setRenewalTarget] = useState<{ branchId: string; docName: string } | null>(null);
   const [renewalYear, setRenewalYear] = useState(() => getEffectiveNow(simClock).getFullYear());
   const [renewalMonth, setRenewalMonth] = useState(() => getEffectiveNow(simClock).getMonth());
   const [renewalDay, setRenewalDay] = useState(() => getEffectiveNow(simClock).getDate());
   const [renewalStep, setRenewalStep] = useState<1 | 2 | 3 | 4>(1);
-
-  // Expiry Reminder form states (inside detail modal)
-  const [thresholdMonths, setThresholdMonths] = useState<number>(1);
-  const [reminderFreq, setReminderFreq] = useState<'daily' | 'weekly' | 'none'>('weekly');
 
   const maxRating = useMemo(() => {
     return getMaxRatingForResponses(responses);
@@ -137,14 +135,7 @@ export function PartnerCompaniesPage({
   const [newType, setNewType] = useState<SurveyType>('Courier');
   const [newAffiliation, setNewAffiliation] = useState('');
   const [newRegDate, setNewRegDate] = useState(() => getEffectiveTodayStr(simClock));
-  const [newExpDate, setNewExpDate] = useState(() => {
-    const d = getEffectiveNow(simClock);
-    d.setFullYear(d.getFullYear() + 1);
-    return d.toISOString().slice(0, 10);
-  });
-  const [newThreshold, setNewThreshold] = useState<number>(1);
-  const [newFreq, setNewFreq] = useState<'daily' | 'weekly' | 'none'>('weekly');
-  
+
   // Feedback Messages
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -160,11 +151,19 @@ export function PartnerCompaniesPage({
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState('');
 
-  type SortKey = 'name' | 'type' | 'createdAt' | 'expirationDate';
+  type SortKey = 'name' | 'type' | 'createdAt' | 'docStatus';
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
 
   const adminPasscode = 'admin'; // Main passcode requested, mgenesis2026 as backup
   const currentDateStr = getEffectiveTodayStr(simClock);
+  const effectiveNow = getEffectiveNow(simClock);
+
+  // Always a valid summary (falls back to an empty company shape) so the
+  // detail modal JSX never needs a null check on selectedCompany's status.
+  const selectedCompanyDocSummary = useMemo(
+    () => computeCompanyDocumentSummary(selectedCompany ?? { type: 'Uncategorized', branches: [] }, effectiveNow),
+    [selectedCompany, effectiveNow]
+  );
 
   const monthsList = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -229,7 +228,9 @@ export function PartnerCompaniesPage({
     };
   };
 
-  // Partition companies into Active, Expired, Archived based on dates and flag
+  // Partition companies into Active, Expired, Archived based on their rolled-up
+  // compliance document status (any required document Expired -> Expired),
+  // not a single contract date - see computeCompanyDocumentSummary.
   const classifiedCompanies = useMemo(() => {
     const active: PartnerCompany[] = [];
     const expired: PartnerCompany[] = [];
@@ -238,7 +239,7 @@ export function PartnerCompaniesPage({
     partnerCompanies.forEach((c) => {
       if (c.isArchived) {
         archived.push(c);
-      } else if (c.expirationDate && currentDateStr >= c.expirationDate) {
+      } else if (computeCompanyDocumentSummary(c, effectiveNow).status === 'Expired') {
         expired.push(c);
       } else {
         active.push(c);
@@ -246,7 +247,7 @@ export function PartnerCompaniesPage({
     });
 
     return { active, expired, archived };
-  }, [partnerCompanies, currentDateStr]);
+  }, [partnerCompanies, effectiveNow]);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,14 +268,10 @@ export function PartnerCompaniesPage({
     }
 
     onAddCompany(
-      newName.trim(), 
-      newType, 
+      newName.trim(),
+      newType,
       newAffiliation || undefined,
-      newRegDate,
-      newRegDate, // initially renewed is same as registered
-      newExpDate,
-      newThreshold,
-      newFreq
+      newRegDate
     );
     
     setSuccessMessage(`"${newName.trim()}" successfully added as a Partner ${newType}.`);
@@ -383,9 +380,15 @@ export function PartnerCompaniesPage({
     }
 
     if (sortConfig) {
+      // docStatus has no direct field on PartnerCompany - rank by rolled-up
+      // compliance severity (Expired worst) instead of a plain value compare.
+      const docSeverity = (c: PartnerCompany) => {
+        const s = computeCompanyDocumentSummary(c, effectiveNow).status;
+        return s === 'Expired' ? 2 : s === 'Expiring Soon' ? 1 : 0;
+      };
       baseList = [...baseList].sort((a, b) => {
-        const valA = a[sortConfig.key] || '';
-        const valB = b[sortConfig.key] || '';
+        const valA = sortConfig.key === 'docStatus' ? docSeverity(a) : (a[sortConfig.key] || '');
+        const valB = sortConfig.key === 'docStatus' ? docSeverity(b) : (b[sortConfig.key] || '');
         if (valA < valB) {
           return sortConfig.direction === 'asc' ? -1 : 1;
         }
@@ -396,7 +399,7 @@ export function PartnerCompaniesPage({
       });
     }
     return baseList;
-  }, [classifiedCompanies, statusTab, activeTab, originFilter, searchQuery, sortConfig]);
+  }, [classifiedCompanies, statusTab, activeTab, originFilter, searchQuery, sortConfig, effectiveNow]);
 
   // Jump back to page 1 whenever a filter/search/sort narrows or reshuffles
   // the result set - otherwise the user can land on a now-empty page.
@@ -416,8 +419,6 @@ export function PartnerCompaniesPage({
   // Click handler to open company details modal
   const handleCompanyClick = (company: PartnerCompany) => {
     setSelectedCompany(company);
-    setThresholdMonths(company.reminderFirstThresholdMonths ?? 1);
-    setReminderFreq(company.reminderFrequency ?? 'weekly');
   };
 
   // Edits one field on one branch of the currently-open company (used by the
@@ -443,30 +444,16 @@ export function PartnerCompaniesPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialFocusCompanyId]);
 
-  // Update company notification thresholds
-  const handleSaveReminderSettings = () => {
-    if (!selectedCompany) return;
-    const updated: PartnerCompany = {
-      ...selectedCompany,
-      reminderFirstThresholdMonths: thresholdMonths,
-      reminderFrequency: reminderFreq
-    };
-    onUpdateCompany(updated);
-    setSelectedCompany(updated);
-    setSuccessMessage(`Reminder configurations updated for ${selectedCompany.name}.`);
-    setTimeout(() => setSuccessMessage(''), 3000);
-  };
-
-  // Open custom date picker modal for contract renewal
-  const openRenewalPicker = () => {
-    const defaultDate = selectedCompany?.expirationDate 
-      ? new Date(selectedCompany.expirationDate) 
-      : new Date('2027-07-19');
+  // Open the date picker for renewing one branch's expiry-bearing document
+  // (e.g. Business Permit, AFS). currentExpiry pre-fills the picker so the
+  // admin is nudging an existing date forward rather than starting blank.
+  const openDocumentRenewalPicker = (branchId: string, docName: string, currentExpiry?: string) => {
+    const defaultDate = currentExpiry ? new Date(currentExpiry) : effectiveNow;
     setRenewalYear(defaultDate.getFullYear());
     setRenewalMonth(defaultDate.getMonth());
     setRenewalDay(defaultDate.getDate());
     setRenewalStep(1);
-    setIsRenewalPickerOpen(true);
+    setRenewalTarget({ branchId, docName });
   };
 
   // Get total days in a month dynamically for correct date selection
@@ -474,24 +461,39 @@ export function PartnerCompaniesPage({
     return new Date(renewalYear, renewalMonth + 1, 0).getDate();
   }, [renewalYear, renewalMonth]);
 
-  const handleRenewContract = () => {
+  // Toggle a flag-only document (e.g. SIF, Owner's ID) that has no expiry
+  // date of its own - just a provided/not-provided accreditation checklist item.
+  const toggleFlagDocument = (branchId: string, docName: string, provided: boolean) => {
     if (!selectedCompany) return;
-    
-    // Construct new dates
+    const updatedBranches = (selectedCompany.branches ?? []).map((b) =>
+      b.id === branchId
+        ? { ...b, documents: { ...b.documents, [docName]: { provided, status: provided ? 'Current' as DocumentStatus : 'Missing' as DocumentStatus } } }
+        : b
+    );
+    const updated: PartnerCompany = { ...selectedCompany, branches: updatedBranches };
+    onUpdateCompany(updated);
+    setSelectedCompany(updated);
+  };
+
+  const handleConfirmDocumentRenewal = () => {
+    if (!selectedCompany || !renewalTarget) return;
+
     const pad = (n: number) => String(n).padStart(2, '0');
     const newExpiryStr = `${renewalYear}-${pad(renewalMonth + 1)}-${pad(renewalDay)}`;
-    
-    const updated: PartnerCompany = {
-      ...selectedCompany,
-      renewedAt: currentDateStr,
-      expirationDate: newExpiryStr,
-      isArchived: false, // Ensure unarchived upon renewal
-    };
+    const { status, daysLeft } = computeDocumentStatus({ expiryDate: newExpiryStr }, effectiveNow);
+    const { branchId, docName } = renewalTarget;
+
+    const updatedBranches = (selectedCompany.branches ?? []).map((b) =>
+      b.id === branchId
+        ? { ...b, documents: { ...b.documents, [docName]: { provided: true, expiryDate: newExpiryStr, status, daysLeft } } }
+        : b
+    );
+    const updated: PartnerCompany = { ...selectedCompany, branches: updatedBranches };
 
     onUpdateCompany(updated);
     setSelectedCompany(updated);
-    setIsRenewalPickerOpen(false);
-    setSuccessMessage(`Contract for "${selectedCompany.name}" has been renewed until ${formatDate(newExpiryStr)}!`);
+    setRenewalTarget(null);
+    setSuccessMessage(`"${docName}" renewed for "${selectedCompany.name}" until ${formatDate(newExpiryStr)}.`);
     setTimeout(() => setSuccessMessage(''), 5000);
   };
 
@@ -506,7 +508,7 @@ export function PartnerCompaniesPage({
           <div className="flex-1">
             <h3 className="text-lg font-bold text-[#0063a9] dark:text-blue-300">Administrative Partner Registry</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-              Define, renew, and monitor the master roster of active, expired, and archived contractors, suppliers, and subcontractors. Expired companies are automatically excluded from active survey evaluations. Click any company to configure reminders or renew its contract.
+              Define and monitor the master roster of active, expired-document, and archived contractors, suppliers, and subcontractors. A company with any expired required compliance document (Business Permit, AFS, SIF, etc.) is automatically excluded from active survey evaluations. Click any company to review or renew its documents.
             </p>
           </div>
         </div>
@@ -530,8 +532,8 @@ export function PartnerCompaniesPage({
       {/* Primary Status Tabs Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {[
-          { key: 'Active', label: 'Active Contracts', count: classifiedCompanies.active.length, color: 'text-emerald-600 border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10' },
-          { key: 'Expired', label: 'Expired Contracts', count: classifiedCompanies.expired.length, color: 'text-rose-600 border-rose-200 bg-rose-50/30 dark:bg-rose-950/10' },
+          { key: 'Active', label: 'Active Partners', count: classifiedCompanies.active.length, color: 'text-emerald-600 border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10' },
+          { key: 'Expired', label: 'Expired Documents', count: classifiedCompanies.expired.length, color: 'text-rose-600 border-rose-200 bg-rose-50/30 dark:bg-rose-950/10' },
           { key: 'Archived', label: 'Archived Partners', count: classifiedCompanies.archived.length, color: 'text-slate-500 border-slate-200 bg-slate-50/30 dark:bg-slate-900/10' }
         ].map((tab) => (
           <button
@@ -547,7 +549,7 @@ export function PartnerCompaniesPage({
               <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{tab.label}</p>
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-1">
                 {tab.key === 'Active' && 'Active evaluation partners'}
-                {tab.key === 'Expired' && 'Requires contract renewal'}
+                {tab.key === 'Expired' && 'Has an expired required document'}
                 {tab.key === 'Archived' && 'Permanently shelved partners'}
               </p>
             </div>
@@ -683,8 +685,8 @@ export function PartnerCompaniesPage({
           <Building size={48} className="mx-auto mb-3 opacity-30 text-slate-300" />
           <p className="text-sm font-semibold">No companies found under this tab selection.</p>
           <p className="text-xs mt-1 text-slate-400">
-            {statusTab === 'Active' && 'There are no active contracts.'}
-            {statusTab === 'Expired' && 'No contracts are currently expired.'}
+            {statusTab === 'Active' && 'There are no active partners.'}
+            {statusTab === 'Expired' && 'No companies currently have an expired document.'}
             {statusTab === 'Archived' && 'The archive is currently empty.'}
           </p>
         </div>
@@ -717,13 +719,13 @@ export function PartnerCompaniesPage({
                     </div>
                   </th>
                   <th className="px-5 py-3">Registration Date</th>
-                  <th 
+                  <th
                     className="px-5 py-3 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
-                    onClick={() => handleSort('expirationDate')}
+                    onClick={() => handleSort('docStatus')}
                   >
                     <div className="flex items-center gap-1">
-                      Contract Expiry
-                      {sortConfig?.key === 'expirationDate' && (
+                      Document Status
+                      {sortConfig?.key === 'docStatus' && (
                         sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
                       )}
                     </div>
@@ -733,9 +735,7 @@ export function PartnerCompaniesPage({
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {paginatedCompanies.map((c) => {
-                  const isExpiringSoon = c.expirationDate && !c.isArchived && 
-                    (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() <= 30 * 24 * 60 * 60 * 1000) &&
-                    (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() > 0);
+                  const docSummary = computeCompanyDocumentSummary(c, effectiveNow);
 
                   return (
                     <tr 
@@ -764,32 +764,32 @@ export function PartnerCompaniesPage({
                       </td>
                       <td className="px-5 py-3 text-xs font-medium">
                         {c.isArchived ? (
-                          <span className="text-slate-400 italic">Contract Archived</span>
-                        ) : statusTab === 'Expired' ? (
+                          <span className="text-slate-400 italic">Archived</span>
+                        ) : docSummary.status === 'Expired' ? (
                           <span className="text-rose-600 font-bold flex items-center gap-1">
                             <AlertCircle size={12} />
-                            Expired {formatDate(c.expirationDate)}
+                            {docSummary.expiredCount} document{docSummary.expiredCount === 1 ? '' : 's'} expired
                           </span>
-                        ) : isExpiringSoon ? (
+                        ) : docSummary.status === 'Expiring Soon' ? (
                           <span className="text-amber-600 font-extrabold flex items-center gap-1 animate-pulse">
                             <Clock size={12} />
-                            Soon {formatDate(c.expirationDate)}
+                            {docSummary.expiringSoonCount} expiring soon
                           </span>
                         ) : (
-                          <span className="text-slate-600 dark:text-slate-300 font-semibold">
-                            {formatDate(c.expirationDate)}
+                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                            Current
                           </span>
                         )}
                       </td>
                       <td className="px-5 py-3 text-right">
                         <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          {statusTab === 'Expired' && isAdmin && (
+                          {statusTab === 'Expired' && canRenew && (
                             <button
-                              onClick={() => { handleCompanyClick(c); openRenewalPicker(); }}
+                              onClick={() => handleCompanyClick(c)}
                               className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1 px-2.5 rounded flex items-center gap-1 cursor-pointer transition"
                             >
                               <RefreshCw size={12} />
-                              <span>Renew</span>
+                              <span>Review Documents</span>
                             </button>
                           )}
                           {isAdmin && (
@@ -815,9 +815,8 @@ export function PartnerCompaniesPage({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {paginatedCompanies.map((c) => {
             const score = getCompanyScoreDetails(c.name, c.type);
-            const isExpiringSoon = c.expirationDate && !c.isArchived && 
-              (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() <= 30 * 24 * 60 * 60 * 1000) &&
-              (new Date(c.expirationDate).getTime() - new Date(currentDateStr).getTime() > 0);
+            const docSummary = computeCompanyDocumentSummary(c, effectiveNow);
+            const isExpiringSoon = !c.isArchived && docSummary.status === 'Expiring Soon';
 
             return (
               <div 
@@ -903,16 +902,24 @@ export function PartnerCompaniesPage({
                   </div>
                 </div>
 
-                {/* Lifespan Dates Box */}
-                <div className="mt-5 p-3 bg-slate-50/60 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800/80 grid grid-cols-2 gap-2 text-xs">
+                {/* Document Compliance Box */}
+                <div className="mt-5 p-3 bg-slate-50/60 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800/80 grid grid-cols-3 gap-2 text-xs">
                   <div>
-                    <span className="text-slate-400 font-medium block">Last Contract Renewal</span>
-                    <strong className="text-slate-700 dark:text-slate-300 font-semibold">{formatDate(c.renewedAt || c.registeredAt || c.createdAt)}</strong>
+                    <span className="text-slate-400 font-medium block">Expired</span>
+                    <strong className={`font-bold block ${docSummary.expiredCount > 0 ? 'text-rose-600' : 'text-slate-700 dark:text-slate-300'}`}>
+                      {docSummary.expiredCount}
+                    </strong>
                   </div>
                   <div>
-                    <span className="text-slate-400 font-medium block">Contract Expiration</span>
-                    <strong className={`font-bold block ${statusTab === 'Expired' ? 'text-rose-600' : isExpiringSoon ? 'text-amber-600' : 'text-slate-700 dark:text-slate-300'}`}>
-                      {formatDate(c.expirationDate)}
+                    <span className="text-slate-400 font-medium block">Expiring Soon</span>
+                    <strong className={`font-bold block ${docSummary.expiringSoonCount > 0 ? 'text-amber-600' : 'text-slate-700 dark:text-slate-300'}`}>
+                      {docSummary.expiringSoonCount}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-medium block">Missing</span>
+                    <strong className={`font-bold block ${docSummary.missingCount > 0 ? 'text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>
+                      {docSummary.missingCount}
                     </strong>
                   </div>
                 </div>
@@ -1027,11 +1034,11 @@ export function PartnerCompaniesPage({
             {/* Core Details Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
               
-              {/* Left Column: Contract Lifespan and Renewal */}
+              {/* Left Column: Contact + Registration */}
               <div className="space-y-4">
                 <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                   <Calendar size={14} />
-                  <span>Contract Lifespan Timeline</span>
+                  <span>Contact &amp; Registration</span>
                 </h4>
 
                 <div className="space-y-3 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
@@ -1056,107 +1063,59 @@ export function PartnerCompaniesPage({
                     <span className="text-slate-400 font-medium">Registration Date:</span>
                     <strong className="text-slate-700 dark:text-slate-200">{formatDate(selectedCompany.registeredAt || selectedCompany.createdAt)}</strong>
                   </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 font-medium">Last Renewal Date:</span>
-                    <strong className="text-slate-700 dark:text-slate-200">{formatDate(selectedCompany.renewedAt || selectedCompany.registeredAt || selectedCompany.createdAt)}</strong>
-                  </div>
-                  <div className="flex justify-between items-center text-xs pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
-                    <span className="text-slate-400 font-medium">Expiration Date:</span>
-                    <strong className={`font-bold text-sm ${
-                      selectedCompany.isArchived 
-                        ? 'text-slate-400' 
-                        : (new Date(selectedCompany.expirationDate || '').getTime() <= new Date(currentDateStr).getTime() 
-                          ? 'text-rose-600' 
-                          : 'text-[#0063a9] dark:text-blue-400')
-                    }`}>
-                      {formatDate(selectedCompany.expirationDate)}
-                    </strong>
-                  </div>
                 </div>
 
-                {/* Contract Status Banner */}
+                {/* Document Compliance Status Banner */}
                 <div>
                   {selectedCompany.isArchived ? (
                     <div className="bg-slate-100 border border-slate-200 text-slate-600 p-3 rounded-lg text-xs font-medium">
                       This partner is archived. Archived partners are suspended and excluded from surveys/modifications.
                     </div>
-                  ) : new Date(selectedCompany.expirationDate || '').getTime() <= new Date(currentDateStr).getTime() ? (
+                  ) : selectedCompanyDocSummary.status === 'Expired' ? (
                     <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-lg text-xs font-medium dark:bg-rose-950/20 dark:border-rose-900 dark:text-rose-400">
-                      ⚠️ <strong>Contract is EXPIRED.</strong> This company has been automatically disabled from evaluation forms. Please perform a Contract Renewal to reactivate.
+                      ⚠️ <strong>{selectedCompanyDocSummary.expiredCount} required document{selectedCompanyDocSummary.expiredCount === 1 ? ' is' : 's are'} EXPIRED.</strong> This company has been automatically disabled from evaluation forms. Renew the expired document(s) below to reactivate.
+                    </div>
+                  ) : selectedCompanyDocSummary.status === 'Expiring Soon' ? (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-700 p-3 rounded-lg text-xs font-medium dark:bg-amber-950/20 dark:border-amber-900 dark:text-amber-400">
+                      ⏳ <strong>{selectedCompanyDocSummary.expiringSoonCount} document{selectedCompanyDocSummary.expiringSoonCount === 1 ? '' : 's'} expiring within 30 days.</strong> Still eligible for audits - renew below before they lapse.
                     </div>
                   ) : (
                     <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 p-3 rounded-lg text-xs font-medium dark:bg-emerald-950/10 dark:text-emerald-400">
-                      ✔ <strong>Contract is ACTIVE.</strong> Eligible for audits. It expires in {
-                        Math.ceil((new Date(selectedCompany.expirationDate || '').getTime() - new Date(currentDateStr).getTime()) / (1000 * 60 * 60 * 24))
-                      } days.
+                      ✔ <strong>All required documents are current.</strong> Eligible for audits.
                     </div>
                   )}
                 </div>
-
-                {/* Renew Button (Admin Only) */}
-                {isAdmin && (
-                  <button
-                    onClick={openRenewalPicker}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-bold rounded-lg transition duration-150 cursor-pointer"
-                  >
-                    <RefreshCw size={14} className="animate-spin-slow" />
-                    <span>Renew Contract Agreement</span>
-                  </button>
-                )}
               </div>
 
-              {/* Right Column: Expiration Reminders (Admin-only settings) */}
+              {/* Right Column: Document Compliance Summary */}
               <div className="space-y-4">
                 <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <Settings size={14} />
-                  <span>Admin Expiry Reminder Settings</span>
+                  <ClipboardList size={14} />
+                  <span>Document Compliance Summary</span>
                 </h4>
 
-                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-4">
-                  {/* Threshold setting */}
-                  <div>
-                    <label htmlFor="first-reminder-sel" className="field-label text-[10px] font-bold text-slate-400 uppercase tracking-wider">First Alert Threshold</label>
-                    <select
-                      id="first-reminder-sel"
-                      className="field text-xs py-2 mt-1"
-                      value={thresholdMonths}
-                      onChange={(e) => setThresholdMonths(Number(e.target.value))}
-                      disabled={!isAdmin}
-                    >
-                      <option value={4}>4 Months Before Expiry</option>
-                      <option value={2}>2 Months Before Expiry</option>
-                      <option value={1}>1 Month Before Expiry</option>
-                    </select>
-                    <p className="text-[10px] text-slate-400 mt-1">Alert admin when contract validity drops under this window.</p>
+                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-3">
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="bg-white dark:bg-slate-950 rounded-lg border border-slate-100 dark:border-slate-800 p-2.5">
+                      <span className="text-slate-400 font-medium block">Required Documents</span>
+                      <strong className="text-slate-700 dark:text-slate-200 text-base">{selectedCompanyDocSummary.totalRequired}</strong>
+                    </div>
+                    <div className="bg-white dark:bg-slate-950 rounded-lg border border-slate-100 dark:border-slate-800 p-2.5">
+                      <span className="text-slate-400 font-medium block">Expired</span>
+                      <strong className={`text-base ${selectedCompanyDocSummary.expiredCount > 0 ? 'text-rose-600' : 'text-slate-700 dark:text-slate-200'}`}>{selectedCompanyDocSummary.expiredCount}</strong>
+                    </div>
+                    <div className="bg-white dark:bg-slate-950 rounded-lg border border-slate-100 dark:border-slate-800 p-2.5">
+                      <span className="text-slate-400 font-medium block">Expiring Soon</span>
+                      <strong className={`text-base ${selectedCompanyDocSummary.expiringSoonCount > 0 ? 'text-amber-600' : 'text-slate-700 dark:text-slate-200'}`}>{selectedCompanyDocSummary.expiringSoonCount}</strong>
+                    </div>
+                    <div className="bg-white dark:bg-slate-950 rounded-lg border border-slate-100 dark:border-slate-800 p-2.5">
+                      <span className="text-slate-400 font-medium block">Missing</span>
+                      <strong className="text-slate-700 dark:text-slate-200 text-base">{selectedCompanyDocSummary.missingCount}</strong>
+                    </div>
                   </div>
-
-                  {/* Frequency setting */}
-                  <div>
-                    <label htmlFor="reminder-freq-sel" className="field-label text-[10px] font-bold text-slate-400 uppercase tracking-wider">Alert Frequency Afterward</label>
-                    <select
-                      id="reminder-freq-sel"
-                      className="field text-xs py-2 mt-1"
-                      value={reminderFreq}
-                      onChange={(e) => setReminderFreq(e.target.value as any)}
-                      disabled={!isAdmin}
-                    >
-                      <option value="daily">Every Day</option>
-                      <option value="weekly">Once a Week</option>
-                      <option value="none">No recurrent alerts (Once only)</option>
-                    </select>
-                    <p className="text-[10px] text-slate-400 mt-1">The rate of subsequent administrative notifications.</p>
-                  </div>
-
-                  {/* Save Settings */}
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={handleSaveReminderSettings}
-                      className="bg-[#0063a9] hover:bg-[#00528c] text-white py-2 px-3 rounded text-xs font-bold w-full transition"
-                    >
-                      Save Reminder Configuration
-                    </button>
-                  )}
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    "Expiring Soon" uses the same 30-day window as the Master List. Renew individual documents from the Branches &amp; Compliance Documents section below{canRenew ? '' : ' (renewal requires the Document Renewal permission)'}.
+                  </p>
                 </div>
               </div>
             </div>
@@ -1263,26 +1222,57 @@ export function PartnerCompaniesPage({
                         {branch.dateAccredited && <p className="sm:col-span-2 text-[11px] text-slate-500 dark:text-slate-400">Accredited: {formatDate(branch.dateAccredited)}</p>}
                       </div>
 
-                      {Object.keys(branch.documents ?? {}).length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800">
-                          {Object.entries(branch.documents ?? {}).map(([docName, doc]) => {
-                            const { status } = computeDocumentStatus(doc as ComplianceDocument, getEffectiveNow(simClock));
-                            return (
-                              <span
-                                key={docName}
-                                title={(doc as ComplianceDocument).expiryDate ? `Expires ${formatDate((doc as ComplianceDocument).expiryDate)}` : docName}
-                                className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold border ${DOCUMENT_STATUS_STYLES[status]}`}
-                              >
-                                {docName}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-slate-400 italic mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800">
-                          No compliance documents on file for this branch.
-                        </p>
-                      )}
+                      {(() => {
+                        // Show every document required for this company's category, plus
+                        // any extra keys already on file (e.g. from a legacy import) - not
+                        // just the ones that happen to have data, so admins can also fill
+                        // in documents that are currently Missing.
+                        const requiredKeys = getRequiredDocumentKeys(selectedCompany.type, selectedCompany.supplierOrigin);
+                        const extraKeys = Object.keys(branch.documents ?? {}).filter((k) => !requiredKeys.includes(k));
+                        const allKeys = [...requiredKeys, ...extraKeys];
+                        if (allKeys.length === 0) {
+                          return (
+                            <p className="text-[11px] text-slate-400 italic mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800">
+                              No compliance documents apply to this category.
+                            </p>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800">
+                            {allKeys.map((docName) => {
+                              const doc = (branch.documents?.[docName] ?? {}) as ComplianceDocument;
+                              const { status } = computeDocumentStatus(doc, effectiveNow);
+                              const expiryBased = isExpiryDocument(docName);
+                              return (
+                                <button
+                                  key={docName}
+                                  type="button"
+                                  disabled={!canRenew}
+                                  onClick={() => {
+                                    if (!canRenew) return;
+                                    if (expiryBased) {
+                                      openDocumentRenewalPicker(branch.id, docName, doc.expiryDate);
+                                    } else {
+                                      toggleFlagDocument(branch.id, docName, !doc.provided);
+                                    }
+                                  }}
+                                  title={
+                                    doc.expiryDate
+                                      ? `Expires ${formatDate(doc.expiryDate)}${canRenew ? ' — click to renew' : ''}`
+                                      : canRenew
+                                      ? (expiryBased ? 'Click to set an expiry date' : `Click to mark ${doc.provided ? 'not provided' : 'provided'}`)
+                                      : docName
+                                  }
+                                  className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold border transition ${DOCUMENT_STATUS_STYLES[status]} ${canRenew ? 'cursor-pointer hover:ring-2 hover:ring-[#0063a9]/40' : 'cursor-default'}`}
+                                >
+                                  {canRenew && <RefreshCw size={9} />}
+                                  {docName}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
@@ -1324,13 +1314,13 @@ export function PartnerCompaniesPage({
         </div>
       )}
 
-      {/* RENEWAL DATE PICKER DIALOG (custom-made scrollable year, month blocks, accurate day blocks with wizard steps) */}
-      {isRenewalPickerOpen && selectedCompany && (
+      {/* DOCUMENT RENEWAL DATE PICKER DIALOG (custom-made scrollable year, month blocks, accurate day blocks with wizard steps) */}
+      {renewalTarget && selectedCompany && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs animate-fade-in">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-transparent dark:bg-slate-950 relative animate-in fade-in zoom-in-95 duration-150">
-            
+
             <button
-              onClick={() => setIsRenewalPickerOpen(false)}
+              onClick={() => setRenewalTarget(null)}
               className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
               title="Close Calendar"
               type="button"
@@ -1340,11 +1330,11 @@ export function PartnerCompaniesPage({
 
             <div className="flex items-center gap-2.5 text-emerald-600 mb-1">
               <Calendar size={22} />
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Contract Renewal Picker</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Document Renewal Picker</h3>
             </div>
-            
+
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
-              Renew contract for <strong className="text-slate-800 dark:text-slate-100">"{selectedCompany.name}"</strong>
+              Renew <strong className="text-slate-800 dark:text-slate-100">"{renewalTarget.docName}"</strong> for <strong className="text-slate-800 dark:text-slate-100">"{selectedCompany.name}"</strong>
             </p>
 
             {/* Step Progress Indicator */}
@@ -1391,7 +1381,7 @@ export function PartnerCompaniesPage({
               {/* Step 1: Select Year */}
               {renewalStep === 1 && (
                 <div className="space-y-3 animate-in fade-in slide-in-from-right-3 duration-150">
-                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Step 1: Choose Contract Expiration Year</span>
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Step 1: Choose New Expiry Year</span>
                   <div className="flex items-center justify-between gap-3 border border-slate-200 dark:border-slate-800 rounded-xl p-3 bg-slate-50 dark:bg-slate-900/50">
                     <button 
                       type="button" 
@@ -1409,7 +1399,7 @@ export function PartnerCompaniesPage({
                       Next &rarr;
                     </button>
                   </div>
-                  <p className="text-[10px] text-slate-400 text-center">Use the controls above to set the contract expiration year.</p>
+                  <p className="text-[10px] text-slate-400 text-center">Use the controls above to set the new expiry year.</p>
                 </div>
               )}
 
@@ -1467,18 +1457,18 @@ export function PartnerCompaniesPage({
               {/* Step 4: Confirm selected renewal term expiry */}
               {renewalStep === 4 && (
                 <div className="space-y-3 animate-in fade-in slide-in-from-right-3 duration-150 text-center">
-                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block text-left">Step 4: Confirm Contract Validity</span>
-                  
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block text-left">Step 4: Confirm New Expiry Date</span>
+
                   <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 rounded-xl space-y-1">
-                    <span className="text-emerald-800 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider block">Selected Expiration Target</span>
+                    <span className="text-emerald-800 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider block">New Expiry Date</span>
                     <p className="font-mono text-emerald-900 dark:text-emerald-300 text-base font-black">
                       {monthsList[renewalMonth]} {renewalDay}, {renewalYear}
                     </p>
                   </div>
 
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed text-left">
-                    ✔ Restores partner status to <strong>Active</strong>.<br />
-                    ✔ Grants eligibility for active survey evaluations.
+                    ✔ Marks "{renewalTarget.docName}" as provided/current with this expiry date.<br />
+                    ✔ If this was the company's last expired document, it becomes eligible for audits again.
                   </p>
                 </div>
               )}
@@ -1489,7 +1479,7 @@ export function PartnerCompaniesPage({
               {/* Back / Cancel Button */}
               {renewalStep === 1 ? (
                 <button
-                  onClick={() => setIsRenewalPickerOpen(false)}
+                  onClick={() => setRenewalTarget(null)}
                   className="secondary-button"
                   type="button"
                 >
@@ -1516,7 +1506,7 @@ export function PartnerCompaniesPage({
                 </button>
               ) : (
                 <button
-                  onClick={handleRenewContract}
+                  onClick={handleConfirmDocumentRenewal}
                   className="inline-flex items-center justify-center rounded-lg bg-emerald-600 hover:bg-emerald-700 px-5 py-2 text-sm font-bold text-white transition cursor-pointer shadow-xs"
                   type="button"
                 >
@@ -1654,61 +1644,20 @@ export function PartnerCompaniesPage({
               </div>
 
               {/* Date selection */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="modal-reg-date" className="field-label">Registration Date</label>
-                  <input
-                    id="modal-reg-date"
-                    type="date"
-                    className="field text-xs py-2"
-                    value={newRegDate}
-                    onChange={(e) => setNewRegDate(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="modal-exp-date" className="field-label">Contract Expiry Date</label>
-                  <input
-                    id="modal-exp-date"
-                    type="date"
-                    className="field text-xs py-2"
-                    value={newExpDate}
-                    onChange={(e) => setNewExpDate(e.target.value)}
-                  />
-                </div>
+              <div>
+                <label htmlFor="modal-reg-date" className="field-label">Registration Date</label>
+                <input
+                  id="modal-reg-date"
+                  type="date"
+                  className="field text-xs py-2"
+                  value={newRegDate}
+                  onChange={(e) => setNewRegDate(e.target.value)}
+                />
               </div>
 
-              {/* Reminders section */}
-              <div className="bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-3">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Initial Expiry Reminder Settings</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="reg-reminder-months" className="text-[10px] text-slate-500 font-semibold block">First Alert Window</label>
-                    <select
-                      id="reg-reminder-months"
-                      className="field text-xs py-1.5 mt-1"
-                      value={newThreshold}
-                      onChange={(e) => setNewThreshold(Number(e.target.value))}
-                    >
-                      <option value={4}>4 Months Before</option>
-                      <option value={2}>2 Months Before</option>
-                      <option value={1}>1 Month Before</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="reg-reminder-freq" className="text-[10px] text-slate-500 font-semibold block">Recurrence Frequency</label>
-                    <select
-                      id="reg-reminder-freq"
-                      className="field text-xs py-1.5 mt-1"
-                      value={newFreq}
-                      onChange={(e) => setNewFreq(e.target.value as any)}
-                    >
-                      <option value="daily">Every Day</option>
-                      <option value="weekly">Once a Week</option>
-                      <option value="none">Once Only</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                Compliance documents (Business Permit, AFS, SIF, etc.) aren't set here — add them from this company's detail panel after registering, or via a Master List upload.
+              </p>
 
               <div className="flex items-center justify-end gap-3 mt-6 border-t border-slate-100 pt-4 dark:border-slate-800">
                 <button

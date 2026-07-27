@@ -62,11 +62,11 @@ export interface PartnerCompany {
   email?: string;
   affiliation?: string;
   createdAt: string;
+  // When this partner record was registered in the system. Purely
+  // descriptive metadata - eligibility/compliance is driven entirely by
+  // per-document expiry (see computeCompanyDocumentSummary), not by a
+  // contract date.
   registeredAt?: string;
-  renewedAt?: string;
-  expirationDate?: string;
-  reminderFirstThresholdMonths?: number;
-  reminderFrequency?: 'daily' | 'weekly' | 'none';
   isArchived?: boolean;
   accreditationStatus?: AccreditationStatus;
   // 1..n; almost always 1. Absent/empty means "not yet migrated" — callers

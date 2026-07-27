@@ -15,6 +15,7 @@ import { CreateSurveyPage } from './pages/CreateSurveyPage';
 import { SurveyDetailsPage } from './pages/SurveyDetailsPage';
 import { SurveyFillerPage, SurveyFillerHandle } from './pages/SurveyFillerPage';
 import { PartnerCompaniesPage } from './pages/PartnerCompaniesPage';
+import { DocumentRegisterPage } from './pages/DocumentRegisterPage';
 import { PartnerDataCompletenessPage } from './pages/PartnerDataCompletenessPage';
 import { SurveyFormsPage } from './pages/SurveyFormsPage';
 import { PresentPage } from './pages/PresentPage';
@@ -209,7 +210,7 @@ const DEFAULT_ACCOUNTS: AccountProfile[] = [
   }
 ];
 
-type PageKey = 'dashboard' | 'partner-companies' | 'partner-data-completeness' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'import-evaluations' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings';
+type PageKey = 'dashboard' | 'partner-companies' | 'partner-data-completeness' | 'document-register' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'import-evaluations' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings';
 
 // Admin sidebar: grouped by workflow stage (raw data -> insight -> output)
 // rather than flat/alphabetical, per the dashboard IA redesign.
@@ -225,6 +226,7 @@ const adminNavItems: NavItem<PageKey>[] = [
     icon: Users,
     children: [
       { key: 'partner-companies', label: 'Partner Companies' },
+      { key: 'document-register', label: 'Document Register' },
       { key: 'partner-data-completeness', label: 'Data Completeness' },
       { key: 'partners-feedback-hub', label: 'Feedback Hub' },
     ],
@@ -345,8 +347,8 @@ export default function App() {
     if (profile.role === 'Admin' && !profile.permissions) {
       return {
         pages: [
-          'dashboard', 'survey-forms', 'explorer', 'analytics', 'reports', 'present', 
-          'partner-companies', 'partner-data-completeness', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'simulator', 'import-evaluations'
+          'dashboard', 'survey-forms', 'explorer', 'analytics', 'reports', 'present',
+          'partner-companies', 'partner-data-completeness', 'document-register', 'renew-documents', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'simulator', 'import-evaluations'
         ] as PageModuleKey[],
         surveyTypes: ['Courier', 'Supplier', 'Subcontractor'] as SurveyType[]
       };
@@ -364,6 +366,10 @@ export default function App() {
   }, [profile, departmentPermissions]);
 
   const isAdmin = profile?.role === 'Admin' || userPermissions.pages.includes('account-management');
+  // Assignable independently of full Admin - lets a role be granted document
+  // renewal rights (Partner Companies + Document Register) without also
+  // granting Account Management / full system access.
+  const canRenewDocuments = isAdmin || userPermissions.pages.includes('renew-documents');
 
   const {
     responses,
@@ -621,6 +627,7 @@ export default function App() {
       return 'Dashboard';
     }
     if (activePage === 'partner-companies') return 'Administrative Partner Registry';
+    if (activePage === 'document-register') return 'Document Register';
     if (activePage === 'partner-data-completeness') return 'Data Completeness';
     if (activePage === 'account-management') return 'Account Management';
     if (activePage === 'create-form') return editingSurveyId ? 'Edit Survey Form' : 'Create Survey Form';
@@ -714,8 +721,17 @@ export default function App() {
         onUpdateCompany={updatePartnerCompany}
         onImportMasterList={importMasterList}
         isAdmin={isAdmin}
+        canRenewDocuments={canRenewDocuments}
         initialFocusCompanyId={focusCompanyId}
         onFocusConsumed={() => setFocusCompanyId(null)}
+      />
+    ),
+    'document-register': (
+      <DocumentRegisterPage
+        partnerCompanies={partnerCompanies}
+        simClock={simClock}
+        canRenewDocuments={canRenewDocuments}
+        onUpdateCompany={updatePartnerCompany}
       />
     ),
     'partner-data-completeness': (

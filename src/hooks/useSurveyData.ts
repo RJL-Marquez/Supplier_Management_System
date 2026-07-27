@@ -15,6 +15,7 @@ import {
 } from '../utils/rawEvaluationImport';
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
 import { logAdminActivity } from '../utils/adminActivityLog';
+import { computeCompanyDocumentSummary } from '../utils/compliance';
 
 // Bumped from _v6: the baseline registry changed from a 41-company hand-typed
 // demo list to the full Master List snapshot (partnerCompaniesSeed.ts, ~1129
@@ -89,12 +90,6 @@ function normalizePartnerCompanyType(value: unknown): PartnerCompanyType {
 function normalizePartnerCompany(company: PartnerCompany): PartnerCompany {
   const defaultRegisteredAt = company.createdAt ? company.createdAt.split('T')[0] : '2025-01-15';
 
-  // A neutral, non-expiring placeholder for companies with no real contract
-  // date on file yet - the Master List doesn't carry a "contract expiration"
-  // concept, so this only ever gets overridden once an admin does a real
-  // Renew Contract action.
-  const defaultExpirationDate = '2027-04-15';
-
   const normalizedType = normalizePartnerCompanyType(company.type);
 
   // Every company gets at least one branch record so downstream UI (branch
@@ -108,10 +103,6 @@ function normalizePartnerCompany(company: PartnerCompany): PartnerCompany {
 
   return {
     registeredAt: defaultRegisteredAt,
-    renewedAt: defaultRegisteredAt,
-    expirationDate: defaultExpirationDate,
-    reminderFirstThresholdMonths: 1,
-    reminderFrequency: 'weekly',
     isArchived: false,
     // Existing/seeded companies are already-registered partners, so default
     // them to Accredited; a real import can override this per row.
@@ -1361,16 +1352,9 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     name: string,
     type: SurveyType,
     affiliation?: string,
-    registeredAt?: string,
-    renewedAt?: string,
-    expirationDate?: string,
-    reminderFirstThresholdMonths?: number,
-    reminderFrequency?: 'daily' | 'weekly' | 'none'
+    registeredAt?: string
   ) => {
     const todayStr = getEffectiveTodayStr(simClock);
-    const nextYear = getEffectiveNow(simClock);
-    nextYear.setFullYear(nextYear.getFullYear() + 1);
-    const nextYearStr = nextYear.toISOString().slice(0, 10);
     const newCompany: PartnerCompany = normalizePartnerCompany({
       id: `pc-${Date.now()}`,
       name: name.trim(),
@@ -1378,10 +1362,6 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
       affiliation: affiliation?.trim() || 'General partner',
       createdAt: new Date().toISOString(),
       registeredAt: registeredAt || todayStr,
-      renewedAt: renewedAt || todayStr,
-      expirationDate: expirationDate || nextYearStr,
-      reminderFirstThresholdMonths: reminderFirstThresholdMonths ?? 1,
-      reminderFrequency: reminderFrequency ?? 'weekly',
       isArchived: false,
     });
     const updated = [...partnerCompanies, newCompany];
@@ -1726,51 +1706,46 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     return partnerCompanies.map((c) => c.name).sort();
   }, [partnerCompanies]);
 
-  // Dynamic contract warnings and expirations for admin notifications
-  const contractNotifications = useMemo<ResponseNotification[]>(() => {
+  // Dynamic compliance-document warnings/expirations for admin notifications.
+  // One notification per company (not per document) so this stays the same
+  // shape/cardinality the old per-company contract alerts had - see
+  // computeCompanyDocumentSummary for how "Expired" is rolled up across a
+  // company's required documents (Business Permit, AFS, SIF, etc.).
+  const documentNotifications = useMemo<ResponseNotification[]>(() => {
     const currentDate = getEffectiveNow(simClock);
     const list: ResponseNotification[] = [];
-    
+
     partnerCompanies.forEach((c) => {
       if (c.isArchived) return;
-      if (!c.expirationDate) return;
-      
-      const exp = new Date(c.expirationDate);
-      const diffTime = exp.getTime() - currentDate.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      if (diffDays <= 0) {
+      const summary = computeCompanyDocumentSummary(c, currentDate);
+
+      if (summary.status === 'Expired') {
         list.push({
-          id: `contract-expired-${c.id}`,
+          id: `document-expired-${c.id}`,
           company: c.name,
           surveyType: c.type as SurveyType,
-          respondentType: "Contract Expired",
-          submissionDate: new Date(exp.getTime() + 12 * 60 * 60 * 1000).toISOString(),
-          questionCount: 0,
-          respondentEmail: "system@mgenesis.com",
-          department: "Logistics",
-          designation: "Contract Alert"
+          respondentType: 'Document Expired',
+          submissionDate: new Date(currentDate.getTime() - 12 * 60 * 60 * 1000).toISOString(),
+          questionCount: summary.expiredCount,
+          respondentEmail: 'system@mgenesis.com',
+          department: 'Logistics',
+          designation: 'Document Alert'
         });
-      } else {
-        const thresholdMonths = c.reminderFirstThresholdMonths ?? 1;
-        const thresholdDays = thresholdMonths * 30; // e.g., 30, 60, 120 days
-        
-        if (diffDays <= thresholdDays) {
-          list.push({
-            id: `contract-warning-${c.id}`,
-            company: c.name,
-            surveyType: c.type as SurveyType,
-            respondentType: `Contract Warning`,
-            submissionDate: new Date(currentDate.getTime() - 2 * 60 * 60 * 1000).toISOString(), // slightly in the past
-            questionCount: 0,
-            respondentEmail: "system@mgenesis.com",
-            department: "Logistics",
-            designation: "Contract Alert"
-          });
-        }
+      } else if (summary.status === 'Expiring Soon') {
+        list.push({
+          id: `document-warning-${c.id}`,
+          company: c.name,
+          surveyType: c.type as SurveyType,
+          respondentType: 'Document Expiring Soon',
+          submissionDate: new Date(currentDate.getTime() - 2 * 60 * 60 * 1000).toISOString(),
+          questionCount: summary.expiringSoonCount,
+          respondentEmail: 'system@mgenesis.com',
+          department: 'Logistics',
+          designation: 'Document Alert'
+        });
       }
     });
-    
+
     return list;
   }, [partnerCompanies, simClock]);
 
@@ -1789,14 +1764,14 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
   }, [chatNotifications, isAdmin, currentUserEmail]);
 
   const combinedNotifications = useMemo(() => {
-    const list = [...contractNotifications, ...notifications, ...filteredChatNotifications];
+    const list = [...documentNotifications, ...notifications, ...filteredChatNotifications];
     return list.sort((a, b) => b.submissionDate.localeCompare(a.submissionDate));
-  }, [contractNotifications, notifications, filteredChatNotifications]);
+  }, [documentNotifications, notifications, filteredChatNotifications]);
 
   const combinedUnreadCount = useMemo(() => {
     const unreadChatCount = filteredChatNotifications.filter((c: any) => !c.read).length;
-    return unreadCount + contractNotifications.length + unreadChatCount;
-  }, [unreadCount, contractNotifications, filteredChatNotifications]);
+    return unreadCount + documentNotifications.length + unreadChatCount;
+  }, [unreadCount, documentNotifications, filteredChatNotifications]);
 
   return {
     responses: activeResponses,

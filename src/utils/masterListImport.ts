@@ -8,6 +8,7 @@ import {
   SupplierOrigin,
 } from '../types/survey';
 import { computeDocumentStatus } from './compliance';
+import { COMMON_DOCUMENTS, FOREIGN_SUPPLIER_DOCUMENTS, LOCAL_SUPPLIER_DOCUMENTS } from './documentRequirements';
 
 // The sheet opens with 18 rows of legend/summary blocks before the real
 // header row (row 19, 1-based / index 18). Data starts at index 19.
@@ -274,36 +275,40 @@ function buildDocuments(
     if (Object.keys(doc).length) docs[label] = doc;
   };
 
-  // Common, once-accredited checklist (applies regardless of type).
-  setFlag('Confidentiality and Non-Disclosure Agreement', COL.confidentiality);
-  setFlag('Letter of Accreditation', COL.letterOfAccreditation);
-  setFlag('Supplier Code of Business Conduct and Ethics', COL.codeOfConduct);
+  // Common, once-accredited checklist (applies regardless of type) - keys
+  // must match COMMON_DOCUMENTS in documentRequirements.ts.
+  const [confidentiality, letterOfAccreditation, codeOfConduct] = COMMON_DOCUMENTS;
+  setFlag(confidentiality, COL.confidentiality);
+  setFlag(letterOfAccreditation, COL.letterOfAccreditation);
+  setFlag(codeOfConduct, COL.codeOfConduct);
 
   if (type !== 'Supplier') return docs;
 
   if (origin === 'Foreign') {
-    setFlag('SIF', COL.foreign.sif);
-    setFlag('Articles of Incorporation', COL.foreign.articlesOfIncorporation);
-    setFlag('Certificate of Incorporation', COL.foreign.certOfIncorporation);
-    setExpiry('AFS', COL.foreign.afs);
-    setExpiry('Business Permit/License', COL.foreign.businessPermitLicense);
-    setFlag("Owner's ID", COL.foreign.ownersId);
-    setFlag('Product Profile', COL.foreign.productProfile);
-    setFlag('Other Documents', COL.foreign.otherDocuments);
+    const [sif, articles, cert, afs, bpLicense, ownersId, productProfile, otherDocs] = FOREIGN_SUPPLIER_DOCUMENTS;
+    setFlag(sif, COL.foreign.sif);
+    setFlag(articles, COL.foreign.articlesOfIncorporation);
+    setFlag(cert, COL.foreign.certOfIncorporation);
+    setExpiry(afs, COL.foreign.afs);
+    setExpiry(bpLicense, COL.foreign.businessPermitLicense);
+    setFlag(ownersId, COL.foreign.ownersId);
+    setFlag(productProfile, COL.foreign.productProfile);
+    setFlag(otherDocs, COL.foreign.otherDocuments);
   } else {
-    setFlag('SIF', COL.local.sif);
-    setFlag('BIR2303', COL.local.bir2303);
-    setFlag('SEC (Corp)', COL.local.sec);
-    setFlag('Articles of Incorporation', COL.local.articlesOfIncorporation);
-    setExpiry('AFS', COL.local.afs);
-    setExpiry('GIS (Corp)', COL.local.gis);
-    setExpiry('DTI (Sole)', COL.local.dti);
-    setExpiry('Business Permit', COL.local.businessPermit);
-    setExpiry('Import Permit', COL.local.importPermit);
-    setFlag('Product Profile', COL.local.productProfile);
-    setFlag('Proof of Present Address', COL.local.proofOfAddress);
-    setFlag("Sole Proprietorship (Owner's ID)", COL.local.ownersId);
-    setFlag('Other Documents', COL.local.otherDocuments);
+    const [sif, bir, sec, articles, afs, gis, dti, bp, ip, productProfile, proofOfAddress, ownersId, otherDocs] = LOCAL_SUPPLIER_DOCUMENTS;
+    setFlag(sif, COL.local.sif);
+    setFlag(bir, COL.local.bir2303);
+    setFlag(sec, COL.local.sec);
+    setFlag(articles, COL.local.articlesOfIncorporation);
+    setExpiry(afs, COL.local.afs);
+    setExpiry(gis, COL.local.gis);
+    setExpiry(dti, COL.local.dti);
+    setExpiry(bp, COL.local.businessPermit);
+    setExpiry(ip, COL.local.importPermit);
+    setFlag(productProfile, COL.local.productProfile);
+    setFlag(proofOfAddress, COL.local.proofOfAddress);
+    setFlag(ownersId, COL.local.ownersId);
+    setFlag(otherDocs, COL.local.otherDocuments);
   }
 
   return docs;

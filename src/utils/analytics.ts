@@ -1,6 +1,7 @@
 import { ArchiveSeries, CustomForm, FilterState, KpiSummary, PartnerCompany, Rating, SurveyResponse, SurveyType } from '../types/survey';
 import { getEffectiveTodayStr } from './simClock';
 import { getQuestionMaxPoints, isScoredQuestion } from '../data/questionWeights';
+import { computeCompanyDocumentSummary } from './compliance';
 
 /**
  * Resolves the live list of companies a given survey should be evaluated
@@ -17,10 +18,11 @@ export function getSurveyEvaluationCompanies(
   partnerCompanies: PartnerCompany[],
   currentDateStr: string = getEffectiveTodayStr(null)
 ): PartnerCompany[] {
+  const referenceDate = new Date(currentDateStr + 'T00:00:00');
   const companiesOfType = partnerCompanies.filter((c) => {
     if (c.type !== survey.surveyType) return false;
     if (c.isArchived) return false;
-    if (c.expirationDate && currentDateStr >= c.expirationDate) return false;
+    if (computeCompanyDocumentSummary(c, referenceDate).status === 'Expired') return false;
     return true;
   });
   if (!survey.evaluationCompanyIds || survey.evaluationCompanyIds.length === 0) {
