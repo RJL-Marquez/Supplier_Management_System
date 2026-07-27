@@ -76,6 +76,7 @@ const DOCUMENT_STATUS_STYLES: Record<DocumentStatus, string> = {
   Current: 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40',
   'Expiring Soon': 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/40',
   Expired: 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900/40',
+  'For Update': 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900/40',
   Missing: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700',
 };
 
@@ -535,8 +536,8 @@ export function PartnerCompaniesPage({
 
     const pad = (n: number) => String(n).padStart(2, '0');
     const newExpiryStr = `${renewalYear}-${pad(renewalMonth + 1)}-${pad(renewalDay)}`;
-    const { status, daysLeft } = computeDocumentStatus({ expiryDate: newExpiryStr }, effectiveNow);
     const { branchId, docName } = renewalTarget;
+    const { status, daysLeft } = computeDocumentStatus({ expiryDate: newExpiryStr }, effectiveNow, docName);
 
     const updatedBranches = (selectedCompany.branches ?? []).map((b) =>
       b.id === branchId
@@ -1383,7 +1384,7 @@ export function PartnerCompaniesPage({
                           <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800">
                             {allKeys.map((docName) => {
                               const doc = (branch.documents?.[docName] ?? {}) as ComplianceDocument;
-                              const { status } = computeDocumentStatus(doc, effectiveNow);
+                              const { status } = computeDocumentStatus(doc, effectiveNow, docName);
                               const expiryBased = isExpiryDocument(docName);
                               return (
                                 <button

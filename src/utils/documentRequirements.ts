@@ -56,13 +56,15 @@ export function isExpiryDocument(docName: string): boolean {
 }
 
 // Full ordered list of document keys required for a given partner category.
-// Couriers/Subcontractors/Uncategorized only carry the common checklist -
-// the Master List has no Local/Foreign-specific document block for them.
+// Per the client: Supplier, Courier, and Subcontractor all carry the same
+// (local) checklist - only Supplier ever splits into Local/Foreign, since
+// Courier and Subcontractor have no Foreign variant in the Master List.
+// Uncategorized carries just the common once-accredited checklist.
 export function getRequiredDocumentKeys(
   type: PartnerCompanyType,
   origin: SupplierOrigin | undefined
 ): string[] {
-  if (type !== 'Supplier') return [...COMMON_DOCUMENTS];
-  const originDocs = origin === 'Foreign' ? FOREIGN_SUPPLIER_DOCUMENTS : LOCAL_SUPPLIER_DOCUMENTS;
+  if (type === 'Uncategorized') return [...COMMON_DOCUMENTS];
+  const originDocs = type === 'Supplier' && origin === 'Foreign' ? FOREIGN_SUPPLIER_DOCUMENTS : LOCAL_SUPPLIER_DOCUMENTS;
   return [...COMMON_DOCUMENTS, ...originDocs];
 }

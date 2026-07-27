@@ -911,10 +911,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-AIM001",
     "name": "PAGPAGUITAN, ANDY LAMBERTE",
-    "type": "Uncategorized",
+    "type": "Subcontractor",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-AIM001-64",
@@ -1332,10 +1332,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-ALV001",
     "name": "ALVAREZ, GREG YAP",
-    "type": "Uncategorized",
+    "type": "Subcontractor",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-ALV001-87",
@@ -1701,10 +1701,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-APT001",
     "name": "APTSECURE TECHNOLOGIES INC.",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-APT001-107",
@@ -1716,15 +1716,16 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 107,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-APU001",
     "name": "APUMA, MARCH MAANAP",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-APU001-108",
@@ -1736,7 +1737,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 108,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-AQA001-NT",
@@ -1796,10 +1798,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-ARD001",
     "name": "ARDENT NETWORKS INC.",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-ARD001-112",
@@ -1815,7 +1817,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 112,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-ARI001",
@@ -2365,10 +2368,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-BAN001",
     "name": "BANBROS COMMERCIAL INCORPORATED",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-BAN001-144",
@@ -2396,7 +2399,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 146,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-BAR001",
@@ -3000,10 +3004,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-BRI001",
     "name": "BRIDGE DISTRIBUTION, INC.",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-BRI001-180",
@@ -3039,7 +3043,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 181,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-BRI002",
@@ -12019,10 +12024,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-LGE001",
     "name": "POLINAR, LUCILO DISPO",
-    "type": "Uncategorized",
+    "type": "Subcontractor",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-LGE001-687",
@@ -13020,10 +13025,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-MEC001",
     "name": "MEC COMPUTER CORPORATION",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-MEC001-743",
@@ -13034,7 +13039,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 743,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-MEC002",
@@ -13909,10 +13915,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-MSE001",
     "name": "M-SECURITY TECH PHILIPPINES, INC.",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-MSE001-794",
@@ -13931,7 +13937,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 795,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-MSI001-NT",
@@ -15515,10 +15522,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-PAX001",
     "name": "PAX8 PHILIPPINES INC.",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-PAX001-884",
@@ -15539,7 +15546,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 885,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-PCE001",
@@ -19037,10 +19045,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-SOF001",
     "name": "SOFTWAREONE PHILIPPINES CORPORATION",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-SOF001-1078",
@@ -19052,7 +19060,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 1078,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-SOL001",
@@ -19451,10 +19460,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-STR003",
     "name": "STREAMLINE WORKS INC.",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-STR003-1102",
@@ -19475,7 +19484,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 1103,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-STS001-NT",
@@ -22028,10 +22038,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-WES001",
     "name": "WESTCON GROUP PHILIPPINES",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-WES001-1227",
@@ -22070,15 +22080,16 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 1228,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-WES002",
     "name": "WESTCON SOLUTIONS PHILIPPINES INC.",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-WES002-1229",
@@ -22089,7 +22100,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 1229,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-WES003",
@@ -22453,10 +22465,10 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-WYN001",
     "name": "WYNTECH CORP.",
-    "type": "Uncategorized",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": true,
-    "accreditationStatus": "Unaccredited",
+    "isArchived": false,
+    "accreditationStatus": "Accredited",
     "branches": [
       {
         "id": "branch-WYN001-1251",
@@ -22468,7 +22480,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 1251,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-XCO001",

@@ -15,7 +15,8 @@ import {
 } from '../utils/rawEvaluationImport';
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
 import { logAdminActivity } from '../utils/adminActivityLog';
-import { computeCompanyDocumentSummary } from '../utils/compliance';
+import { computeCompanyDocumentSummary, computeDocumentStatus, EXPIRING_SOON_DAYS } from '../utils/compliance';
+import { getRequiredDocumentKeys } from '../utils/documentRequirements';
 
 // Bumped from _v6: the baseline registry changed from a 41-company hand-typed
 // demo list to the full Master List snapshot (partnerCompaniesSeed.ts, ~1129
@@ -26,6 +27,8 @@ const PARTNER_COMPANIES_STORAGE_KEY = 'survey_analytics_partner_companies_v7';
 
 const NOTIFICATION_HISTORY_LIMIT = 200;
 const INITIAL_NOTIFICATION_SEED = 15;
+const DTI_DOCUMENT_KEY = 'DTI (Sole)';
+const DTI_EARLY_WARNING_DAYS = 60;
 const ALL_DEPARTMENTS = [
   'Accounts Payable - Trade',
   'Business Solutions Manager',
@@ -1759,6 +1762,44 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     return list;
   }, [partnerCompanies, simClock]);
 
+  // DTI Registration gets an extra early heads-up at 60 days (on top of the
+  // standard 30-day "Expiring Soon" alert already covered by
+  // documentNotifications above) per the client's requirement: "Notify admin
+  // at 60-day and 30-day expiration milestones for follow ups."
+  const dtiMilestoneNotifications = useMemo<ResponseNotification[]>(() => {
+    const currentDate = getEffectiveNow(simClock);
+    const list: ResponseNotification[] = [];
+
+    partnerCompanies.forEach((c) => {
+      if (c.isArchived) return;
+      if (!getRequiredDocumentKeys(c.type, c.supplierOrigin).includes(DTI_DOCUMENT_KEY)) return;
+
+      const dtiDoc = (c.branches ?? [])
+        .map((b) => b.documents?.[DTI_DOCUMENT_KEY])
+        .find((doc) => doc && (doc.provided || doc.expiryDate));
+      if (!dtiDoc) return;
+
+      const { status, daysLeft } = computeDocumentStatus(dtiDoc, currentDate, DTI_DOCUMENT_KEY);
+      // Only the 60-day window fires here - once inside 30 days the document
+      // already surfaces via the generic "Document Expiring Soon" alert.
+      if (status === 'Current' && typeof daysLeft === 'number' && daysLeft > EXPIRING_SOON_DAYS && daysLeft <= DTI_EARLY_WARNING_DAYS) {
+        list.push({
+          id: `dti-60day-${c.id}`,
+          company: c.name,
+          surveyType: c.type as SurveyType,
+          respondentType: 'Document Expiring Soon',
+          submissionDate: new Date(currentDate.getTime() - 1 * 60 * 60 * 1000).toISOString(),
+          questionCount: 1,
+          respondentEmail: 'system@mgenesis.com',
+          department: 'Logistics',
+          designation: 'Document Alert',
+        });
+      }
+    });
+
+    return list;
+  }, [partnerCompanies, simClock]);
+
   const filteredChatNotifications = useMemo(() => {
     return chatNotifications.filter((notif: any) => {
       if (isAdmin) {
@@ -1774,9 +1815,9 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
   }, [chatNotifications, isAdmin, currentUserEmail]);
 
   const combinedNotifications = useMemo(() => {
-    const list = [...documentNotifications, ...notifications, ...filteredChatNotifications];
+    const list = [...documentNotifications, ...dtiMilestoneNotifications, ...notifications, ...filteredChatNotifications];
     return list.sort((a, b) => b.submissionDate.localeCompare(a.submissionDate));
-  }, [documentNotifications, notifications, filteredChatNotifications]);
+  }, [documentNotifications, dtiMilestoneNotifications, notifications, filteredChatNotifications]);
 
   const combinedUnreadCount = useMemo(() => {
     const unreadChatCount = filteredChatNotifications.filter((c: any) => !c.read).length;

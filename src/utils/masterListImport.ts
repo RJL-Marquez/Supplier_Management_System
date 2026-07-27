@@ -243,13 +243,13 @@ function yesNo(value: unknown): boolean | undefined {
   return undefined;
 }
 
-function expiryDoc(value: unknown): ComplianceDocument {
+function expiryDoc(value: unknown, docName: string): ComplianceDocument {
   const v = String(value ?? '').trim();
   if (!v || /^n\/a$/i.test(v)) return {};
   if (/^missing$/i.test(v)) return { provided: false };
   const expiryDate = parseFlexibleDate(v);
   if (!expiryDate) return {};
-  const { status, daysLeft } = computeDocumentStatus({ expiryDate });
+  const { status, daysLeft } = computeDocumentStatus({ expiryDate }, new Date(), docName);
   return { provided: true, expiryDate, status, daysLeft };
 }
 
@@ -271,7 +271,7 @@ function buildDocuments(
     if (Object.keys(doc).length) docs[label] = doc;
   };
   const setExpiry = (label: string, idx: number) => {
-    const doc = expiryDoc(cells[idx]);
+    const doc = expiryDoc(cells[idx], label);
     if (Object.keys(doc).length) docs[label] = doc;
   };
 
@@ -282,9 +282,13 @@ function buildDocuments(
   setFlag(letterOfAccreditation, COL.letterOfAccreditation);
   setFlag(codeOfConduct, COL.codeOfConduct);
 
-  if (type !== 'Supplier') return docs;
+  if (type === 'Uncategorized') return docs;
 
-  if (origin === 'Foreign') {
+  // Only Supplier ever splits into Local/Foreign - Courier and Subcontractor
+  // always carry the same checklist as a local supplier (per client: "all
+  // those categories have the same list of requirements, except the foreign
+  // one", and there's no Courier-Foreign/Subcontractor-Foreign category).
+  if (type === 'Supplier' && origin === 'Foreign') {
     const [sif, articles, cert, afs, bpLicense, ownersId, productProfile, otherDocs] = FOREIGN_SUPPLIER_DOCUMENTS;
     setFlag(sif, COL.foreign.sif);
     setFlag(articles, COL.foreign.articlesOfIncorporation);

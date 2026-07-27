@@ -4,6 +4,7 @@ import { BranchRecord, ComplianceDocument, PartnerCompany, PartnerCompanyType, S
 import { computeDocumentStatus } from '../utils/compliance';
 import { getRequiredDocumentKeys, isExpiryDocument } from '../utils/documentRequirements';
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
+import { logAdminActivity } from '../utils/adminActivityLog';
 import { typeBadgeClasses } from './PartnerCompaniesPage';
 
 interface DocumentRegisterPageProps {
@@ -28,6 +29,7 @@ const STATUS_STYLES: Record<string, string> = {
   Current: 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40',
   'Expiring Soon': 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/40',
   Expired: 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900/40',
+  'For Update': 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900/40',
   Missing: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700',
 };
 
@@ -91,18 +93,26 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
         : b
     );
     onUpdateCompany({ ...company, branches: updatedBranches });
+    logAdminActivity(
+      'Updated compliance document',
+      `${docName} marked ${provided ? 'provided' : 'not provided'} for "${company.name}"`
+    );
   };
 
   const confirmRenewal = () => {
     if (!renewalTarget || !renewalDate) return;
     const { company, branchId, docName } = renewalTarget;
-    const { status, daysLeft } = computeDocumentStatus({ expiryDate: renewalDate }, effectiveNow);
+    const { status, daysLeft } = computeDocumentStatus({ expiryDate: renewalDate }, effectiveNow, docName);
     const updatedBranches = (company.branches ?? []).map((b) =>
       b.id === branchId
         ? { ...b, documents: { ...b.documents, [docName]: { provided: true, expiryDate: renewalDate, status, daysLeft } } }
         : b
     );
     onUpdateCompany({ ...company, branches: updatedBranches });
+    logAdminActivity(
+      'Renewed compliance document',
+      `${docName} renewed for "${company.name}" — new expiry ${renewalDate}`
+    );
     setRenewalTarget(null);
   };
 
@@ -201,7 +211,7 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                     {docColumns.map((docName) => {
                       const branch = pickBranchForDoc(c, docName);
                       const doc: ComplianceDocument = (branch?.documents?.[docName] ?? {}) as ComplianceDocument;
-                      const { status, daysLeft } = computeDocumentStatus(doc, effectiveNow);
+                      const { status, daysLeft } = computeDocumentStatus(doc, effectiveNow, docName);
                       const expiryBased = isExpiryDocument(docName);
                       return (
                         <td key={docName} className="px-4 py-3">

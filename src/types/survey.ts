@@ -15,7 +15,9 @@ export type AccreditationStatus = 'Accredited' | 'Unaccredited';
 
 // Computed live from expiryDate at render time — never persisted as the
 // source of truth, since "today" changes what these mean.
-export type DocumentStatus = 'Current' | 'Expiring Soon' | 'Expired' | 'Missing';
+// 'For Update' is AFS-only: AFS validity follows a fiscal-year rule, not a
+// day countdown, so it never passes through 'Expiring Soon'/'Expired'.
+export type DocumentStatus = 'Current' | 'Expiring Soon' | 'Expired' | 'Missing' | 'For Update';
 
 export type BranchStatus = 'Complete' | 'Incomplete' | 'Outdated';
 
