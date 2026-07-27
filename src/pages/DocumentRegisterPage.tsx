@@ -106,6 +106,26 @@ const STATUS_STYLES: Record<string, string> = {
   Missing: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700',
 };
 
+// Quiet-by-default treatment for the big detail matrix below: a dot + plain
+// text instead of a bordered/filled pill on every one of a few hundred
+// cells. Only the states that actually need action (Expiring/Expired/For
+// Update) get bold color - Current and Missing stay visually quiet so the
+// eye lands on what matters instead of a wall of equally-loud boxes.
+const CELL_DOT: Record<string, string> = {
+  Current: 'bg-emerald-400 dark:bg-emerald-500',
+  'Expiring Soon': 'bg-[#a16207]',
+  Expired: 'bg-[#f43f5e]',
+  'For Update': 'bg-[#f43f5e]',
+  Missing: 'bg-slate-300 dark:bg-slate-600',
+};
+const CELL_TEXT: Record<string, string> = {
+  Current: 'text-slate-500 dark:text-slate-400',
+  'Expiring Soon': 'text-[#a16207] dark:text-amber-400 font-bold',
+  Expired: 'text-[#f43f5e] font-bold',
+  'For Update': 'text-[#f43f5e] font-bold',
+  Missing: 'text-slate-400 dark:text-slate-500',
+};
+
 // A document can be recorded on any of a company's branches (e.g. a normal +
 // "-NT" BP Code) - use whichever branch already has data for this key, else
 // fall back to the first branch as the renewal target.
@@ -790,17 +810,19 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
-                  <th className="px-4 py-3 sticky left-0 bg-slate-50 dark:bg-slate-950/60 z-10">Company</th>
-                  <th className="px-4 py-3">BP Code</th>
+                  <th className="px-3 py-2.5 sticky left-0 bg-slate-50 dark:bg-slate-950/60 z-10">Company</th>
+                  <th className="px-3 py-2.5">BP Code</th>
                   {docColumns.map((docName) => (
-                    <th key={docName} className="px-4 py-3 min-w-[150px]">{docName}</th>
+                    <th key={docName} className="px-3 py-2.5 min-w-[120px] max-w-[150px] align-bottom" title={docName}>
+                      <span className="line-clamp-2 normal-case font-semibold tracking-normal text-slate-500 dark:text-slate-400">{docName}</span>
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {rows.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/20 transition-colors">
-                    <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-950 z-10">
+                    <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-950 z-10">
                       <div className="flex items-center gap-2">
                         <span>{c.name}</span>
                         <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider border shrink-0 ${typeBadgeClasses(c.type)}`}>
@@ -808,7 +830,7 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
+                    <td className="px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">
                       {(c.branches ?? []).map((b) => b.bpCode).filter(Boolean).join(', ') || '—'}
                     </td>
                     {docColumns.map((docName) => {
@@ -816,11 +838,12 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                       const doc: ComplianceDocument = (branch?.documents?.[docName] ?? {}) as ComplianceDocument;
                       const { status, daysLeft } = computeDocumentStatus(doc, effectiveNow, docName);
                       const expiryBased = isExpiryDocument(docName);
+                      const interactive = canRenewDocuments && !!branch;
                       return (
-                        <td key={docName} className="px-4 py-3">
+                        <td key={docName} className="px-1.5 py-1">
                           <button
                             type="button"
-                            disabled={!canRenewDocuments || !branch}
+                            disabled={!interactive}
                             onClick={() => (expiryBased ? openRenewal(c, docName) : toggleFlag(c, docName))}
                             title={
                               doc.expiryDate
@@ -829,16 +852,19 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                                 ? (expiryBased ? 'Click to set an expiry date' : `Click to mark ${doc.provided ? 'not provided' : 'provided'}`)
                                 : docName
                             }
-                            className={`w-full inline-flex flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-[10px] font-semibold border transition ${STATUS_STYLES[status]} ${canRenewDocuments && branch ? 'cursor-pointer hover:ring-2 hover:ring-[#0063a9]/40' : 'cursor-default'}`}
+                            className={`group w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition ${interactive ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60' : 'cursor-default'}`}
                           >
-                            <span className="flex items-center gap-1">
-                              {canRenewDocuments && branch && <RefreshCw size={9} />}
-                              {status}
+                            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CELL_DOT[status]}`} />
+                            <span className="min-w-0 flex-1">
+                              <span className={`block text-[11px] leading-tight ${CELL_TEXT[status]}`}>{status}</span>
+                              {expiryBased && doc.expiryDate && (
+                                <span className="block text-[10px] leading-tight text-slate-400 dark:text-slate-500">
+                                  {formatDate(doc.expiryDate)}{typeof daysLeft === 'number' ? ` · ${daysLeft}d` : ''}
+                                </span>
+                              )}
                             </span>
-                            {expiryBased && doc.expiryDate && (
-                              <span className="font-normal opacity-80">
-                                {formatDate(doc.expiryDate)}{typeof daysLeft === 'number' ? ` (${daysLeft}d)` : ''}
-                              </span>
+                            {interactive && (
+                              <RefreshCw size={11} className="shrink-0 text-slate-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 transition" />
                             )}
                           </button>
                         </td>
