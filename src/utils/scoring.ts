@@ -1,6 +1,14 @@
 import { ArchiveSeries, SurveyResponse, SurveyType } from '../types/survey';
-import { numericRating, submissionScores, computeRankScore } from './analytics';
+import { numericRating, submissionScores, submissionCount, computeRankScore } from './analytics';
 import { ScoreBand, getBand, questionWeights, getCanonicalQuestionId } from '../data/questionWeights';
+
+// Returned instead of a real band when a company has zero submissions with
+// at least one non-N/A answer - e.g. a single respondent who marked every
+// question N/A. Without this, compositeScore's 0-fallback (see
+// computeCompanyComposite) would otherwise get classified "Critical" by
+// getBand, and flagged "below peer average" by getOutliers, as if it were a
+// real measured score instead of an absence of data.
+const NO_SCORE_BAND: ScoreBand = { label: 'No Score Yet', min: -1, hex: '#94a3b8' };
 
 export interface SectionScore {
   section: string;
@@ -17,7 +25,8 @@ export interface CompanyComposite {
   band: ScoreBand;
   sections: SectionScore[];
   ratedQuestionCount: number; // individual question ratings counted (excludes N/A)
-  evaluationCount: number; // total question ratings (submissions) rolled into this score
+  evaluationCount: number; // total submissions received, regardless of whether they had any scoreable (non-N/A) answer
+  hasScore: boolean; // false when every submission was all-N/A - compositeScore/band carry no real signal in that case
   stdDev: number; // population std dev of per-question percent scores - consistency signal
   naRate: number; // % of applicable questions marked N/A
   // Volume-weighted variant of compositeScore, pulled toward the peer mean
@@ -128,7 +137,8 @@ export function computeCompanyComposite(
   });
 
   const normalizedSubmissionScores = submissionScores(companyResponses);
-  const rawComposite = normalizedSubmissionScores.length
+  const hasScore = normalizedSubmissionScores.length > 0;
+  const rawComposite = hasScore
     ? normalizedSubmissionScores.reduce((sum, item) => sum + item.score, 0) / normalizedSubmissionScores.length
     : 0;
   const compositeScore = Number(Math.min(100, Math.max(0, rawComposite)).toFixed(1));
@@ -142,10 +152,14 @@ export function computeCompanyComposite(
     company,
     surveyType,
     compositeScore,
-    band: getBand(surveyType, compositeScore),
+    band: hasScore ? getBand(surveyType, compositeScore) : NO_SCORE_BAND,
     sections,
     ratedQuestionCount: percentScores.length,
-    evaluationCount: normalizedSubmissionScores.length,
+    // Total submissions received (one per respondent), independent of
+    // whether any of their answers were scoreable - a respondent who
+    // answered every question N/A still submitted an evaluation.
+    evaluationCount: submissionCount(companyResponses),
+    hasScore,
     stdDev: Number(Math.sqrt(variance).toFixed(1)),
     naRate: applicableCount ? Number(((naCount / applicableCount) * 100).toFixed(1)) : 0,
     // No peer group available in isolation - getLeaderboard recomputes this
@@ -166,11 +180,21 @@ export function getLeaderboard(responses: SurveyResponse[], surveyType: SurveyTy
     .map((company) => computeCompanyComposite(company, surveyType, responses))
     .filter((c): c is CompanyComposite => c !== null);
 
-  const peers = composites.map((c) => ({ score: c.compositeScore, count: c.evaluationCount }));
+  // Companies with no scoreable data (every submission was all-N/A) have
+  // nothing to rank - keep them out of the peer mean and the score sort
+  // entirely, and list them after every scored company instead.
+  const scored = composites.filter((c) => c.hasScore);
+  const unscored = composites.filter((c) => !c.hasScore);
 
-  return composites
+  const peers = scored.map((c) => ({ score: c.compositeScore, count: c.evaluationCount }));
+
+  const rankedScored = scored
     .map((c) => ({ ...c, rankScore: computeRankScore(c.compositeScore, c.evaluationCount, peers) }))
     .sort((a, b) => b.rankScore - a.rankScore);
+
+  const sortedUnscored = [...unscored].sort((a, b) => a.company.localeCompare(b.company));
+
+  return [...rankedScored, ...sortedUnscored];
 }
 
 /**
@@ -180,14 +204,19 @@ export function getLeaderboard(responses: SurveyResponse[], surveyType: SurveyTy
  * a baseline difficulty.
  */
 export function getOutliers(leaderboard: CompanyComposite[], threshold = 1.5): OutlierFlag[] {
-  if (leaderboard.length < 3) return [];
-  const scores = leaderboard.map((c) => c.compositeScore);
+  // Companies with no scoreable data would otherwise pin the peer mean/sd
+  // toward their fallback 0 and get flagged as outliers themselves - exclude
+  // them from the comparison entirely rather than let an absence of data
+  // read as "below peer average".
+  const scoredCompanies = leaderboard.filter((c) => c.hasScore);
+  if (scoredCompanies.length < 3) return [];
+  const scores = scoredCompanies.map((c) => c.compositeScore);
   const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
   const variance = scores.reduce((sum, v) => sum + (v - mean) ** 2, 0) / scores.length;
   const sd = Math.sqrt(variance);
-  if (sd === 0) return leaderboard.map((c) => ({ company: c.company, zScore: 0, isLowOutlier: false }));
+  if (sd === 0) return scoredCompanies.map((c) => ({ company: c.company, zScore: 0, isLowOutlier: false }));
 
-  return leaderboard.map((c) => {
+  return scoredCompanies.map((c) => {
     const zScore = Number(((c.compositeScore - mean) / sd).toFixed(2));
     return { company: c.company, zScore, isLowOutlier: zScore <= -threshold };
   });
@@ -219,11 +248,14 @@ export function getCompanyTrend(responses: SurveyResponse[], company: string, su
   const filtered = responses.filter((r) => r.company === company && r.surveyType === surveyType);
   const months = [...new Set(filtered.map((r) => r.submissionDate.slice(0, 7)))].sort();
 
-  return months.map((month) => {
-    const monthResponses = filtered.filter((r) => r.submissionDate.slice(0, 7) === month);
-    const composite = computeCompanyComposite(company, surveyType, monthResponses);
-    return { month, score: composite?.compositeScore ?? 0, responses: submissionScores(monthResponses).length };
-  });
+  return months
+    .map((month) => {
+      const monthResponses = filtered.filter((r) => r.submissionDate.slice(0, 7) === month);
+      const composite = computeCompanyComposite(company, surveyType, monthResponses);
+      if (!composite?.hasScore) return null; // no real score this month - skip rather than fake a 0 dip
+      return { month, score: composite.compositeScore, responses: submissionScores(monthResponses).length };
+    })
+    .filter((point): point is NonNullable<typeof point> => point !== null);
 }
 
 /**
@@ -239,8 +271,9 @@ export function getPeerAverageTrend(responses: SurveyResponse[], surveyType: Sur
     const monthResponses = filtered.filter((r) => r.submissionDate.slice(0, 7) === month);
     const companies = [...new Set(monthResponses.map((r) => r.company))];
     const scores = companies
-      .map((company) => computeCompanyComposite(company, surveyType, monthResponses)?.compositeScore)
-      .filter((s): s is number => typeof s === 'number');
+      .map((company) => computeCompanyComposite(company, surveyType, monthResponses))
+      .filter((c): c is CompanyComposite => c !== null && c.hasScore)
+      .map((c) => c.compositeScore);
     const average = scores.length ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)) : 0;
     return { month, score: average };
   });
@@ -253,11 +286,14 @@ export function getCompanyTrendBySeries(responses: SurveyResponse[], company: st
   const seriesIds = [...new Set(filtered.map((r) => r.seriesId as string))]
     .sort((a, b) => (seriesById.get(a)?.createdAt ?? '').localeCompare(seriesById.get(b)?.createdAt ?? ''));
 
-  return seriesIds.map((seriesId) => {
-    const seriesResponses = filtered.filter((r) => r.seriesId === seriesId);
-    const composite = computeCompanyComposite(company, surveyType, seriesResponses);
-    return { seriesId, label: seriesById.get(seriesId)?.label ?? 'Unknown', score: composite?.compositeScore ?? 0, responses: submissionScores(seriesResponses).length };
-  });
+  return seriesIds
+    .map((seriesId) => {
+      const seriesResponses = filtered.filter((r) => r.seriesId === seriesId);
+      const composite = computeCompanyComposite(company, surveyType, seriesResponses);
+      if (!composite?.hasScore) return null; // no real score this period - skip rather than fake a 0
+      return { seriesId, label: seriesById.get(seriesId)?.label ?? 'Unknown', score: composite.compositeScore, responses: submissionScores(seriesResponses).length };
+    })
+    .filter((point): point is NonNullable<typeof point> => point !== null);
 }
 
 /** Average composite score by named archive period across every company of a survey type (optionally excluding one). */
@@ -271,8 +307,9 @@ export function getPeerAverageTrendBySeries(responses: SurveyResponse[], surveyT
     const seriesResponses = filtered.filter((r) => r.seriesId === seriesId);
     const companies = [...new Set(seriesResponses.map((r) => r.company))];
     const scores = companies
-      .map((company) => computeCompanyComposite(company, surveyType, seriesResponses)?.compositeScore)
-      .filter((s): s is number => typeof s === 'number');
+      .map((company) => computeCompanyComposite(company, surveyType, seriesResponses))
+      .filter((c): c is CompanyComposite => c !== null && c.hasScore)
+      .map((c) => c.compositeScore);
     const average = scores.length ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)) : 0;
     return { seriesId, label: seriesById.get(seriesId)?.label ?? 'Unknown', score: average };
   });

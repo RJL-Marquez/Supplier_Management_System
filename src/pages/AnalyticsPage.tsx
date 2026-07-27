@@ -389,7 +389,10 @@ export function AnalyticsPage({
 
         const composites = activeTypesForCompany
           .map((type) => computeCompanyComposite(company, type, comparableResponses))
-          .filter((c): c is NonNullable<typeof c> => c !== null);
+          // A company with only all-N/A submissions has no real score to
+          // rank on - excluding it here keeps it from being surfaced as the
+          // "lowest performer" purely because of the 0-fallback.
+          .filter((c): c is NonNullable<typeof c> => c !== null && c.hasScore);
 
         if (composites.length === 0) return null;
 
