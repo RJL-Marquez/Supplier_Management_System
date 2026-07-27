@@ -1653,16 +1653,26 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
 
     const newIds = new Set(newRows.map((r) => r.responseId));
     const replaced = new Set(responses.filter((r) => newIds.has(r.responseId)).map((r) => r.responseId)).size;
-    const untouched = responses.filter((r) => !newIds.has(r.responseId));
-    const updatedResponses = [...untouched, ...newRows];
-    setResponses(updatedResponses);
-    safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
+
+    // Functional updates so concurrent imports (e.g. Supplier/Subcontractor/
+    // Courier files staged and confirmed together) each apply on top of the
+    // latest state instead of the stale `responses`/`partnerCompanies`
+    // closure from whichever render kicked them off - otherwise the last
+    // commit to resolve silently clobbers the others.
+    setResponses((prevResponses) => {
+      const untouched = prevResponses.filter((r) => !newIds.has(r.responseId));
+      const updatedResponses = [...untouched, ...newRows];
+      safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
+      return updatedResponses;
+    });
 
     if (newPartnerCompanies.length) {
       const normalizedNew = newPartnerCompanies.map(normalizePartnerCompany);
-      const updatedCompanies = [...partnerCompanies, ...normalizedNew];
-      setPartnerCompanies(updatedCompanies);
-      safeSetItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(updatedCompanies));
+      setPartnerCompanies((prevCompanies) => {
+        const updatedCompanies = [...prevCompanies, ...normalizedNew];
+        safeSetItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(updatedCompanies));
+        return updatedCompanies;
+      });
     }
 
     const finalSummary: RawEvalImportSummary = { ...summary, replaced };
