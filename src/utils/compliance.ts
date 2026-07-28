@@ -1,4 +1,4 @@
-import { ComplianceDocument, DocumentStatus, PartnerCompany } from '../types/survey';
+import { BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany } from '../types/survey';
 import { getRequiredDocumentKeys } from './documentRequirements';
 
 // "Expiring Soon" threshold matches the Master List's own legend (30 days left).
@@ -92,4 +92,21 @@ export function computeCompanyDocumentSummary(
     expiredCount > 0 ? 'Expired' : expiringSoonCount > 0 ? 'Expiring Soon' : 'Current';
 
   return { status, expiredCount, expiringSoonCount, missingCount, totalRequired: requiredKeys.length };
+}
+
+// A company can carry a normal BP Code and a separate "-NT" one (kept
+// verbatim in bpCode/rawCategory, e.g. "ACC001-NT" / "Supplier-Local-NT") -
+// same company, distinct accreditation branch with its own document set.
+// Requiring the hyphen avoids false-positives from company/category names
+// that merely end in the letters "NT".
+export function isNTBranch(branch: Pick<BranchRecord, 'bpCode' | 'rawCategory'>): boolean {
+  return /-NT$/i.test((branch.bpCode ?? '').trim()) || /-NT$/i.test((branch.rawCategory ?? '').trim());
+}
+
+// Disambiguates which branch an action/log entry applies to once a company
+// has been split into multiple rows (NT vs non-NT) - falls back to the plain
+// company name when there's only one branch, so the common case is untouched.
+export function branchAwareCompanyLabel(company: Pick<PartnerCompany, 'name' | 'branches'>, branch?: BranchRecord): string {
+  if (!branch || (company.branches ?? []).length <= 1) return company.name;
+  return `${company.name} (${isNTBranch(branch) ? 'NT' : 'Non-NT'})`;
 }

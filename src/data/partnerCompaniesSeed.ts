@@ -231,7 +231,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
             "provided": true,
             "status": "Current"
           }
-        }
+        },
+        "supplierRank": "Regular"
       },
       {
         "id": "branch-3SS001-NT-28",
@@ -328,7 +329,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
             "provided": true,
             "status": "Current"
           }
-        }
+        },
+        "supplierRank": "Regular"
       }
     ]
   },
@@ -1334,7 +1336,7 @@ export const seedPartnerCompanies: PartnerCompany[] = [
     "name": "ALVAREZ, GREG YAP",
     "type": "Subcontractor",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": false,
+    "isArchived": true,
     "accreditationStatus": "Accredited",
     "branches": [
       {
@@ -13979,7 +13981,7 @@ export const seedPartnerCompanies: PartnerCompany[] = [
   {
     "id": "pc-import-MTE001",
     "name": "MTEKNIK TECHNOLOGIES SOLUTIONS INC.",
-    "type": "Subcontractor",
+    "type": "Supplier",
     "createdAt": "2026-07-22T16:29:28.179Z",
     "isArchived": false,
     "accreditationStatus": "Accredited",
@@ -13994,7 +13996,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "sourceRow": 798,
         "documents": {}
       }
-    ]
+    ],
+    "supplierOrigin": "Local"
   },
   {
     "id": "pc-import-MTT001",
@@ -14336,7 +14339,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
             "status": "Current",
             "daysLeft": 162
           }
-        }
+        },
+        "supplierRank": "Regular"
       },
       {
         "id": "branch-NET004-NT-818",
@@ -19977,7 +19981,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
             "provided": false,
             "status": "Missing"
           }
-        }
+        },
+        "supplierRank": "Regular"
       }
     ]
   },
@@ -21213,7 +21218,7 @@ export const seedPartnerCompanies: PartnerCompany[] = [
     "name": "UNIKKON NETWORK PHILIPPINES INC.",
     "type": "Subcontractor",
     "createdAt": "2026-07-22T16:29:28.179Z",
-    "isArchived": false,
+    "isArchived": true,
     "accreditationStatus": "Accredited",
     "branches": [
       {
@@ -21502,7 +21507,8 @@ export const seedPartnerCompanies: PartnerCompany[] = [
             "provided": true,
             "status": "Current"
           }
-        }
+        },
+        "supplierRank": "Regular"
       }
     ]
   },
@@ -22070,15 +22076,6 @@ export const seedPartnerCompanies: PartnerCompany[] = [
             "status": "Missing"
           }
         }
-      },
-      {
-        "id": "branch-WES001-NT-1228",
-        "bpCode": "WES001-NT",
-        "address": "UNIT 6 & 7, 9F WILCON IT HUB 2251 CHINO ROCES AVE., BANGKAL, CITY OF MAKATI NCR, FOURTH DISTRICT PHILIPPINES 1233",
-        "federalTaxId": "287-434-759-00000",
-        "contactPerson": "WESTCON",
-        "sourceRow": 1228,
-        "documents": {}
       }
     ],
     "supplierOrigin": "Local"
@@ -22377,15 +22374,6 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "rawCategory": "Supplier-Local",
         "supplierRank": "Major",
         "sourceRow": 1245,
-        "documents": {}
-      },
-      {
-        "id": "branch-WOR001-NT-1246",
-        "bpCode": "WOR001-NT",
-        "address": "WSI Corporate Center 1005 Metropolitan Avenue Santa Cruz",
-        "federalTaxId": "000-152-693-00000",
-        "rawCategory": "Supplier-Local",
-        "sourceRow": 1246,
         "documents": {}
       }
     ]

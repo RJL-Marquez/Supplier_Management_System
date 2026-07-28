@@ -1388,8 +1388,12 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
   // existing companies (merging as a branch when matched, creating a new
   // company otherwise), then replaces the full partner company list in one
   // shot. Returns the merge log/stats so the caller can show an audit trail.
-  const importMasterList = async (file: File): Promise<ImportResult> => {
-    const result = await importMasterListFromFile(file, partnerCompanies);
+  const importMasterList = async (file: File, options?: { replace?: boolean }): Promise<ImportResult> => {
+    // Replace mode starts from an empty registry so the result mirrors the file
+    // exactly (its category/rank totals match the sheet), instead of merging
+    // the file's rows on top of whatever is already loaded.
+    const base = options?.replace ? [] : partnerCompanies;
+    const result = await importMasterListFromFile(file, base);
     const normalized = result.companies.map(normalizePartnerCompany);
     setPartnerCompanies(normalized);
     safeSetItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(normalized));

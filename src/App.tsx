@@ -721,6 +721,7 @@ export default function App() {
         canRenewDocuments={canRenewDocuments}
         initialFocusCompanyId={focusCompanyId}
         onFocusConsumed={() => setFocusCompanyId(null)}
+        currentUserEmail={account || ''}
       />
     ),
     'document-register': (
@@ -729,6 +730,7 @@ export default function App() {
         simClock={simClock}
         canRenewDocuments={canRenewDocuments}
         onUpdateCompany={updatePartnerCompany}
+        currentUserEmail={account || ''}
       />
     ),
     'partners-feedback-hub': (

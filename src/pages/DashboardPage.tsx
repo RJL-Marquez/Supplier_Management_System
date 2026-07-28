@@ -32,6 +32,7 @@ import {
   getSurveyEvaluationCompanies,
   computeRankScore,
 } from '../utils/analytics';
+import { computeCategoryRankSummary } from '../utils/categorySummary';
 
 // ----------------------------------------------------
 // TYPES & WIDGET DEFINITIONS
@@ -394,6 +395,14 @@ export function DashboardPage({
   const topPartner = useMemo(() => {
     return companyAverages[0] || null;
   }, [companyAverages]);
+
+  // "Active Partners" counts accredited BP Codes the way the Master List's
+  // Category Summary does - per branch, NT separate - not merged companies.
+  // A company holding both an NT and a non-NT BP Code counts as two here.
+  const accreditedBranchTotal = useMemo(
+    () => computeCategoryRankSummary(partnerCompanies).total,
+    [partnerCompanies]
+  );
 
   // 2. Stakeholder Groups Comparison Averages
   const groupAverages = useMemo(() => {
@@ -796,9 +805,9 @@ export function DashboardPage({
                         <div className="bg-slate-50/50 dark:bg-slate-900/40 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800">
                           <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Active Partners</span>
                           <span className="text-2xl font-light text-slate-800 dark:text-white mt-1 block">
-                            {partnerCompanies.length}
+                            {accreditedBranchTotal}
                           </span>
-                          <span className="text-[10px] text-emerald-500 mt-1 block font-medium">Unique registry</span>
+                          <span className="text-[10px] text-emerald-500 mt-1 block font-medium">Accredited BP Codes</span>
                         </div>
                       </div>
                     )}

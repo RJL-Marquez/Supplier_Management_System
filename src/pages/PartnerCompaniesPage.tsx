@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   Trash,
@@ -36,16 +37,20 @@ import {
   Tag,
   Mail,
   User,
-  Phone
+  Phone,
+  AlertTriangle
 } from 'lucide-react';
 import { AccreditationStatus, BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SupplierOrigin, SurveyResponse, SurveyType } from '../types/survey';
 import { getMaxRatingForResponses } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
-import { computeDocumentStatus, computeCompanyDocumentSummary, CompanyDocumentSummary } from '../utils/compliance';
+import { branchAwareCompanyLabel, computeDocumentStatus, computeCompanyDocumentSummary, CompanyDocumentSummary } from '../utils/compliance';
+import { CATEGORY_BUCKET_KEYS, computeCategoryRankSummary } from '../utils/categorySummary';
 import { getRequiredDocumentKeys, isExpiryDocument } from '../utils/documentRequirements';
 import { findMissingProfileFields, MISSING_FIELD_LABELS, MissingProfileField } from '../utils/dataCompleteness';
 import { ImportResult } from '../utils/masterListImport';
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
+import { logAdminActivity } from '../utils/adminActivityLog';
+import { logDocumentModification } from '../utils/documentModificationLog';
 
 const MISSING_FIELD_ICONS: Record<MissingProfileField, typeof MapPin> = {
   address: MapPin,
@@ -98,7 +103,7 @@ interface PartnerCompaniesPageProps {
   ) => void;
   onRemoveCompany: (id: string) => void;
   onUpdateCompany: (company: PartnerCompany) => void;
-  onImportMasterList?: (file: File) => Promise<ImportResult>;
+  onImportMasterList?: (file: File, options?: { replace?: boolean }) => Promise<ImportResult>;
   isAdmin?: boolean;
   /** Distinct from isAdmin - can be granted to a role without full Admin access (Account Management -> "Renew Compliance Documents"). */
   canRenewDocuments?: boolean;
@@ -106,6 +111,7 @@ interface PartnerCompaniesPageProps {
   /** Deep-link support: opens this company's detail/edit panel on arrival. */
   initialFocusCompanyId?: string | null;
   onFocusConsumed?: () => void;
+  currentUserEmail?: string;
 }
 
 export function PartnerCompaniesPage({
@@ -120,6 +126,7 @@ export function PartnerCompaniesPage({
   simClock = null,
   initialFocusCompanyId,
   onFocusConsumed,
+  currentUserEmail = '',
 }: PartnerCompaniesPageProps) {
   const canRenew = isAdmin || canRenewDocuments;
   // Tabs: Active, Expired, Archived
@@ -131,6 +138,8 @@ export function PartnerCompaniesPage({
   const [originFilter, setOriginFilter] = useState<'All' | 'Local' | 'Foreign'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'general' | 'simplified'>('general');
+  const [isCategorySummaryOpen, setIsCategorySummaryOpen] = useState(true);
+  const [importReplace, setImportReplace] = useState(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [registerModalTab, setRegisterModalTab] = useState<'manual' | 'upload'>('manual');
 
@@ -145,6 +154,12 @@ export function PartnerCompaniesPage({
   const [renewalMonth, setRenewalMonth] = useState(() => getEffectiveNow(simClock).getMonth());
   const [renewalDay, setRenewalDay] = useState(() => getEffectiveNow(simClock).getDate());
   const [renewalStep, setRenewalStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // Confirm-before-apply gate for flag-only documents (provided/not-provided
+  // checklist items) - these used to flip the instant the badge was clicked,
+  // with no way to back out and no audit trail. Clicking now only opens this
+  // dialog; toggleFlagDocument (called from its Confirm button) applies it.
+  const [flagConfirmTarget, setFlagConfirmTarget] = useState<{ branch: BranchRecord; docName: string } | null>(null);
 
   const maxRating = useMemo(() => {
     return getMaxRatingForResponses(responses);
@@ -269,6 +284,12 @@ export function PartnerCompaniesPage({
     return { active, expired, archived };
   }, [partnerCompanies, effectiveNow]);
 
+  // Mirrors the Master List's own "Category Summary" / "Supplier Rank Summary"
+  // legend blocks - counted per BRANCH (BP Code), NT separate. Shared with the
+  // Dashboard's "Active Partners" KPI so both agree on the total (see
+  // computeCategoryRankSummary).
+  const categoryRankSummary = useMemo(() => computeCategoryRankSummary(partnerCompanies), [partnerCompanies]);
+
   // Cross-cutting filter, not a partition: a company can be both Expired
   // (document status) and Incomplete (profile) at once, so this pulls from
   // every non-archived company rather than being mutually exclusive with
@@ -323,7 +344,7 @@ export function PartnerCompaniesPage({
     setImportError('');
     setImportResult(null);
     try {
-      const result = await onImportMasterList(file);
+      const result = await onImportMasterList(file, { replace: importReplace });
       setImportResult(result);
       setIsRegisterOpen(false);
     } catch (err) {
@@ -494,10 +515,21 @@ export function PartnerCompaniesPage({
     return new Date(renewalYear, renewalMonth + 1, 0).getDate();
   }, [renewalYear, renewalMonth]);
 
+  // Category label for the modification log, matching Document Register's
+  // format (e.g. "Supplier (Local)") so entries read consistently regardless
+  // of which page an edit came from.
+  const categoryLabelFor = (company: Pick<PartnerCompany, 'type' | 'supplierOrigin'>) =>
+    company.type === 'Supplier' ? `Supplier (${company.supplierOrigin ?? 'Local'})` : company.type;
+
   // Toggle a flag-only document (e.g. SIF, Owner's ID) that has no expiry
-  // date of its own - just a provided/not-provided accreditation checklist item.
+  // date of its own - just a provided/not-provided accreditation checklist
+  // item. Called from the confirm dialog's Confirm button (see
+  // flagConfirmTarget/requestFlagToggle) rather than directly from the badge
+  // click, and logged the same way Document Register logs its own edits so
+  // both entry points share one audit trail.
   const toggleFlagDocument = (branchId: string, docName: string, provided: boolean) => {
     if (!selectedCompany) return;
+    const branch = (selectedCompany.branches ?? []).find((b) => b.id === branchId);
     const updatedBranches = (selectedCompany.branches ?? []).map((b) =>
       b.id === branchId
         ? { ...b, documents: { ...b.documents, [docName]: { provided, status: provided ? 'Current' as DocumentStatus : 'Missing' as DocumentStatus } } }
@@ -506,6 +538,22 @@ export function PartnerCompaniesPage({
     const updated: PartnerCompany = { ...selectedCompany, branches: updatedBranches };
     onUpdateCompany(updated);
     setSelectedCompany(updated);
+    logAdminActivity(
+      'Updated compliance document',
+      `${docName} marked ${provided ? 'provided' : 'not provided'} for "${branchAwareCompanyLabel(selectedCompany, branch)}"`
+    );
+    logDocumentModification({
+      actorEmail: currentUserEmail || 'unknown',
+      category: categoryLabelFor(selectedCompany),
+      companyName: branchAwareCompanyLabel(selectedCompany, branch),
+      docName,
+      change: `Marked ${provided ? 'provided' : 'not provided'}`,
+    });
+  };
+
+  const requestFlagToggle = (branch: BranchRecord, docName: string) => {
+    if (!canRenew) return;
+    setFlagConfirmTarget({ branch, docName });
   };
 
   // Assigns/changes a partner's type (and origin, for Suppliers) - the
@@ -537,6 +585,7 @@ export function PartnerCompaniesPage({
     const pad = (n: number) => String(n).padStart(2, '0');
     const newExpiryStr = `${renewalYear}-${pad(renewalMonth + 1)}-${pad(renewalDay)}`;
     const { branchId, docName } = renewalTarget;
+    const branch = (selectedCompany.branches ?? []).find((b) => b.id === branchId);
     const { status, daysLeft } = computeDocumentStatus({ expiryDate: newExpiryStr }, effectiveNow, docName);
 
     const updatedBranches = (selectedCompany.branches ?? []).map((b) =>
@@ -551,6 +600,17 @@ export function PartnerCompaniesPage({
     setRenewalTarget(null);
     setSuccessMessage(`"${docName}" renewed for "${selectedCompany.name}" until ${formatDate(newExpiryStr)}.`);
     setTimeout(() => setSuccessMessage(''), 5000);
+    logAdminActivity(
+      'Renewed compliance document',
+      `${docName} renewed for "${branchAwareCompanyLabel(selectedCompany, branch)}" — new expiry ${newExpiryStr}`
+    );
+    logDocumentModification({
+      actorEmail: currentUserEmail || 'unknown',
+      category: categoryLabelFor(selectedCompany),
+      companyName: branchAwareCompanyLabel(selectedCompany, branch),
+      docName,
+      change: `Renewed — new expiry ${formatDate(newExpiryStr)}`,
+    });
   };
 
   return (
@@ -573,34 +633,99 @@ export function PartnerCompaniesPage({
       {/* Primary Status Tabs Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { key: 'Active', label: 'Active Partners', count: classifiedCompanies.active.length, color: 'text-emerald-600 border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10' },
-          { key: 'Expired', label: 'Expired Documents', count: classifiedCompanies.expired.length, color: 'text-rose-600 border-rose-200 bg-rose-50/30 dark:bg-rose-950/10' },
-          { key: 'Incomplete', label: 'Incomplete Profiles', count: incompleteCompanies.length, color: 'text-amber-600 border-amber-200 bg-amber-50/30 dark:bg-amber-950/10' },
-          { key: 'Archived', label: 'Archived Partners', count: classifiedCompanies.archived.length, color: 'text-slate-500 border-slate-200 bg-slate-50/30 dark:bg-slate-900/10' }
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setStatusTab(tab.key as any)}
-            className={`flex items-center justify-between p-4 rounded-xl border text-left transition duration-150 cursor-pointer ${
-              statusTab === tab.key
-                ? 'border-[#0063a9] bg-[#0063a9]/5 ring-2 ring-[#0063a9]/10'
-                : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-transparent dark:bg-slate-950'
-            }`}
-          >
-            <div>
-              <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{tab.label}</p>
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-1">
-                {tab.key === 'Active' && 'Active evaluation partners'}
-                {tab.key === 'Expired' && 'Has an expired required document'}
-                {tab.key === 'Incomplete' && 'Missing address, contact, email, or phone'}
-                {tab.key === 'Archived' && 'Permanently shelved partners'}
-              </p>
+          { key: 'Active', label: 'Active Partners', count: classifiedCompanies.active.length, icon: ShieldCheck, accent: 'text-emerald-600 dark:text-emerald-400', caption: 'Total active companies' },
+          { key: 'Expired', label: 'Expired Documents', count: classifiedCompanies.expired.length, icon: AlertCircle, accent: 'text-rose-600 dark:text-rose-400', caption: 'Companies with expired documents' },
+          { key: 'Incomplete', label: 'Incomplete Profiles', count: incompleteCompanies.length, icon: ClipboardList, accent: 'text-amber-600 dark:text-amber-400', caption: 'Companies with incomplete profiles' },
+          { key: 'Archived', label: 'Archived Partners', count: classifiedCompanies.archived.length, icon: Archive, accent: 'text-slate-500 dark:text-slate-400', caption: 'Companies in the archive' }
+        ].map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setStatusTab(tab.key as any)}
+              className={`group flex items-center justify-between gap-3 p-4 rounded-xl border text-left transition-all duration-150 cursor-pointer ${
+                statusTab === tab.key
+                  ? 'border-[#0063a9] bg-[#0063a9]/5 ring-2 ring-[#0063a9]/10'
+                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 hover:border-[#0063a9]/40 hover:bg-blue-50/40 dark:hover:bg-blue-950/20 hover:shadow-md hover:-translate-y-0.5'
+              }`}
+            >
+              <div>
+                <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">{tab.label}</p>
+                <p className={`mt-1.5 text-[28px] leading-none font-semibold tracking-tight tabular-nums ${tab.accent}`}>{tab.count}</p>
+                <p className={`mt-1.5 text-[11px] font-medium ${tab.accent}`}>{tab.caption}</p>
+              </div>
+              <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-current/10 ${tab.accent} transition-transform duration-150 group-hover:scale-110`}>
+                <Icon size={20} />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Category & Supplier Rank Breakdown - mirrors the Master List's own
+          legend blocks (Category Summary / Supplier Rank Summary), counted
+          per branch/BP Code with NT as a fully separate category. */}
+      <div className="panel p-0 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setIsCategorySummaryOpen((v) => !v)}
+          className="flex w-full items-center justify-between px-5 py-3.5 text-left cursor-pointer"
+        >
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Category &amp; Supplier Rank Breakdown</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">Every accredited branch (BP Code) — NT counted as its own category, same as the Master List</p>
+          </div>
+          {isCategorySummaryOpen ? <ChevronUp size={16} className="shrink-0 text-slate-400" /> : <ChevronDown size={16} className="shrink-0 text-slate-400" />}
+        </button>
+
+        {isCategorySummaryOpen && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-800 p-4">
+            <div className="rounded-xl border border-slate-100 dark:border-slate-800 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-900/50 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <th className="px-4 py-2">Category</th>
+                    <th className="px-4 py-2 text-right">Branches</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {CATEGORY_BUCKET_KEYS.map((key) => (
+                    <tr key={key}>
+                      <td className="px-4 py-2 font-medium text-slate-600 dark:text-slate-300">{key}</td>
+                      <td className="px-4 py-2 text-right font-bold tabular-nums text-slate-800 dark:text-slate-100">{categoryRankSummary.buckets[key] ?? 0}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-slate-50 dark:bg-slate-900/40">
+                    <td className="px-4 py-2 font-bold text-slate-700 dark:text-slate-200">Total</td>
+                    <td className="px-4 py-2 text-right font-black tabular-nums text-[#0063a9]">{categoryRankSummary.total}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <span className={`text-xl font-black px-3 py-1 rounded-lg ${tab.color}`}>
-              {tab.count}
-            </span>
-          </button>
-        ))}
+
+            <div className="rounded-xl border border-slate-100 dark:border-slate-800 overflow-hidden self-start">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-900/50 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <th className="px-4 py-2">Supplier Rank</th>
+                    <th className="px-4 py-2 text-right">Branches</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tr>
+                    <td className="px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Major</td>
+                    <td className="px-4 py-2 text-right font-bold tabular-nums text-slate-800 dark:text-slate-100">{categoryRankSummary.major}</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Regular</td>
+                    <td className="px-4 py-2 text-right font-bold tabular-nums text-slate-800 dark:text-slate-100">{categoryRankSummary.regular}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p className="px-4 py-2 text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800">Supplier branches only, from each branch's Supplier Rank field.</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Secondary Filter Options Bar */}
@@ -788,43 +913,45 @@ export function PartnerCompaniesPage({
                       onClick={() => handleCompanyClick(c)}
                       className="hover:bg-slate-50/80 dark:hover:bg-slate-900/20 cursor-pointer group transition-colors"
                     >
-                      <td className="px-5 py-3 font-semibold text-slate-800 dark:text-slate-100 group-hover:text-[#0063a9] dark:group-hover:text-blue-400">
-                        <div className="flex items-center gap-2">
-                          <Building size={14} className="text-slate-400 group-hover:text-[#0063a9]" />
-                          <span>{c.name}</span>
-                          {missingProfileFields.length > 0 && (
-                            <span
-                              title={`Missing ${missingProfileFields.map((f) => MISSING_FIELD_LABELS[f]).join(', ')}`}
-                              className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50 px-1.5 py-0.5 text-[9px] font-bold"
-                            >
-                              {missingProfileFields.length} missing
+                      <td className="px-5 py-3.5 align-top font-semibold text-slate-800 dark:text-slate-100 group-hover:text-[#0063a9] dark:group-hover:text-blue-400 max-w-[280px]">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Building size={14} className="shrink-0 text-slate-400 group-hover:text-[#0063a9]" />
+                          <span className="truncate" title={c.name}>{c.name}</span>
+                        </div>
+                        {missingProfileFields.length > 0 && (
+                          <span
+                            title={`Missing ${missingProfileFields.map((f) => MISSING_FIELD_LABELS[f]).join(', ')}`}
+                            className="mt-1.5 inline-flex items-center whitespace-nowrap rounded-full bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50 px-1.5 py-0.5 text-[9px] font-bold"
+                          >
+                            {missingProfileFields.length} missing
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 align-top">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${typeBadgeClasses(c.type)}`}>
+                            {c.type}
+                          </span>
+                          {c.type === 'Supplier' && c.supplierOrigin && (
+                            <span className="inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700">
+                              {c.supplierOrigin}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-5 py-3">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${typeBadgeClasses(c.type)}`}>
-                          {c.type}
-                        </span>
-                        {c.type === 'Supplier' && c.supplierOrigin && (
-                          <span className="ml-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700">
-                            {c.supplierOrigin}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-xs">
+                      <td className="px-5 py-3.5 align-top whitespace-nowrap text-slate-500 dark:text-slate-400 text-xs">
                         {formatDate(c.registeredAt || c.createdAt)}
                       </td>
-                      <td className="px-5 py-3 text-xs font-medium">
+                      <td className="px-5 py-3.5 align-top whitespace-nowrap text-xs font-medium">
                         {c.isArchived ? (
                           <span className="text-slate-400 italic">Archived</span>
                         ) : docSummary.status === 'Expired' ? (
-                          <span className="text-rose-600 font-bold flex items-center gap-1">
+                          <span className="inline-flex items-center gap-1 text-rose-600 font-bold">
                             <AlertCircle size={12} />
                             {docSummary.expiredCount} document{docSummary.expiredCount === 1 ? '' : 's'} expired
                           </span>
                         ) : docSummary.status === 'Expiring Soon' ? (
-                          <span className="text-amber-600 font-extrabold flex items-center gap-1 animate-pulse">
+                          <span className="inline-flex items-center gap-1 text-amber-600 font-extrabold animate-pulse">
                             <Clock size={12} />
                             {docSummary.expiringSoonCount} expiring soon
                           </span>
@@ -834,21 +961,21 @@ export function PartnerCompaniesPage({
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-right">
-                        <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-5 py-3.5 align-top text-right">
+                        <div className="flex flex-wrap justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                           {docSummary.status === 'Expired' && canRenew && (
                             <button
                               onClick={() => handleCompanyClick(c)}
-                              className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1 px-2.5 rounded flex items-center gap-1 cursor-pointer transition"
+                              className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1 px-2.5 text-xs cursor-pointer transition"
                             >
                               <RefreshCw size={12} />
-                              <span>Review Documents</span>
+                              <span>Review</span>
                             </button>
                           )}
                           {isAdmin && (
                             <button
                               onClick={(e) => toggleArchive(c, e)}
-                              className="text-xs bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold py-1 px-2.5 rounded flex items-center gap-1 cursor-pointer transition"
+                              className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold py-1 px-2.5 text-xs cursor-pointer transition"
                               title={c.isArchived ? "Restore to registry" : "Archive Partner"}
                             >
                               <Archive size={12} />
@@ -1059,7 +1186,7 @@ export function PartnerCompaniesPage({
       )}
 
       {/* PARTNER DETAILS & CONTRACT CONFIGURATION DRAWER/MODAL */}
-      {selectedCompany && (
+      {selectedCompany && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
           <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-transparent dark:bg-slate-950 relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             {/* Close Button */}
@@ -1381,7 +1508,7 @@ export function PartnerCompaniesPage({
                                     if (expiryBased) {
                                       openDocumentRenewalPicker(branch.id, docName, doc.expiryDate);
                                     } else {
-                                      toggleFlagDocument(branch.id, docName, !doc.provided);
+                                      requestFlagToggle(branch, docName);
                                     }
                                   }}
                                   title={
@@ -1439,11 +1566,12 @@ export function PartnerCompaniesPage({
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* DOCUMENT RENEWAL DATE PICKER DIALOG (custom-made scrollable year, month blocks, accurate day blocks with wizard steps) */}
-      {renewalTarget && selectedCompany && (
+      {renewalTarget && selectedCompany && createPortal(
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs animate-fade-in">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-transparent dark:bg-slate-950 relative animate-in fade-in zoom-in-95 duration-150">
 
@@ -1598,6 +1726,11 @@ export function PartnerCompaniesPage({
                     ✔ Marks "{renewalTarget.docName}" as provided/current with this expiry date.<br />
                     ✔ If this was the company's last expired document, it becomes eligible for audits again.
                   </p>
+
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-[#a16207] dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400 text-left">
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                    <span>This immediately updates the company's compliance record. Double-check the date before confirming.</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -1643,11 +1776,76 @@ export function PartnerCompaniesPage({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
+      {/* Confirm before a flag doc's provided/not-provided status actually flips - mirrors
+          the same confirm dialog on the Document Register page, so both entry points into
+          editing a company's compliance documents behave the same way. */}
+      {flagConfirmTarget && selectedCompany && (() => {
+        const willBeProvided = !(flagConfirmTarget.branch.documents?.[flagConfirmTarget.docName]?.provided);
+        return createPortal(
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
+            <div className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950 relative">
+              <button
+                onClick={() => setFlagConfirmTarget(null)}
+                className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
+                type="button"
+              >
+                <X size={16} />
+              </button>
+
+              <div className="flex flex-col items-center text-center gap-2.5">
+                <span className="inline-flex items-center justify-center h-10 w-10 rounded-full bg-amber-50 text-[#a16207] dark:bg-amber-950/40 dark:text-amber-400">
+                  <AlertTriangle size={18} />
+                </span>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Confirm Status Change</h3>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/60 divide-y divide-slate-100 dark:divide-slate-800">
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Document</span>
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 text-right truncate">{flagConfirmTarget.docName}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Company</span>
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 text-right truncate">{branchAwareCompanyLabel(selectedCompany, flagConfirmTarget.branch)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">New Status</span>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold border ${willBeProvided ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/50' : 'bg-rose-50 text-[#f43f5e] border-rose-200 dark:bg-rose-950/40 dark:border-rose-900/50'}`}>
+                    {willBeProvided ? 'Provided' : 'Not Provided'}
+                  </span>
+                </div>
+              </div>
+
+              <p className="mt-3 text-center text-[11px] text-slate-400">This updates the compliance record immediately.</p>
+
+              <div className="flex items-center gap-2 mt-5">
+                <button onClick={() => setFlagConfirmTarget(null)} className="secondary-button flex-1 py-2 text-xs" type="button">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    toggleFlagDocument(flagConfirmTarget.branch.id, flagConfirmTarget.docName, willBeProvided);
+                    setFlagConfirmTarget(null);
+                  }}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#a16207] hover:bg-amber-800 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
+                  type="button"
+                >
+                  <Check size={13} />
+                  <span>Confirm</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
+
       {/* REGISTER PARTNER MODAL DIALOG */}
-      {isRegisterOpen && (
+      {isRegisterOpen && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-transparent dark:bg-slate-950 relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             {/* Close Button */}
@@ -1708,6 +1906,36 @@ export function PartnerCompaniesPage({
                   refreshed file is safe: matches are merged as an extra branch/BP Code rather than duplicated, and
                   only genuinely new or newly-accredited companies are added.
                 </div>
+
+                <label
+                  className={`flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer transition ${
+                    importReplace
+                      ? 'border-rose-300 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/20'
+                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={importReplace}
+                    onChange={(e) => setImportReplace(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-300"
+                  />
+                  <span className="text-xs">
+                    <span className="font-bold text-slate-700 dark:text-slate-200">Replace the entire registry with this file</span>
+                    <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Clears every existing partner first, so the registry mirrors this file exactly (its category and rank
+                      totals will match the sheet). Leave unchecked to merge into the current registry instead.
+                    </span>
+                  </span>
+                </label>
+
+                {importReplace && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-[#a16207] dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                    <span>This permanently removes all current partner companies before importing. This cannot be undone.</span>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   onClick={() => importFileInputRef.current?.click()}
@@ -1715,7 +1943,7 @@ export function PartnerCompaniesPage({
                   className="w-full bg-[#0063a9] hover:bg-[#00528c] text-white flex items-center justify-center gap-2 py-3 px-4 text-xs font-bold rounded-lg shadow-xs transition duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                 >
                   {isImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                  <span>{isImporting ? 'Importing…' : 'Choose Excel File (.xlsx)'}</span>
+                  <span>{isImporting ? 'Importing…' : importReplace ? 'Choose File & Replace Registry' : 'Choose Excel File (.xlsx)'}</span>
                 </button>
                 <div className="flex items-center justify-end border-t border-slate-100 dark:border-slate-800 pt-4">
                   <button
@@ -1806,11 +2034,12 @@ export function PartnerCompaniesPage({
             </form>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Master List Import Result Modal */}
-      {importResult && (
+      {importResult && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-transparent dark:bg-slate-950 relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             <button
@@ -1885,11 +2114,12 @@ export function PartnerCompaniesPage({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Delete Confirmation Passcode Modal */}
-      {companyToDelete && (
+      {companyToDelete && createPortal(
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-transparent dark:bg-slate-950 relative animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center gap-3 text-amber-500">
@@ -1941,7 +2171,8 @@ export function PartnerCompaniesPage({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

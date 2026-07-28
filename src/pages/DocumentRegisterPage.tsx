@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Globe, MapPin, Truck, Package, Briefcase, RefreshCw, X, Check, Users, ShieldCheck, Clock, XCircle, Gauge, LayoutGrid, Settings2, RotateCcw } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Search, Globe, MapPin, Truck, Package, Briefcase, RefreshCw, X, Check, Users, ShieldCheck, Clock, XCircle, Gauge, LayoutGrid, Settings2, RotateCcw, AlertTriangle, History, ChevronUp, ChevronDown } from 'lucide-react';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Legend, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { BranchRecord, ComplianceDocument, PartnerCompany, PartnerCompanyType, SupplierOrigin } from '../types/survey';
-import { computeCompanyDocumentSummary, computeDocumentStatus } from '../utils/compliance';
+import { BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SupplierOrigin } from '../types/survey';
+import { branchAwareCompanyLabel, computeCompanyDocumentSummary, computeDocumentStatus, isNTBranch } from '../utils/compliance';
 import { getRequiredDocumentKeys, isExpiryDocument } from '../utils/documentRequirements';
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
 import { logAdminActivity } from '../utils/adminActivityLog';
+import { DocumentModificationEntry, getDocumentModifications, logDocumentModification } from '../utils/documentModificationLog';
 import { ChartCard } from '../components/ChartCard';
 import { typeBadgeClasses } from './PartnerCompaniesPage';
 
@@ -14,6 +16,7 @@ interface DocumentRegisterPageProps {
   onUpdateCompany: (company: PartnerCompany) => void;
   canRenewDocuments?: boolean;
   simClock?: SimClock | null;
+  currentUserEmail?: string;
 }
 
 // One category tab = one column set, mirroring the Master List's
@@ -106,25 +109,84 @@ const STATUS_STYLES: Record<string, string> = {
   Missing: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700',
 };
 
-// Quiet-by-default treatment for the big detail matrix below: a dot + plain
-// text instead of a bordered/filled pill on every one of a few hundred
-// cells. Only the states that actually need action (Expiring/Expired/For
-// Update) get bold color - Current and Missing stay visually quiet so the
-// eye lands on what matters instead of a wall of equally-loud boxes.
-const CELL_DOT: Record<string, string> = {
-  Current: 'bg-emerald-400 dark:bg-emerald-500',
-  'Expiring Soon': 'bg-[#a16207]',
-  Expired: 'bg-[#f43f5e]',
-  'For Update': 'bg-[#f43f5e]',
-  Missing: 'bg-slate-300 dark:bg-slate-600',
+// Heatmap treatment for the big detail matrix below: status lives in the
+// CELL FILL (background + border + text color), not a small dot, so a
+// fully-compliant row and a problem row are distinguishable at a glance
+// without reading any text.
+const CELL_FILL: Record<string, string> = {
+  Current: 'bg-emerald-600 border-emerald-700 text-white dark:bg-emerald-600 dark:border-emerald-500 dark:text-white',
+  'Expiring Soon': 'bg-[#a16207] border-amber-800 text-white dark:bg-[#a16207] dark:border-amber-600 dark:text-white',
+  Expired: 'bg-[#f43f5e] border-rose-600 text-white dark:bg-[#f43f5e] dark:border-rose-400 dark:text-white',
+  'For Update': 'bg-[#f43f5e] border-rose-600 text-white dark:bg-[#f43f5e] dark:border-rose-400 dark:text-white',
+  Missing: 'border-dashed border-slate-200 text-slate-300 dark:border-slate-700 dark:text-slate-600',
 };
-const CELL_TEXT: Record<string, string> = {
-  Current: 'text-slate-500 dark:text-slate-400',
-  'Expiring Soon': 'text-[#a16207] dark:text-amber-400 font-bold',
-  Expired: 'text-[#f43f5e] font-bold',
-  'For Update': 'text-[#f43f5e] font-bold',
-  Missing: 'text-slate-400 dark:text-slate-500',
+
+const CELL_ICON: Record<string, typeof Check | undefined> = {
+  Current: Check,
+  'Expiring Soon': Clock,
+  Expired: XCircle,
+  'For Update': XCircle,
 };
+
+// Ordering used when a document column header is clicked to sort the matrix
+// by that column - ascending brings compliant rows to the top, descending
+// surfaces the rows needing attention first (Expired/For Update highest).
+const DOC_STATUS_SORT_RANK: Record<DocumentStatus, number> = {
+  Current: 0,
+  Missing: 1,
+  'Expiring Soon': 2,
+  Expired: 3,
+  'For Update': 3,
+};
+
+// Every column in the detail matrix can be sorted by clicking its header.
+// 'company'/'compliance'/'ntType'/'bpCode' are fixed keys; a document column
+// uses `doc:${docName}` so it can't collide with those.
+type MatrixSortKey = 'company' | 'compliance' | 'ntType' | 'bpCode' | string;
+
+function formatDaysLabel(daysLeft?: number): string | undefined {
+  if (typeof daysLeft !== 'number') return undefined;
+  return daysLeft < 0 ? `${Math.abs(daysLeft)}d ago` : `${daysLeft}d`;
+}
+
+// Label shown next to the icon - only the states that actually need action
+// (Expiring/Expired/For Update) spell anything out; Current and Missing stay
+// icon/fill only so the eye reads color first, not a wall of repeated words.
+function getCellLabel(status: string, daysLeft?: number): string | undefined {
+  switch (status) {
+    case 'Expiring Soon':
+      return formatDaysLabel(daysLeft);
+    case 'Expired': {
+      const days = formatDaysLabel(daysLeft);
+      return days ? `Expired · ${days}` : 'Expired';
+    }
+    case 'For Update':
+      return 'For Update';
+    default:
+      return undefined;
+  }
+}
+
+// Second line, expiry-bearing cells only: short date (+ days, for Current -
+// Expiring/Expired/For Update already show days in the label line above).
+function getCellDateLine(status: string, expiryDate: string | undefined, daysLeft: number | undefined): string | undefined {
+  if (!expiryDate) return undefined;
+  const shortDate = formatShortDate(expiryDate);
+  if (status === 'Current') {
+    const days = formatDaysLabel(daysLeft);
+    return days ? `${shortDate} · ${days}` : shortDate;
+  }
+  return shortDate;
+}
+
+function formatShortDate(dateString?: string): string {
+  if (!dateString) return '—';
+  try {
+    return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch {
+    return dateString;
+  }
+}
 
 // A document can be recorded on any of a company's branches (e.g. a normal +
 // "-NT" BP Code) - use whichever branch already has data for this key, else
@@ -152,15 +214,20 @@ function renderDonutValueLabel(props: any) {
   );
 }
 
-export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRenewDocuments, simClock = null }: DocumentRegisterPageProps) {
+export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRenewDocuments, simClock = null, currentUserEmail = '' }: DocumentRegisterPageProps) {
   const [categoryKey, setCategoryKey] = useState<string>('supplier-local');
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'expired' | 'expiring' | 'missing'>('all');
   const [renewalTarget, setRenewalTarget] = useState<{ company: PartnerCompany; branchId: string; docName: string } | null>(null);
   const [renewalDate, setRenewalDate] = useState('');
+  const [flagConfirmTarget, setFlagConfirmTarget] = useState<{ company: PartnerCompany; branch: BranchRecord; docName: string } | null>(null);
   const [widgetVisibility, setWidgetVisibility] = useState<Record<string, string[]>>({});
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
   const customizeRef = useRef<HTMLDivElement>(null);
   const [complianceHistory, setComplianceHistory] = useState<Record<string, ComplianceSnapshot[]>>({});
+  const [modificationLog, setModificationLog] = useState<DocumentModificationEntry[]>([]);
+  const [sortKey, setSortKey] = useState<MatrixSortKey>('company');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     try {
@@ -180,6 +247,16 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     }
   }, []);
 
+  // Loaded once up front, then kept live off the same event
+  // logDocumentModification fires - so a renewal/flag change made just now
+  // shows up in the History panel below without a page refresh.
+  useEffect(() => {
+    setModificationLog(getDocumentModifications());
+    const handler = () => setModificationLog(getDocumentModifications());
+    window.addEventListener('document-modification-logged', handler);
+    return () => window.removeEventListener('document-modification-logged', handler);
+  }, []);
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (customizeRef.current && !customizeRef.current.contains(event.target as Node)) {
@@ -189,6 +266,26 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // A status-chip filter from one category (e.g. "Expired") carrying over to
+  // a freshly-selected category could hide every row with no visible cause -
+  // reset it on every category switch. A lingering document-column sort key
+  // is reset too, since Local/Foreign/Courier/Subcontractor each carry a
+  // different set of document columns.
+  useEffect(() => {
+    setStatusFilter('all');
+    setSortKey('company');
+    setSortDirection('asc');
+  }, [categoryKey]);
+
+  const handleSortClick = (key: MatrixSortKey) => {
+    if (key === sortKey) {
+      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
 
   const effectiveNow = getEffectiveNow(simClock);
   const currentDateStr = getEffectiveTodayStr(simClock);
@@ -237,17 +334,132 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     });
   }, [partnerCompanies, category, isAllView]);
 
+  // Companies with a normal + "-NT" BP Code merge into one PartnerCompany
+  // (see masterListImport.ts), which is correct for Partner Companies'
+  // company-level views. But this matrix shows one row of document columns
+  // per row, and the two branches can carry entirely different documents
+  // (different BP Code = different filing) - showing them as one row means
+  // picking one branch's data per cell and silently hiding the other's, so a
+  // company with 2+ branches is instead split into one row per branch here.
+  interface DisplayRow {
+    key: string;
+    company: PartnerCompany;
+    branch?: BranchRecord;
+    isNT: boolean;
+    isSplit: boolean;
+  }
+  const displayRows = useMemo(() => {
+    const list: DisplayRow[] = [];
+    categoryCompanies.forEach((c) => {
+      const branches = c.branches ?? [];
+      if (branches.length > 1) {
+        branches.forEach((b) => {
+          list.push({ key: `${c.id}::${b.id}`, company: c, branch: b, isNT: isNTBranch(b), isSplit: true });
+        });
+      } else {
+        list.push({ key: c.id, company: c, branch: branches[0], isNT: branches[0] ? isNTBranch(branches[0]) : false, isSplit: false });
+      }
+    });
+    return list;
+  }, [categoryCompanies]);
+
+  // Every doc cell's computed status for every row in this category
+  // (unfiltered by search/chip) - the single source of truth the heatmap
+  // cells, the per-row compliance rollup column, and the filter chip counts
+  // all read from, so cell color and chip counts can never drift. Each row
+  // is pinned to its own branch's documents - no cross-branch picking.
+  interface MatrixCell {
+    docName: string;
+    status: DocumentStatus;
+    daysLeft?: number;
+    doc: ComplianceDocument;
+    branch?: BranchRecord;
+    expiryBased: boolean;
+  }
+  const matrixCellData = useMemo(() => {
+    const map = new Map<string, MatrixCell[]>();
+    displayRows.forEach((row) => {
+      map.set(
+        row.key,
+        docColumns.map((docName) => {
+          const branch = row.branch;
+          const doc: ComplianceDocument = (branch?.documents?.[docName] ?? {}) as ComplianceDocument;
+          const { status, daysLeft } = computeDocumentStatus(doc, effectiveNow, docName);
+          return { docName, status, daysLeft, doc, branch, expiryBased: isExpiryDocument(docName) };
+        })
+      );
+    });
+    return map;
+  }, [displayRows, docColumns, effectiveNow]);
+
+  const chipCounts = useMemo(() => {
+    let expired = 0;
+    let expiringSoon = 0;
+    let missing = 0;
+    matrixCellData.forEach((cells) => {
+      cells.forEach((cell) => {
+        if (cell.status === 'Expired' || cell.status === 'For Update') expired++;
+        else if (cell.status === 'Expiring Soon') expiringSoon++;
+        else if (cell.status === 'Missing') missing++;
+      });
+    });
+    return { expired, expiringSoon, missing };
+  }, [matrixCellData]);
+
   const rows = useMemo(() => {
-    let list = categoryCompanies;
+    let list = displayRows;
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
-      list = list.filter((c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.branches ?? []).some((b) => b.bpCode?.toLowerCase().includes(q))
+      list = list.filter((row) =>
+        row.company.name.toLowerCase().includes(q) ||
+        row.branch?.bpCode?.toLowerCase().includes(q)
       );
     }
-    return [...list].sort((a, b) => a.name.localeCompare(b.name));
-  }, [categoryCompanies, searchQuery]);
+    if (statusFilter !== 'all') {
+      list = list.filter((row) => {
+        const cells = matrixCellData.get(row.key) ?? [];
+        return cells.some((cell) => {
+          if (statusFilter === 'expired') return cell.status === 'Expired' || cell.status === 'For Update';
+          if (statusFilter === 'expiring') return cell.status === 'Expiring Soon';
+          return cell.status === 'Missing';
+        });
+      });
+    }
+    // Every column header is clickable to sort (see handleSortClick) - the
+    // comparator below dispatches on which key is active, always falling
+    // back to company name (then NT/non-NT) so ties stay stable and a
+    // company's split branches stay adjacent regardless of sort key.
+    const compareBySortKey = (a: DisplayRow, b: DisplayRow): number => {
+      if (sortKey === 'compliance') {
+        const aCells = matrixCellData.get(a.key) ?? [];
+        const bCells = matrixCellData.get(b.key) ?? [];
+        const aRatio = aCells.length ? aCells.filter((cell) => cell.status === 'Current').length / aCells.length : 0;
+        const bRatio = bCells.length ? bCells.filter((cell) => cell.status === 'Current').length / bCells.length : 0;
+        return aRatio - bRatio;
+      }
+      if (sortKey === 'ntType') {
+        return Number(a.isNT) - Number(b.isNT);
+      }
+      if (sortKey === 'bpCode') {
+        return (a.branch?.bpCode ?? '').localeCompare(b.branch?.bpCode ?? '');
+      }
+      if (typeof sortKey === 'string' && sortKey.startsWith('doc:')) {
+        const docName = sortKey.slice(4);
+        const aCell = (matrixCellData.get(a.key) ?? []).find((cell) => cell.docName === docName);
+        const bCell = (matrixCellData.get(b.key) ?? []).find((cell) => cell.docName === docName);
+        const aRank = aCell ? DOC_STATUS_SORT_RANK[aCell.status] : -1;
+        const bRank = bCell ? DOC_STATUS_SORT_RANK[bCell.status] : -1;
+        return aRank - bRank;
+      }
+      return 0;
+    };
+    const fallback = (a: DisplayRow, b: DisplayRow) => a.company.name.localeCompare(b.company.name) || Number(a.isNT) - Number(b.isNT);
+    return [...list].sort((a, b) => {
+      const primary = compareBySortKey(a, b);
+      const cmp = primary !== 0 ? primary : fallback(a, b);
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+  }, [displayRows, searchQuery, statusFilter, matrixCellData, sortKey, sortDirection]);
 
   // Compliance Overview: one KPI/chart summary per selected view, computed
   // once per company (not per document cell) so it stays cheap even at
@@ -367,19 +579,19 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     });
   }, [categoryKey, currentDateStr, overview.total, overview.complianceRate]);
 
-  const openRenewal = (company: PartnerCompany, docName: string) => {
+  const openRenewal = (company: PartnerCompany, branch: BranchRecord, docName: string) => {
     if (!canRenewDocuments) return;
-    const branch = pickBranchForDoc(company, docName);
-    if (!branch) return;
     const doc = branch.documents?.[docName];
     setRenewalDate(doc?.expiryDate || currentDateStr);
     setRenewalTarget({ company, branchId: branch.id, docName });
   };
 
-  const toggleFlag = (company: PartnerCompany, docName: string) => {
+  // Flag docs (plain provided/not-provided checklist items) used to flip the
+  // instant you clicked the cell - no confirmation, no undo. Clicking now
+  // only opens a confirm dialog (setFlagConfirmTarget); this is the function
+  // that actually applies the change, called from that dialog's Confirm button.
+  const toggleFlag = (company: PartnerCompany, branch: BranchRecord, docName: string) => {
     if (!canRenewDocuments) return;
-    const branch = pickBranchForDoc(company, docName);
-    if (!branch) return;
     const provided = !(branch.documents?.[docName]?.provided);
     const updatedBranches = (company.branches ?? []).map((b) =>
       b.id === branch.id
@@ -389,13 +601,26 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     onUpdateCompany({ ...company, branches: updatedBranches });
     logAdminActivity(
       'Updated compliance document',
-      `${docName} marked ${provided ? 'provided' : 'not provided'} for "${company.name}"`
+      `${docName} marked ${provided ? 'provided' : 'not provided'} for "${branchAwareCompanyLabel(company, branch)}"`
     );
+    logDocumentModification({
+      actorEmail: currentUserEmail || 'unknown',
+      category: viewLabel,
+      companyName: branchAwareCompanyLabel(company, branch),
+      docName,
+      change: `Marked ${provided ? 'provided' : 'not provided'}`,
+    });
+  };
+
+  const requestFlagToggle = (company: PartnerCompany, branch: BranchRecord, docName: string) => {
+    if (!canRenewDocuments) return;
+    setFlagConfirmTarget({ company, branch, docName });
   };
 
   const confirmRenewal = () => {
     if (!renewalTarget || !renewalDate) return;
     const { company, branchId, docName } = renewalTarget;
+    const branch = (company.branches ?? []).find((b) => b.id === branchId);
     const { status, daysLeft } = computeDocumentStatus({ expiryDate: renewalDate }, effectiveNow, docName);
     const updatedBranches = (company.branches ?? []).map((b) =>
       b.id === branchId
@@ -405,8 +630,15 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     onUpdateCompany({ ...company, branches: updatedBranches });
     logAdminActivity(
       'Renewed compliance document',
-      `${docName} renewed for "${company.name}" — new expiry ${renewalDate}`
+      `${docName} renewed for "${branchAwareCompanyLabel(company, branch)}" — new expiry ${renewalDate}`
     );
+    logDocumentModification({
+      actorEmail: currentUserEmail || 'unknown',
+      category: viewLabel,
+      companyName: branchAwareCompanyLabel(company, branch),
+      docName,
+      change: `Renewed — new expiry ${formatDate(renewalDate)}`,
+    });
     setRenewalTarget(null);
   };
 
@@ -416,6 +648,14 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
       return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     } catch {
       return dateString;
+    }
+  };
+
+  const formatTimestamp = (isoString: string) => {
+    try {
+      return new Date(isoString).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch {
+      return isoString;
     }
   };
 
@@ -793,6 +1033,37 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
         );
       })()}
 
+      {!isAllView && categoryCompanies.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Filter:</span>
+          {(
+            [
+              { key: 'all', label: 'All', count: null, activeClass: 'border-transparent bg-[#0063a9] text-white' },
+              { key: 'expired', label: 'Expired', count: chipCounts.expired, activeClass: 'border-[#f43f5e]/30 bg-rose-50 text-[#f43f5e] dark:bg-rose-950/40 dark:text-rose-400' },
+              { key: 'expiring', label: 'Expiring ≤30d', count: chipCounts.expiringSoon, activeClass: 'border-amber-200 bg-amber-50 text-[#a16207] dark:bg-amber-950/40 dark:text-amber-400' },
+              { key: 'missing', label: 'Missing', count: chipCounts.missing, activeClass: 'border-slate-300 bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300' },
+            ] as const
+          ).map((chip) => {
+            const active = statusFilter === chip.key;
+            return (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={() => setStatusFilter(chip.key)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition cursor-pointer ${
+                  active
+                    ? chip.activeClass
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <span>{chip.label}</span>
+                {chip.count !== null && <span className="tabular-nums opacity-80">{chip.count}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {isAllView ? (
         <div className="panel py-20 text-center text-slate-400">
           <LayoutGrid size={48} className="mx-auto mb-3 opacity-30 text-slate-300" />
@@ -810,76 +1081,242 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
-                  <th className="px-3 py-2.5 sticky left-0 bg-slate-50 dark:bg-slate-950/60 z-10">Company</th>
-                  <th className="px-3 py-2.5">BP Code</th>
+                  <th className="px-3 py-2.5 sticky left-0 bg-slate-50 dark:bg-slate-950/60 z-10">
+                    <SortHeaderButton label="Company" sortKeyValue="company" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
+                  </th>
+                  <th className="px-3 py-2.5 min-w-[110px]">
+                    <SortHeaderButton label="Compliance" sortKeyValue="compliance" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
+                  </th>
+                  <th className="px-3 py-2.5">
+                    <SortHeaderButton label="BP Code" sortKeyValue="bpCode" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
+                  </th>
+                  <th className="px-3 py-2.5 min-w-[130px]">
+                    <SortHeaderButton label="With or Without NT" sortKeyValue="ntType" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
+                  </th>
                   {docColumns.map((docName) => (
                     <th key={docName} className="px-3 py-2.5 min-w-[120px] max-w-[150px] align-bottom" title={docName}>
-                      <span className="line-clamp-2 normal-case font-semibold tracking-normal text-slate-500 dark:text-slate-400">{docName}</span>
+                      <SortHeaderButton
+                        label={docName}
+                        sortKeyValue={`doc:${docName}`}
+                        activeKey={sortKey}
+                        direction={sortDirection}
+                        onClick={handleSortClick}
+                        labelClassName="line-clamp-2 normal-case font-semibold tracking-normal text-slate-500 dark:text-slate-400"
+                      />
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {rows.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/20 transition-colors">
-                    <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-950 z-10">
-                      <div className="flex items-center gap-2">
-                        <span>{c.name}</span>
-                        <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider border shrink-0 ${typeBadgeClasses(c.type)}`}>
-                          {c.type === 'Supplier' ? c.supplierOrigin : c.type}
+                {rows.map((row) => {
+                  const c = row.company;
+                  const cells = matrixCellData.get(row.key) ?? [];
+                  const compliant = cells.filter((cell) => cell.status === 'Current').length;
+                  const total = cells.length;
+                  const hasExpired = cells.some((cell) => cell.status === 'Expired' || cell.status === 'For Update');
+                  const hasExpiring = cells.some((cell) => cell.status === 'Expiring Soon');
+                  const rollup = hasExpired
+                    ? { text: 'text-[#f43f5e]', bar: 'bg-[#f43f5e]' }
+                    : hasExpiring
+                    ? { text: 'text-[#a16207]', bar: 'bg-[#a16207]' }
+                    : { text: 'text-emerald-600 dark:text-emerald-400', bar: 'bg-emerald-500' };
+
+                  return (
+                    <tr key={row.key} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/20 transition-colors">
+                      <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-950 z-10">
+                        <div className="flex items-center gap-2">
+                          <span>{c.name}</span>
+                          <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider border shrink-0 ${typeBadgeClasses(c.type)}`}>
+                            {c.type === 'Supplier' ? c.supplierOrigin : c.type}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 align-middle">
+                        <div className="flex flex-col gap-1 min-w-[64px]">
+                          <span className={`text-xs font-bold tabular-nums ${rollup.text}`}>{compliant}/{total}</span>
+                          <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                            <div className={`h-full rounded-full ${rollup.bar}`} style={{ width: `${total > 0 ? (compliant / total) * 100 : 0}%` }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">
+                        {row.branch?.bpCode || '—'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border shrink-0 ${
+                            row.isNT
+                              ? 'bg-purple-50 text-purple-700 border-purple-100 dark:bg-purple-950/20 dark:text-purple-400 dark:border-purple-900/40'
+                              : 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700'
+                          }`}
+                        >
+                          {row.isNT ? 'With NT' : 'Without NT'}
                         </span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">
-                      {(c.branches ?? []).map((b) => b.bpCode).filter(Boolean).join(', ') || '—'}
-                    </td>
-                    {docColumns.map((docName) => {
-                      const branch = pickBranchForDoc(c, docName);
-                      const doc: ComplianceDocument = (branch?.documents?.[docName] ?? {}) as ComplianceDocument;
-                      const { status, daysLeft } = computeDocumentStatus(doc, effectiveNow, docName);
-                      const expiryBased = isExpiryDocument(docName);
-                      const interactive = canRenewDocuments && !!branch;
-                      return (
-                        <td key={docName} className="px-1.5 py-1">
-                          <button
-                            type="button"
-                            disabled={!interactive}
-                            onClick={() => (expiryBased ? openRenewal(c, docName) : toggleFlag(c, docName))}
-                            title={
-                              doc.expiryDate
-                                ? `Expires ${formatDate(doc.expiryDate)}${canRenewDocuments ? ' — click to renew' : ''}`
-                                : canRenewDocuments
-                                ? (expiryBased ? 'Click to set an expiry date' : `Click to mark ${doc.provided ? 'not provided' : 'provided'}`)
-                                : docName
-                            }
-                            className={`group w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition ${interactive ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60' : 'cursor-default'}`}
-                          >
-                            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CELL_DOT[status]}`} />
-                            <span className="min-w-0 flex-1">
-                              <span className={`block text-[11px] leading-tight ${CELL_TEXT[status]}`}>{status}</span>
-                              {expiryBased && doc.expiryDate && (
-                                <span className="block text-[10px] leading-tight text-slate-400 dark:text-slate-500">
-                                  {formatDate(doc.expiryDate)}{typeof daysLeft === 'number' ? ` · ${daysLeft}d` : ''}
-                                </span>
+                      </td>
+                      {cells.map(({ docName, status, daysLeft, doc, branch, expiryBased }) => {
+                        const interactive = canRenewDocuments && !!branch;
+                        const Icon = CELL_ICON[status];
+                        const label = getCellLabel(status, daysLeft);
+                        const dateLine = getCellDateLine(status, doc.expiryDate, daysLeft);
+                        return (
+                          <td key={docName} className="p-1">
+                            <button
+                              type="button"
+                              disabled={!interactive}
+                              onClick={() => {
+                                if (!branch) return;
+                                if (expiryBased) openRenewal(c, branch, docName);
+                                else requestFlagToggle(c, branch, docName);
+                              }}
+                              title={
+                                doc.expiryDate
+                                  ? `Expires ${formatDate(doc.expiryDate)}${canRenewDocuments ? ' — click to renew' : ''}`
+                                  : canRenewDocuments
+                                  ? (expiryBased ? 'Click to set an expiry date' : `Click to mark ${doc.provided ? 'not provided' : 'provided'}`)
+                                  : docName
+                              }
+                              className={`group relative w-full min-h-[52px] flex flex-col items-center justify-center gap-0.5 rounded-md border px-2 py-1.5 text-center transition ${CELL_FILL[status]} ${
+                                interactive ? 'cursor-pointer hover:brightness-110' : 'cursor-default'
+                              }`}
+                            >
+                              {status === 'Missing' ? (
+                                <span className="text-sm leading-none">—</span>
+                              ) : (
+                                <>
+                                  <span className="flex items-center gap-1">
+                                    {Icon && <Icon size={13} strokeWidth={2.5} />}
+                                    {label && <span className="text-[10px] font-bold leading-none whitespace-nowrap">{label}</span>}
+                                  </span>
+                                  {dateLine && (
+                                    <span className="text-[9px] leading-none opacity-70 font-medium whitespace-nowrap">{dateLine}</span>
+                                  )}
+                                </>
                               )}
-                            </span>
-                            {interactive && (
-                              <RefreshCw size={11} className="shrink-0 text-slate-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 transition" />
-                            )}
-                          </button>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                              {interactive && (
+                                <RefreshCw size={10} className="absolute top-1 right-1 shrink-0 opacity-0 group-hover:opacity-100 transition" />
+                              )}
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 px-4 py-2.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Legend:</span>
+            <LegendSwatch swatchClass="bg-emerald-600 border-emerald-700 dark:bg-emerald-600 dark:border-emerald-500" label="Current" />
+            <LegendSwatch swatchClass="bg-[#a16207] border-amber-800 dark:bg-[#a16207] dark:border-amber-600" label="Expiring ≤ 30d" />
+            <LegendSwatch swatchClass="bg-[#f43f5e] border-rose-600 dark:bg-[#f43f5e] dark:border-rose-400" label="Expired / For Update" />
+            <LegendSwatch swatchClass="border-dashed border-slate-300 dark:border-slate-700" label="Missing" />
           </div>
         </div>
       )}
 
+      <ChartCard
+        title="Modification History"
+        subtitle="Every flag toggle and renewal made from this matrix, most recent first"
+        contentClassName="max-h-80 overflow-y-auto"
+        action={<History size={16} className="text-slate-300 dark:text-slate-600" />}
+      >
+        {modificationLog.length === 0 ? (
+          <p className="text-xs text-slate-400 text-center py-8">No modifications recorded yet.</p>
+        ) : (
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-white dark:bg-slate-950">
+                <th className="py-2 pr-2">Date &amp; Time</th>
+                <th className="py-2 px-2">User</th>
+                <th className="py-2 px-2">Category</th>
+                <th className="py-2 px-2">Company</th>
+                <th className="py-2 px-2">Document</th>
+                <th className="py-2 pl-2">Change</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {modificationLog.slice(0, 50).map((entry) => (
+                <tr key={entry.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors">
+                  <td className="py-2 pr-2 text-slate-500 dark:text-slate-400 whitespace-nowrap tabular-nums">{formatTimestamp(entry.timestamp)}</td>
+                  <td className="py-2 px-2 font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">{entry.actorEmail}</td>
+                  <td className="py-2 px-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{entry.category}</td>
+                  <td className="py-2 px-2 font-semibold text-slate-700 dark:text-slate-200">{entry.companyName}</td>
+                  <td className="py-2 px-2 text-slate-600 dark:text-slate-300">{entry.docName}</td>
+                  <td className="py-2 pl-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{entry.change}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </ChartCard>
+
+      {/* Confirm before a flag doc's provided/not-provided status actually flips - it used to
+          change the instant the cell was clicked, with no way to back out. */}
+      {flagConfirmTarget && (() => {
+        const willBeProvided = !(flagConfirmTarget.branch.documents?.[flagConfirmTarget.docName]?.provided);
+        return createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
+            <div className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950 relative">
+              <button
+                onClick={() => setFlagConfirmTarget(null)}
+                className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
+                type="button"
+              >
+                <X size={16} />
+              </button>
+
+              <div className="flex flex-col items-center text-center gap-2.5">
+                <span className="inline-flex items-center justify-center h-10 w-10 rounded-full bg-amber-50 text-[#a16207] dark:bg-amber-950/40 dark:text-amber-400">
+                  <AlertTriangle size={18} />
+                </span>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Confirm Status Change</h3>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/60 divide-y divide-slate-100 dark:divide-slate-800">
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Document</span>
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 text-right truncate">{flagConfirmTarget.docName}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Company</span>
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 text-right truncate">{branchAwareCompanyLabel(flagConfirmTarget.company, flagConfirmTarget.branch)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">New Status</span>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold border ${willBeProvided ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/50' : 'bg-rose-50 text-[#f43f5e] border-rose-200 dark:bg-rose-950/40 dark:border-rose-900/50'}`}>
+                    {willBeProvided ? 'Provided' : 'Not Provided'}
+                  </span>
+                </div>
+              </div>
+
+              <p className="mt-3 text-center text-[11px] text-slate-400">This updates the compliance record immediately.</p>
+
+              <div className="flex items-center gap-2 mt-5">
+                <button onClick={() => setFlagConfirmTarget(null)} className="secondary-button flex-1 py-2 text-xs" type="button">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    toggleFlag(flagConfirmTarget.company, flagConfirmTarget.branch, flagConfirmTarget.docName);
+                    setFlagConfirmTarget(null);
+                  }}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#a16207] hover:bg-amber-800 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
+                  type="button"
+                >
+                  <Check size={13} />
+                  <span>Confirm</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
+
       {/* Simple renewal date picker */}
-      {renewalTarget && (
+      {renewalTarget && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
           <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-transparent dark:bg-slate-950 relative">
             <button
@@ -895,8 +1332,14 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
               <strong className="text-slate-800 dark:text-slate-100">"{renewalTarget.docName}"</strong> for{' '}
-              <strong className="text-slate-800 dark:text-slate-100">"{renewalTarget.company.name}"</strong>
+              <strong className="text-slate-800 dark:text-slate-100">
+                "{branchAwareCompanyLabel(renewalTarget.company, (renewalTarget.company.branches ?? []).find((b) => b.id === renewalTarget.branchId))}"
+              </strong>
             </p>
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-[#a16207] dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <span>This immediately updates the company's compliance record. Double-check the date before confirming.</span>
+            </div>
             <label htmlFor="doc-register-renewal-date" className="field-label text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
               New Expiry Date
             </label>
@@ -923,9 +1366,48 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
+  );
+}
+
+// Every column header in the detail matrix uses this - clicking sorts the
+// rows by that column (see handleSortClick/rows' comparator), with a chevron
+// marking the active key and its direction.
+function SortHeaderButton({
+  label,
+  sortKeyValue,
+  activeKey,
+  direction,
+  onClick,
+  labelClassName,
+}: {
+  label: string;
+  sortKeyValue: string;
+  activeKey: string;
+  direction: 'asc' | 'desc';
+  onClick: (key: string) => void;
+  labelClassName?: string;
+}) {
+  const active = activeKey === sortKeyValue;
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(sortKeyValue)}
+      title={`Sort by ${label}`}
+      className={`group flex w-full items-center gap-1 cursor-pointer text-left transition ${
+        active ? 'text-slate-700 dark:text-slate-200' : 'hover:text-slate-600 dark:hover:text-slate-300'
+      }`}
+    >
+      <span className={labelClassName ?? 'truncate'}>{label}</span>
+      {active ? (
+        direction === 'asc' ? <ChevronUp size={11} className="shrink-0" /> : <ChevronDown size={11} className="shrink-0" />
+      ) : (
+        <ChevronUp size={11} className="shrink-0 opacity-0 group-hover:opacity-40" />
+      )}
+    </button>
   );
 }
 
@@ -953,5 +1435,14 @@ function KpiCard({
       <span className="mt-2 block text-[28px] leading-none font-semibold tracking-tight text-slate-900 dark:text-white">{value}</span>
       <span className={`mt-2 block text-[11px] font-medium ${accent}`}>{caption}</span>
     </section>
+  );
+}
+
+function LegendSwatch({ swatchClass, label }: { swatchClass: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+      <span className={`h-3 w-3 rounded border ${swatchClass}`} />
+      <span>{label}</span>
+    </span>
   );
 }
