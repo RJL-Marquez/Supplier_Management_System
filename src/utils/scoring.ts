@@ -34,6 +34,9 @@ export interface CompanyComposite {
   // sorting a leaderboard; keep showing compositeScore as the company's
   // actual rating everywhere else - see computeRankScore in analytics.ts.
   rankScore: number;
+  // Set by getPureAverageLeaderboard. Standard competition ranking with ties
+  // (1, 1, 3…). Undefined in volume-weighted mode where array position = rank.
+  displayRank?: number;
 }
 
 export interface OutlierFlag {
@@ -195,6 +198,46 @@ export function getLeaderboard(responses: SurveyResponse[], surveyType: SurveyTy
   const sortedUnscored = [...unscored].sort((a, b) => a.company.localeCompare(b.company));
 
   return [...rankedScored, ...sortedUnscored];
+}
+
+/**
+ * Every company of a given survey type, ranked purely by compositeScore
+ * (actual average, no volume weighting). Tiebreaker: higher evaluationCount
+ * ranks first. Companies with identical score AND evaluation count share the
+ * same displayRank using standard competition ranking (1, 1, 3…).
+ */
+export function getPureAverageLeaderboard(responses: SurveyResponse[], surveyType: SurveyType): CompanyComposite[] {
+  const companies = [...new Set(responses.filter((r) => r.surveyType === surveyType).map((r) => r.company))];
+  const composites = companies
+    .map((company) => computeCompanyComposite(company, surveyType, responses))
+    .filter((c): c is CompanyComposite => c !== null);
+
+  const scored = composites.filter((c) => c.hasScore);
+  const unscored = composites.filter((c) => !c.hasScore);
+
+  const sorted = [...scored].sort((a, b) => {
+    if (b.compositeScore !== a.compositeScore) return b.compositeScore - a.compositeScore;
+    return b.evaluationCount - a.evaluationCount;
+  });
+
+  const ranked: CompanyComposite[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const c = sorted[i];
+    if (i === 0) {
+      ranked.push({ ...c, displayRank: 1 });
+    } else {
+      const prev = sorted[i - 1];
+      const prevRank = ranked[i - 1].displayRank!;
+      if (c.compositeScore === prev.compositeScore && c.evaluationCount === prev.evaluationCount) {
+        ranked.push({ ...c, displayRank: prevRank });
+      } else {
+        ranked.push({ ...c, displayRank: i + 1 });
+      }
+    }
+  }
+
+  const sortedUnscored = [...unscored].sort((a, b) => a.company.localeCompare(b.company));
+  return [...ranked, ...sortedUnscored];
 }
 
 /**
