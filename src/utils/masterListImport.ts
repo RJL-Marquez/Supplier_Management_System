@@ -335,9 +335,30 @@ export interface ImportOptions {
   similarityThreshold?: number; // default 0.88
 }
 
+// Human-readable category label, shared between the merge engine's before/
+// after snapshots and the review-changes UI so both say the same thing.
+export function categoryLabel(type: PartnerCompanyType, origin?: SupplierOrigin): string {
+  if (type === 'Supplier') return `Supplier (${origin ?? 'Local'})`;
+  return type;
+}
+
+// Per-company summary of what an import would change on an already-existing
+// company, so the caller can show an admin a before/after preview and let
+// them confirm or cancel before anything is actually saved.
+export interface CompanyChangeSummary {
+  companyId: string;
+  companyName: string;
+  categoryChanged: boolean;
+  previousCategory: string;
+  newCategory: string;
+  branchesAdded: number;
+  documentsChanged: number;
+}
+
 export interface ImportResult {
   companies: PartnerCompany[];
   log: ImportLogEntry[];
+  changes: CompanyChangeSummary[];
   stats: {
     totalRows: number;
     mergedAsBranch: number;
@@ -346,7 +367,31 @@ export interface ImportResult {
     skipped: number;
     accredited: number;
     uncategorized: number;
+    // Tally of every parsed row's resolved category (e.g. "Supplier-Local",
+    // "Courier", "Uncategorized"), independent of whether it matched an
+    // existing company - mirrors the file's own category mix.
+    categoryBreakdown: Record<string, number>;
   };
+}
+
+function categoryBucketKey(category: CategoryResolution): string {
+  return category.type === 'Supplier' ? `Supplier-${category.supplierOrigin ?? 'Local'}` : category.type;
+}
+
+// Counts document fields whose value differs between two documents maps -
+// used to summarize "N document(s) changed" without caring which fields.
+function countDocumentDiffs(
+  before: Record<string, ComplianceDocument> | undefined,
+  after: Record<string, ComplianceDocument> | undefined
+): number {
+  const beforeObj = before ?? {};
+  const afterObj = after ?? {};
+  const keys = new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]);
+  let count = 0;
+  keys.forEach((key) => {
+    if (JSON.stringify(beforeObj[key] ?? {}) !== JSON.stringify(afterObj[key] ?? {})) count++;
+  });
+  return count;
 }
 
 function rowToBranch(row: RawMasterListRow, category: CategoryResolution): BranchRecord {
@@ -400,6 +445,7 @@ export function mergeRowsIntoCompanies(
   companies.forEach(indexCompany);
 
   const log: ImportLogEntry[] = [];
+  const changesById = new Map<string, CompanyChangeSummary>();
   const stats: ImportResult['stats'] = {
     totalRows: rows.length,
     mergedAsBranch: 0,
@@ -408,6 +454,7 @@ export function mergeRowsIntoCompanies(
     skipped: 0,
     accredited: 0,
     uncategorized: 0,
+    categoryBreakdown: {},
   };
 
   for (const row of rows) {
@@ -418,6 +465,8 @@ export function mergeRowsIntoCompanies(
     }
 
     const category = resolveCategory(row.category);
+    const bucketKey = categoryBucketKey(category);
+    stats.categoryBreakdown[bucketKey] = (stats.categoryBreakdown[bucketKey] ?? 0) + 1;
     const branch = rowToBranch(row, category);
     const normName = normalizeCompanyName(row.bpName);
 
@@ -440,9 +489,15 @@ export function mergeRowsIntoCompanies(
     }
 
     if (match) {
+      const beforeType = match.type;
+      const beforeOrigin = match.supplierOrigin;
       const existingBranchIdx = (match.branches ?? []).findIndex(
         (b) => b.bpCode && row.bpCode && b.bpCode === row.bpCode
       );
+      const isNewBranch = existingBranchIdx < 0;
+      const beforeDocs = isNewBranch ? undefined : match.branches![existingBranchIdx].documents;
+      const docDiffs = isNewBranch ? 0 : countDocumentDiffs(beforeDocs, branch.documents);
+
       if (existingBranchIdx >= 0) {
         match.branches![existingBranchIdx] = branch;
         stats.updatedBranches++;
@@ -466,6 +521,26 @@ export function mergeRowsIntoCompanies(
         match.accreditationStatus = 'Accredited';
         match.isArchived = false;
       }
+
+      const categoryChanged = beforeType !== match.type || beforeOrigin !== match.supplierOrigin;
+      if (categoryChanged || docDiffs > 0 || isNewBranch) {
+        const entry = changesById.get(match.id) ?? {
+          companyId: match.id,
+          companyName: match.name,
+          categoryChanged: false,
+          previousCategory: categoryLabel(beforeType, beforeOrigin),
+          newCategory: categoryLabel(match.type, match.supplierOrigin),
+          branchesAdded: 0,
+          documentsChanged: 0,
+        };
+        if (categoryChanged) {
+          entry.categoryChanged = true;
+          entry.newCategory = categoryLabel(match.type, match.supplierOrigin);
+        }
+        if (isNewBranch) entry.branchesAdded += 1;
+        entry.documentsChanged += docDiffs;
+        changesById.set(match.id, entry);
+      }
     } else {
       const isAccredited = category.type !== 'Uncategorized';
       const company: PartnerCompany = {
@@ -486,7 +561,7 @@ export function mergeRowsIntoCompanies(
     }
   }
 
-  return { companies, log, stats };
+  return { companies, log, changes: Array.from(changesById.values()), stats };
 }
 
 export async function importMasterListFromFile(

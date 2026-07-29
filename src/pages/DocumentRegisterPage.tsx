@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Globe, MapPin, Truck, Package, Briefcase, RefreshCw, X, Check, Users, ShieldCheck, Clock, XCircle, Gauge, LayoutGrid, Settings2, RotateCcw, AlertTriangle, History, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, Globe, MapPin, Truck, Package, Briefcase, RefreshCw, X, Check, Users, ShieldCheck, Clock, XCircle, Gauge, LayoutGrid, Settings2, RotateCcw, AlertTriangle, History, ChevronUp, ChevronDown, BellPlus, Plus } from 'lucide-react';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Legend, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SupplierOrigin } from '../types/survey';
 import { branchAwareCompanyLabel, computeCompanyDocumentSummary, computeDocumentStatus, isNTBranch } from '../utils/compliance';
@@ -8,6 +8,13 @@ import { getRequiredDocumentKeys, isExpiryDocument } from '../utils/documentRequ
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
 import { logAdminActivity } from '../utils/adminActivityLog';
 import { DocumentModificationEntry, getDocumentModifications, logDocumentModification } from '../utils/documentModificationLog';
+import {
+  DocNotificationRule,
+  DEFAULT_NOTIFICATION_RULES,
+  getNotificationSettings,
+  saveNotificationSettings,
+  restoreDefaultNotificationSettings,
+} from '../utils/documentNotificationSettings';
 import { ChartCard } from '../components/ChartCard';
 import { typeBadgeClasses } from './PartnerCompaniesPage';
 
@@ -228,6 +235,16 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
   const [modificationLog, setModificationLog] = useState<DocumentModificationEntry[]>([]);
   const [sortKey, setSortKey] = useState<MatrixSortKey>('company');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false);
+  const [notificationRules, setNotificationRules] = useState<DocNotificationRule[]>(DEFAULT_NOTIFICATION_RULES);
+  // Portals "Add Notification" into Shell's page-heading row (same slot
+  // DashboardPage's header actions use) so it sits on the title line instead
+  // of taking up its own row and pushing the category tabs/search further
+  // down the page.
+  const [headerPortalTarget, setHeaderPortalTarget] = useState<Element | null>(null);
+  useEffect(() => {
+    setHeaderPortalTarget(document.getElementById('shell-header-action'));
+  }, []);
 
   useEffect(() => {
     try {
@@ -255,6 +272,10 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     const handler = () => setModificationLog(getDocumentModifications());
     window.addEventListener('document-modification-logged', handler);
     return () => window.removeEventListener('document-modification-logged', handler);
+  }, []);
+
+  useEffect(() => {
+    setNotificationRules(getNotificationSettings());
   }, []);
 
   useEffect(() => {
@@ -642,6 +663,37 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     setRenewalTarget(null);
   };
 
+  // Every edit here saves immediately (same convention as the Compliance
+  // Overview's Customize panel above) - no separate Save/Cancel step, since
+  // this only ever touches the EXTRA early-milestone alert for one document,
+  // never the standard 30-day/expired alert that's always on regardless.
+  const updateNotificationRule = (docName: string, updater: (rule: DocNotificationRule) => DocNotificationRule) => {
+    setNotificationRules((prev) => {
+      const next = prev.map((r) => (r.docName === docName ? updater(r) : r));
+      saveNotificationSettings(next);
+      return next;
+    });
+  };
+
+  const toggleNotificationRuleEnabled = (docName: string) =>
+    updateNotificationRule(docName, (r) => ({ ...r, enabled: !r.enabled }));
+
+  const addNotificationMilestone = (docName: string, days: number) =>
+    updateNotificationRule(docName, (r) => ({
+      ...r,
+      earlyMilestoneDays: [...new Set([...r.earlyMilestoneDays, days])].sort((a, b) => b - a),
+    }));
+
+  const removeNotificationMilestone = (docName: string, days: number) =>
+    updateNotificationRule(docName, (r) => ({
+      ...r,
+      earlyMilestoneDays: r.earlyMilestoneDays.filter((d) => d !== days),
+    }));
+
+  const handleRestoreDefaultNotifications = () => {
+    setNotificationRules(restoreDefaultNotificationSettings());
+  };
+
   const formatDate = (dateString?: string) => {
     if (!dateString) return '—';
     try {
@@ -661,6 +713,18 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
 
   return (
     <div className="space-y-6">
+      {headerPortalTarget && createPortal(
+        <button
+          type="button"
+          onClick={() => setIsNotificationSettingsOpen(true)}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white transition cursor-pointer shadow-sm"
+        >
+          <BellPlus size={14} />
+          <span>Add Notification</span>
+        </button>,
+        headerPortalTarget
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex flex-nowrap overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 dark:border-transparent dark:bg-slate-950 w-full sm:w-auto" style={{ scrollbarWidth: 'none' }}>
           <button
@@ -1369,6 +1433,88 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
         </div>,
         document.body
       )}
+
+      {/* "Add Notification" settings - configures EXTRA early heads-up alerts
+          on top of the standard 30-day/expired alert (always on, not
+          editable here). Every edit auto-saves, same convention as the
+          Compliance Overview's Customize panel above. */}
+      {isNotificationSettingsOpen && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+            <div className="flex items-start justify-between gap-3 px-6 pt-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <span className="inline-flex items-center justify-center h-9 w-9 rounded-full bg-[#0063a9]/10 text-[#0063a9] shrink-0">
+                  <BellPlus size={16} />
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Document Expiry Notifications</h3>
+                  <p className="text-[11px] text-slate-400">Extra early alerts, on top of the standard 30-day/expired alert</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsNotificationSettingsOpen(false)}
+                className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
+                type="button"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Local Supplier</p>
+                <div className="space-y-2.5">
+                  {notificationRules.filter((r) => r.origin === 'Local' || r.origin === 'Both').map((rule) => (
+                    <NotificationRuleRow
+                      key={`local-${rule.docName}`}
+                      rule={rule}
+                      onToggle={toggleNotificationRuleEnabled}
+                      onAdd={addNotificationMilestone}
+                      onRemove={removeNotificationMilestone}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Foreign Supplier</p>
+                <div className="space-y-2.5">
+                  {notificationRules.filter((r) => r.origin === 'Foreign' || r.origin === 'Both').map((rule) => (
+                    <NotificationRuleRow
+                      key={`foreign-${rule.docName}`}
+                      rule={rule}
+                      onToggle={toggleNotificationRuleEnabled}
+                      onAdd={addNotificationMilestone}
+                      onRemove={removeNotificationMilestone}
+                    />
+                  ))}
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                The standard 30-day "Expiring Soon" alert and the Expired alert always apply to every document above and can't be turned off here - these settings only add an earlier heads-up alert.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={handleRestoreDefaultNotifications}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-azure hover:underline cursor-pointer"
+              >
+                <RotateCcw size={12} />
+                <span>Restore to Default</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsNotificationSettingsOpen(false)}
+                className="secondary-button py-2 px-4 text-xs"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -1443,6 +1589,96 @@ function LegendSwatch({ swatchClass, label }: { swatchClass: string; label: stri
     <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-500 dark:text-slate-400">
       <span className={`h-3 w-3 rounded border ${swatchClass}`} />
       <span>{label}</span>
+    </span>
+  );
+}
+
+// One row per document type in the "Add Notification" settings modal.
+// AFS renews on a fiscal-year basis (mode 'fiscal-year') so it just shows an
+// informational badge - everything else can have its early-alert toggled and
+// its milestone-day chips edited.
+function NotificationRuleRow({
+  rule,
+  onToggle,
+  onAdd,
+  onRemove,
+}: {
+  rule: DocNotificationRule;
+  onToggle: (docName: string) => void;
+  onAdd: (docName: string, days: number) => void;
+  onRemove: (docName: string, days: number) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40 p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-bold text-slate-800 dark:text-slate-100">{rule.label}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">{rule.note}</p>
+        </div>
+        {rule.mode === 'day-milestones' && (
+          <label className="inline-flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
+            <input type="checkbox" checked={rule.enabled} onChange={() => onToggle(rule.docName)} className="rounded border-slate-300" />
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">Early alert</span>
+          </label>
+        )}
+      </div>
+
+      {rule.mode === 'fiscal-year' ? (
+        <span className="mt-2.5 inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+          Fiscal-year based - no day milestone
+        </span>
+      ) : (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          {rule.enabled &&
+            rule.earlyMilestoneDays.map((days) => (
+              <span
+                key={days}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-[#a16207] dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-400"
+              >
+                {days}d before
+                <button type="button" onClick={() => onRemove(rule.docName, days)} className="hover:text-rose-600 cursor-pointer">
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          <span className="inline-flex rounded-full border border-dashed border-slate-300 dark:border-slate-700 px-2 py-0.5 text-[10px] text-slate-400">
+            30d / Expired (standard, always on)
+          </span>
+          {rule.enabled && <MilestoneAdder onAdd={(days) => onAdd(rule.docName, days)} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MilestoneAdder({ onAdd }: { onAdd: (days: number) => void }) {
+  const [value, setValue] = useState('');
+  const submit = () => {
+    const n = parseInt(value, 10);
+    if (Number.isFinite(n) && n > 30) {
+      onAdd(n);
+      setValue('');
+    }
+  };
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        type="number"
+        min={31}
+        placeholder="days"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && submit()}
+        className="w-14 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] dark:border-slate-700 dark:bg-slate-950"
+      />
+      <button
+        type="button"
+        onClick={submit}
+        className="inline-flex items-center gap-0.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+      >
+        <Plus size={10} />
+        <span>Add</span>
+      </button>
     </span>
   );
 }

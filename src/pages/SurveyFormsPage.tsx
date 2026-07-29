@@ -539,15 +539,6 @@ export function SurveyFormsPage({
             </div>
             <div className="flex flex-wrap gap-2.5 shrink-0 w-full sm:w-auto">
               <button
-                onClick={() => setIsNotificationModalOpen(true)}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 rounded-lg bg-[#0063a9] hover:bg-[#00528c] text-white px-4 py-2.5 text-xs font-bold shadow-sm transition cursor-pointer"
-                type="button"
-                id="btn-admin-set-notification"
-              >
-                <CalendarClock size={15} />
-                <span>Set Notification</span>
-              </button>
-              <button
                 onClick={onNavigateToCreate}
                 className="flex-1 sm:flex-initial flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold shadow-sm transition cursor-pointer"
                 type="button"

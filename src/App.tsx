@@ -256,6 +256,10 @@ const adminNavItems: NavItem<PageKey>[] = [
     ],
   },
   { key: 'account-management', label: 'Employees / Users', icon: UserCog },
+  // General admin notification log (document expiry alerts, survey
+  // submissions, chat) - already existed as a page, only reachable before
+  // now via the bell's "View all" link.
+  { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
@@ -389,7 +393,8 @@ export default function App() {
     addPartnerCompany,
     updatePartnerCompany,
     removePartnerCompany,
-    importMasterList,
+    previewMasterListImport,
+    commitMasterListImport,
     isLoading,
     error,
     notifications,
@@ -716,7 +721,8 @@ export default function App() {
         onAddCompany={addPartnerCompany}
         onRemoveCompany={removePartnerCompany}
         onUpdateCompany={updatePartnerCompany}
-        onImportMasterList={importMasterList}
+        onPreviewMasterListImport={previewMasterListImport}
+        onCommitMasterListImport={commitMasterListImport}
         isAdmin={isAdmin}
         canRenewDocuments={canRenewDocuments}
         initialFocusCompanyId={focusCompanyId}

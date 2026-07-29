@@ -103,7 +103,8 @@ interface PartnerCompaniesPageProps {
   ) => void;
   onRemoveCompany: (id: string) => void;
   onUpdateCompany: (company: PartnerCompany) => void;
-  onImportMasterList?: (file: File, options?: { replace?: boolean }) => Promise<ImportResult>;
+  onPreviewMasterListImport?: (file: File, options?: { replace?: boolean }) => Promise<ImportResult>;
+  onCommitMasterListImport?: (result: ImportResult) => void;
   isAdmin?: boolean;
   /** Distinct from isAdmin - can be granted to a role without full Admin access (Account Management -> "Renew Compliance Documents"). */
   canRenewDocuments?: boolean;
@@ -120,7 +121,8 @@ export function PartnerCompaniesPage({
   onAddCompany,
   onRemoveCompany,
   onUpdateCompany,
-  onImportMasterList,
+  onPreviewMasterListImport,
+  onCommitMasterListImport,
   isAdmin,
   canRenewDocuments,
   simClock = null,
@@ -184,6 +186,9 @@ export function PartnerCompaniesPage({
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  // Parsed + merged result awaiting admin confirmation - nothing is saved
+  // until they click "Apply Update" on the review modal below.
+  const [importPreview, setImportPreview] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState('');
 
   type SortKey = 'name' | 'type' | 'createdAt' | 'docStatus';
@@ -338,14 +343,16 @@ export function PartnerCompaniesPage({
   const handleImportFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // allow re-selecting the same file next time
-    if (!file || !onImportMasterList) return;
+    if (!file || !onPreviewMasterListImport) return;
 
     setIsImporting(true);
     setImportError('');
     setImportResult(null);
     try {
-      const result = await onImportMasterList(file, { replace: importReplace });
-      setImportResult(result);
+      // Parse + merge only - nothing is saved until the admin reviews the
+      // changes and confirms via applyImportPreview.
+      const result = await onPreviewMasterListImport(file, { replace: importReplace });
+      setImportPreview(result);
       setIsRegisterOpen(false);
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Failed to import the Master List file.');
@@ -353,6 +360,15 @@ export function PartnerCompaniesPage({
       setIsImporting(false);
     }
   };
+
+  const applyImportPreview = () => {
+    if (!importPreview || !onCommitMasterListImport) return;
+    onCommitMasterListImport(importPreview);
+    setImportResult(importPreview);
+    setImportPreview(null);
+  };
+
+  const cancelImportPreview = () => setImportPreview(null);
 
   const downloadImportLog = () => {
     if (!importResult) return;
@@ -783,7 +799,7 @@ export function PartnerCompaniesPage({
         {/* Register Button (admin only) - opens a modal with Manual Entry / Upload Excel tabs */}
         {isAdmin && (
           <div className="flex items-center gap-2">
-            {onImportMasterList && (
+            {onPreviewMasterListImport && (
               <input
                 ref={importFileInputRef}
                 type="file"
@@ -1882,7 +1898,7 @@ export function PartnerCompaniesPage({
                 <Plus size={14} />
                 <span>Manual Entry</span>
               </button>
-              {onImportMasterList && (
+              {onPreviewMasterListImport && (
                 <button
                   type="button"
                   onClick={() => setRegisterModalTab('upload')}
@@ -1898,7 +1914,7 @@ export function PartnerCompaniesPage({
               )}
             </div>
 
-            {registerModalTab === 'upload' && onImportMasterList ? (
+            {registerModalTab === 'upload' && onPreviewMasterListImport ? (
               <div className="mt-6 space-y-4">
                 <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 rounded-xl p-4 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                   Upload the latest Master List Excel file to refresh the registry. Companies are matched to existing
@@ -2033,6 +2049,133 @@ export function PartnerCompaniesPage({
               </div>
             </form>
             )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Master List Import Review Modal - shows what would change before
+          anything is saved; nothing is written to the registry until the
+          admin clicks "Apply Update" here. */}
+      {importPreview && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-transparent dark:bg-slate-950 relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={cancelImportPreview}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
+              title="Close"
+              type="button"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-3 text-[#0063a9]">
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-2">
+                <ClipboardList size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Review Master List Import</h3>
+                <p className="text-xs text-slate-500">
+                  {importPreview.stats.totalRows} rows parsed &bull; nothing has been saved yet
+                </p>
+              </div>
+            </div>
+
+            {/* Category breakdown of the imported file itself */}
+            <div className="mt-5">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                Category Breakdown (Imported File)
+              </h4>
+              <div className="rounded-xl border border-slate-100 dark:border-slate-800 overflow-hidden">
+                <table className="w-full text-xs">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {Object.entries(importPreview.stats.categoryBreakdown)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([cat, count]) => (
+                        <tr key={cat}>
+                          <td className="px-4 py-2 font-medium text-slate-600 dark:text-slate-300">{cat}</td>
+                          <td className="px-4 py-2 text-right font-bold tabular-nums text-slate-800 dark:text-slate-100">{count}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
+              <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400 font-medium block">New companies to create</span>
+                <strong className="text-slate-800 dark:text-slate-100 text-lg">{importPreview.stats.createdCompanies}</strong>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400 font-medium block">New branches to merge</span>
+                <strong className="text-slate-800 dark:text-slate-100 text-lg">{importPreview.stats.mergedAsBranch}</strong>
+              </div>
+              {importPreview.stats.skipped > 0 && (
+                <div className="bg-rose-50 dark:bg-rose-950/20 p-3 rounded-lg border border-rose-100 dark:border-rose-900 col-span-2">
+                  <span className="text-rose-600 font-medium block">Rows skipped</span>
+                  <strong className="text-rose-700 dark:text-rose-300 text-lg">{importPreview.stats.skipped}</strong>
+                </div>
+              )}
+            </div>
+
+            {/* Existing companies whose category/documents would change -
+                the "override" preview the admin can accept or cancel. */}
+            {importPreview.changes.length > 0 && (
+              <div className="mt-5">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                  Existing companies that will be updated ({importPreview.changes.length})
+                </h4>
+                <div className="max-h-56 overflow-y-auto rounded-xl border border-amber-200 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/10 divide-y divide-amber-100 dark:divide-amber-900/30">
+                  {importPreview.changes.map((c) => (
+                    <div key={c.companyId} className="px-3 py-2 text-xs">
+                      <div className="font-bold text-slate-800 dark:text-slate-100">{c.companyName}</div>
+                      <div className="mt-0.5 text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                        {c.categoryChanged && (
+                          <span>
+                            Category: <span className="line-through text-slate-400">{c.previousCategory}</span>{' '}
+                            &rarr; <span className="font-semibold text-emerald-600 dark:text-emerald-400">{c.newCategory}</span>
+                          </span>
+                        )}
+                        {c.documentsChanged > 0 && (
+                          <span>
+                            {c.categoryChanged && <span className="mx-1 text-slate-300">&bull;</span>}
+                            {c.documentsChanged} document field{c.documentsChanged === 1 ? '' : 's'} updated
+                          </span>
+                        )}
+                        {c.branchesAdded > 0 && (
+                          <span>
+                            {(c.categoryChanged || c.documentsChanged > 0) && <span className="mx-1 text-slate-300">&bull;</span>}
+                            {c.branchesAdded} new branch{c.branchesAdded === 1 ? '' : 'es'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p className="text-[11px] text-slate-400 mt-4 leading-relaxed">
+              Apply Update saves these changes to the registry. Cancel discards this import - the current registry stays untouched.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 mt-6 border-t border-slate-100 pt-4 dark:border-slate-800">
+              <button
+                onClick={cancelImportPreview}
+                className="secondary-button text-xs py-2 px-4"
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyImportPreview}
+                className="bg-[#0063a9] hover:bg-[#00528c] text-white text-xs font-bold py-2 px-4 rounded-lg transition cursor-pointer"
+                type="button"
+              >
+                Apply Update
+              </button>
+            </div>
           </div>
         </div>,
         document.body

@@ -17,6 +17,7 @@ import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClo
 import { logAdminActivity } from '../utils/adminActivityLog';
 import { computeCompanyDocumentSummary, computeDocumentStatus, EXPIRING_SOON_DAYS } from '../utils/compliance';
 import { getRequiredDocumentKeys } from '../utils/documentRequirements';
+import { getNotificationSettings, NOTIFICATION_SETTINGS_CHANGED_EVENT } from '../utils/documentNotificationSettings';
 
 // Bumped from _v6: the baseline registry changed from a 41-company hand-typed
 // demo list to the full Master List snapshot (partnerCompaniesSeed.ts, ~1129
@@ -27,8 +28,6 @@ const PARTNER_COMPANIES_STORAGE_KEY = 'survey_analytics_partner_companies_v7';
 
 const NOTIFICATION_HISTORY_LIMIT = 200;
 const INITIAL_NOTIFICATION_SEED = 15;
-const DTI_DOCUMENT_KEY = 'DTI (Sole)';
-const DTI_EARLY_WARNING_DAYS = 60;
 const ALL_DEPARTMENTS = [
   'Accounts Payable - Trade',
   'Business Solutions Manager',
@@ -1386,18 +1385,24 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
 
   // Import the Master List Excel: fuzzy-matches each row's BP Name against
   // existing companies (merging as a branch when matched, creating a new
-  // company otherwise), then replaces the full partner company list in one
-  // shot. Returns the merge log/stats so the caller can show an audit trail.
-  const importMasterList = async (file: File, options?: { replace?: boolean }): Promise<ImportResult> => {
+  // company otherwise). This only parses/merges and returns the result for
+  // review - nothing is saved until the caller confirms via
+  // commitMasterListImport, so the admin can see exactly which existing
+  // companies would change (category, documents) before anything is
+  // overwritten.
+  const previewMasterListImport = async (file: File, options?: { replace?: boolean }): Promise<ImportResult> => {
     // Replace mode starts from an empty registry so the result mirrors the file
     // exactly (its category/rank totals match the sheet), instead of merging
     // the file's rows on top of whatever is already loaded.
     const base = options?.replace ? [] : partnerCompanies;
-    const result = await importMasterListFromFile(file, base);
+    return importMasterListFromFile(file, base);
+  };
+
+  // Applies a previously-previewed import result to the live registry.
+  const commitMasterListImport = (result: ImportResult) => {
     const normalized = result.companies.map(normalizePartnerCompany);
     setPartnerCompanies(normalized);
     safeSetItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(normalized));
-    return result;
   };
 
   // Remove a partner company
@@ -1766,29 +1771,53 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     return list;
   }, [partnerCompanies, simClock]);
 
-  // DTI Registration gets an extra early heads-up at 60 days (on top of the
-  // standard 30-day "Expiring Soon" alert already covered by
-  // documentNotifications above) per the client's requirement: "Notify admin
-  // at 60-day and 30-day expiration milestones for follow ups."
-  const dtiMilestoneNotifications = useMemo<ResponseNotification[]>(() => {
+  // Extra early heads-up notifications, per document type, configured via
+  // the Document Register's "Add Notification" settings screen (see
+  // src/utils/documentNotificationSettings.ts) - on top of the standard
+  // 30-day "Expiring Soon" alert already covered by documentNotifications
+  // above. Defaults to the client's DTI Registration requirement ("Notify
+  // admin at 60-day and 30-day expiration milestones"): the 30-day one is
+  // the standard alert every expiry doc already gets, this covers the extra
+  // 60-day one. Admin can add early milestones for other documents too.
+  const [notificationSettingsVersion, setNotificationSettingsVersion] = useState(0);
+  useEffect(() => {
+    const handler = () => setNotificationSettingsVersion((v) => v + 1);
+    window.addEventListener(NOTIFICATION_SETTINGS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(NOTIFICATION_SETTINGS_CHANGED_EVENT, handler);
+  }, []);
+
+  const earlyMilestoneNotifications = useMemo<ResponseNotification[]>(() => {
     const currentDate = getEffectiveNow(simClock);
     const list: ResponseNotification[] = [];
+    const rules = getNotificationSettings().filter(
+      (r) => r.enabled && r.mode === 'day-milestones' && r.earlyMilestoneDays.length > 0
+    );
+    if (rules.length === 0) return list;
 
     partnerCompanies.forEach((c) => {
       if (c.isArchived) return;
-      if (!getRequiredDocumentKeys(c.type, c.supplierOrigin).includes(DTI_DOCUMENT_KEY)) return;
+      const requiredKeys = getRequiredDocumentKeys(c.type, c.supplierOrigin);
 
-      const dtiDoc = (c.branches ?? [])
-        .map((b) => b.documents?.[DTI_DOCUMENT_KEY])
-        .find((doc) => doc && (doc.provided || doc.expiryDate));
-      if (!dtiDoc) return;
+      rules.forEach((rule) => {
+        if (!requiredKeys.includes(rule.docName)) return;
+        const doc = (c.branches ?? [])
+          .map((b) => b.documents?.[rule.docName])
+          .find((d) => d && (d.provided || d.expiryDate));
+        if (!doc) return;
 
-      const { status, daysLeft } = computeDocumentStatus(dtiDoc, currentDate, DTI_DOCUMENT_KEY);
-      // Only the 60-day window fires here - once inside 30 days the document
-      // already surfaces via the generic "Document Expiring Soon" alert.
-      if (status === 'Current' && typeof daysLeft === 'number' && daysLeft > EXPIRING_SOON_DAYS && daysLeft <= DTI_EARLY_WARNING_DAYS) {
+        const { status, daysLeft } = computeDocumentStatus(doc, currentDate, rule.docName);
+        if (status !== 'Current' || typeof daysLeft !== 'number') return;
+        // Fire on the earliest-crossed early milestone only - once inside 30
+        // days the document already surfaces via the standard "Document
+        // Expiring Soon" alert, so only thresholds above that count here.
+        const milestone = rule.earlyMilestoneDays
+          .filter((d) => d > EXPIRING_SOON_DAYS)
+          .sort((a, b) => a - b)
+          .find((d) => daysLeft <= d);
+        if (milestone === undefined) return;
+
         list.push({
-          id: `dti-60day-${c.id}`,
+          id: `early-milestone-${rule.docName}-${c.id}`,
           company: c.name,
           surveyType: c.type as SurveyType,
           respondentType: 'Document Expiring Soon',
@@ -1798,11 +1827,11 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
           department: 'Logistics',
           designation: 'Document Alert',
         });
-      }
+      });
     });
 
     return list;
-  }, [partnerCompanies, simClock]);
+  }, [partnerCompanies, simClock, notificationSettingsVersion]);
 
   const filteredChatNotifications = useMemo(() => {
     return chatNotifications.filter((notif: any) => {
@@ -1819,9 +1848,9 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
   }, [chatNotifications, isAdmin, currentUserEmail]);
 
   const combinedNotifications = useMemo(() => {
-    const list = [...documentNotifications, ...dtiMilestoneNotifications, ...notifications, ...filteredChatNotifications];
+    const list = [...documentNotifications, ...earlyMilestoneNotifications, ...notifications, ...filteredChatNotifications];
     return list.sort((a, b) => b.submissionDate.localeCompare(a.submissionDate));
-  }, [documentNotifications, dtiMilestoneNotifications, notifications, filteredChatNotifications]);
+  }, [documentNotifications, earlyMilestoneNotifications, notifications, filteredChatNotifications]);
 
   const combinedUnreadCount = useMemo(() => {
     const unreadChatCount = filteredChatNotifications.filter((c: any) => !c.read).length;
@@ -1849,7 +1878,8 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     addPartnerCompany,
     updatePartnerCompany,
     removePartnerCompany,
-    importMasterList,
+    previewMasterListImport,
+    commitMasterListImport,
     isLoading,
     error,
     notifications: combinedNotifications,
