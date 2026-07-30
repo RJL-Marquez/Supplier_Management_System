@@ -30,7 +30,7 @@ import {
   YAxis,
 } from 'recharts';
 import { PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
-import { surveyTypeDisplayLabel } from '../data/questionWeights';
+import { surveyTypeDisplayLabel, formatCompositeScore } from '../data/questionWeights';
 import { formatNumber, getScoreAxisDomain, questionPerformance } from '../utils/analytics';
 import { computeCompanyComposite, getCompanyTrend, getLeaderboard, getSectionPeerAverages } from '../utils/scoring';
 import { captureChartImage, CompanyReportData, exportCompanyReportAsDocx, exportCompanyReportAsPDF } from '../utils/companyReportExport';
@@ -385,7 +385,7 @@ export function CompanyReportBuilderPage({ responses, partnerCompanies, canExpor
                   <ReportPageHeader company={composite.company} />
                   <h2 className="mt-6 text-xl font-bold text-slate-800 dark:text-slate-100">Executive Summary</h2>
                   <div className="mt-3 grid grid-cols-3 divide-x divide-slate-200 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-                    <SummaryStat label="Composite score" value={`${formatNumber(composite.compositeScore)} / 100`} accent />
+                    <SummaryStat label="Composite score" value={formatCompositeScore(composite.surveyType, composite.compositeScore).text} accent />
                     <SummaryStat label="Rating band" value={composite.band.label} />
                     <SummaryStat label="Evaluations" value={String(composite.evaluationCount)} />
                   </div>

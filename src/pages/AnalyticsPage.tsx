@@ -37,8 +37,9 @@ import {
   getCompanyPerformance,
   computeRankScore,
 } from '../utils/analytics';
-import { computeCompanyComposite } from '../utils/scoring';
+import { computeCompanyComposite, RankingMode } from '../utils/scoring';
 import { exportTablesAsCSV, exportTablesAsExcel, ExportTable } from '../utils/exporters';
+import { getBand, formatCompositeScore } from '../data/questionWeights';
 
 interface AnalyticsPageProps {
   responses: SurveyResponse[];
@@ -112,98 +113,6 @@ const categoryColors: Record<string, {
   }
 };
 
-function getSatisfactionColor(p: number) {
-  if (p < 30) {
-    return {
-      text: 'text-red-800 dark:text-red-300',
-      bg: 'bg-red-100 dark:bg-red-950/30',
-      border: 'border-red-300 dark:border-red-900/50',
-      stroke: 'stroke-red-800 dark:stroke-red-300',
-      fill: 'fill-red-800 dark:fill-red-300',
-      label: 'Critical',
-      badgeBg: 'bg-red-200 text-red-900 dark:bg-red-950/60 dark:text-red-200',
-      description: 'Satisfaction levels are critical. Immediate attention to partner performance and remediation is highly recommended.'
-    };
-  } else if (p < 40) {
-    return {
-      text: 'text-red-600 dark:text-red-400',
-      bg: 'bg-red-50 dark:bg-red-950/20',
-      border: 'border-red-200 dark:border-red-900/40',
-      stroke: 'stroke-red-600 dark:stroke-red-400',
-      fill: 'fill-red-600 dark:fill-red-400',
-      label: 'Unsatisfactory',
-      badgeBg: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200',
-      description: 'Performance is falling short of standards. Corrective action and closer monitoring are recommended.'
-    };
-  } else if (p < 50) {
-    return {
-      text: 'text-rose-400 dark:text-rose-300',
-      bg: 'bg-rose-50 dark:bg-rose-950/20',
-      border: 'border-rose-200 dark:border-rose-900/40',
-      stroke: 'stroke-rose-400 dark:stroke-rose-300',
-      fill: 'fill-rose-400 dark:fill-rose-300',
-      label: 'Slightly Unsatisfactory',
-      badgeBg: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200',
-      description: 'Below expectations in some areas. Targeted feedback should help bring performance back on track.'
-    };
-  } else if (p < 75) {
-    return {
-      text: 'text-orange-500 dark:text-orange-400',
-      bg: 'bg-orange-50 dark:bg-orange-950/20',
-      border: 'border-orange-200 dark:border-orange-900/40',
-      stroke: 'stroke-orange-500 dark:stroke-orange-400',
-      fill: 'fill-orange-500 dark:fill-orange-400',
-      label: 'Fair',
-      badgeBg: 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200',
-      description: 'Average performance with noticeable gaps. Several operational or communication areas require corrective feedback.'
-    };
-  } else if (p < 80) {
-    return {
-      text: 'text-yellow-500 dark:text-yellow-400',
-      bg: 'bg-yellow-50 dark:bg-yellow-950/20',
-      border: 'border-yellow-200 dark:border-yellow-900/40',
-      stroke: 'stroke-yellow-500 dark:stroke-yellow-400',
-      fill: 'fill-yellow-500 dark:fill-yellow-400',
-      label: 'Good',
-      badgeBg: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-200',
-      description: 'Acceptable standards met. Consistent results overall, with opportunity to optimize delivery timelines and invoices.'
-    };
-  } else if (p < 85) {
-    return {
-      text: 'text-lime-600 dark:text-lime-400',
-      bg: 'bg-lime-50 dark:bg-lime-950/20',
-      border: 'border-lime-200 dark:border-lime-900/40',
-      stroke: 'stroke-lime-500 dark:stroke-lime-400',
-      fill: 'fill-lime-500 dark:fill-lime-400',
-      label: 'Satisfactory',
-      badgeBg: 'bg-lime-100 text-lime-800 dark:bg-lime-900/50 dark:text-lime-200',
-      description: 'Solid performance. Partners are highly responsive, maintaining high quality outputs with minimal transaction discrepancies.'
-    };
-  } else if (p < 92) {
-    return {
-      text: 'text-emerald-600 dark:text-emerald-400',
-      bg: 'bg-emerald-50 dark:bg-emerald-950/20',
-      border: 'border-emerald-200 dark:border-emerald-900/40',
-      stroke: 'stroke-emerald-600 dark:stroke-emerald-400',
-      fill: 'fill-emerald-600 dark:fill-emerald-400',
-      label: 'Highly Satisfactory',
-      badgeBg: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200',
-      description: 'Strong, dependable partnership performance with minimal issues across the board.'
-    };
-  } else {
-    return {
-      text: 'text-green-700 dark:text-green-400',
-      bg: 'bg-green-50 dark:bg-green-950/20',
-      border: 'border-green-200 dark:border-green-900/40',
-      stroke: 'stroke-green-700 dark:stroke-green-400',
-      fill: 'fill-green-700 dark:fill-green-400',
-      label: 'Top Performer',
-      badgeBg: 'bg-green-100 text-green-900 dark:bg-green-900/50 dark:text-green-200',
-      description: 'Outstanding partnership. Prominent operational quality, competitive pricing terms, and proactive stakeholder engagement.'
-    };
-  }
-}
-
 function truncateQuestion(text: string, max = 44) {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
@@ -225,6 +134,7 @@ export function AnalyticsPage({
   const [limit, setLimit] = useState<5 | 10>(5);
   const [performanceMode, setPerformanceMode] = useState<'highest' | 'lowest'>('highest');
   const [trendGranularity, setTrendGranularity] = useState<'monthly' | 'yearly' | 'series'>('monthly');
+  const [rankingMode, setRankingMode] = useState<RankingMode>('weighted');
 
   const comparableResponses = responses;
 
@@ -291,12 +201,19 @@ export function AnalyticsPage({
   // have actually been evaluated, not registry entries sitting at a default
   // 0/100 because nobody has scored them yet.
   //
-  // Ranked by a volume-weighted score, not the raw average, so a company
-  // with one lucky evaluation can't outrank one with dozens - see
-  // computeRankScore in analytics.ts. `peers` is whatever group is being
-  // compared, so a type-scoped ranking (e.g. "top Courier") pulls toward
-  // that type's own mean rather than the mean across all three forms.
+  // Respects the page-level rankingMode toggle: "weighted" ranks by a
+  // volume-weighted score so a company with one lucky evaluation can't
+  // outrank one with dozens (see computeRankScore in analytics.ts); "pure"
+  // ranks by raw average with evaluation count as a tiebreak, matching
+  // getPureAverageLeaderboard in scoring.ts. `peers`/ties are whatever group
+  // is being compared, so a type-scoped ranking (e.g. "top Courier") pulls
+  // toward that type's own mean/peers rather than all three forms combined.
   const rankCompanies = (list: typeof companyAverages) => {
+    if (rankingMode === 'pure') {
+      return [...list].sort((a, b) =>
+        b.scorePercentage !== a.scorePercentage ? b.scorePercentage - a.scorePercentage : b.count - a.count
+      );
+    }
     const peers = list.map((c) => ({ score: c.scorePercentage, count: c.count }));
     return list
       .map((c) => ({ ...c, rankScore: computeRankScore(c.scorePercentage, c.count, peers) }))
@@ -367,7 +284,7 @@ export function AnalyticsPage({
 
   const score = displayedCompany.scorePercentage;
   const activeColor = categoryColors[displayedCompany.type] || categoryColors['N/A'];
-  const standingDetails = getSatisfactionColor(score);
+  const standingLabel = displayedCompany.type === 'N/A' ? 'No Data' : getBand(displayedCompany.type as SurveyType, score).label;
 
   const truncateCompanyName = (name: string, maxLen = 14) => {
     return name.length > maxLen ? `${name.substring(0, maxLen)}…` : name;
@@ -505,6 +422,31 @@ export function AnalyticsPage({
             ))}
           </div>
         )}
+        <div className="flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-1" title="Choose whether company standings are volume-weighted (protects against tiny sample sizes) or ranked purely by average score">
+          <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 pl-2 pr-1">Ranking:</span>
+          <button
+            type="button"
+            onClick={() => setRankingMode('weighted')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+              rankingMode === 'weighted'
+                ? 'bg-[#0063a9] text-white shadow-xs'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            Volume-Weighted
+          </button>
+          <button
+            type="button"
+            onClick={() => setRankingMode('pure')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+              rankingMode === 'pure'
+                ? 'bg-[#0063a9] text-white shadow-xs'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            Pure Average
+          </button>
+        </div>
         <div className="flex items-center gap-1.5">
           <button
             type="button"
@@ -643,7 +585,7 @@ export function AnalyticsPage({
             <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-2xl">
               {displayedCompany.name.startsWith('No Evaluated')
                 ? 'No evaluations are registered. Employees can submit evaluations using the published survey forms.'
-                : `${displayedCompany.name} is recognized as the top-performing ${displayedCompany.type.toLowerCase()} partner, earning the highest combined satisfaction score of ${formatNumber(displayedCompany.average, 2)} out of ${portfolioMaxRating.toFixed(0)} across all survey categories from Microgenesis employees.`
+                : `${displayedCompany.name} is recognized as the top-performing ${displayedCompany.type.toLowerCase()} partner, earning the highest combined satisfaction score of ${formatCompositeScore(displayedCompany.type as SurveyType, displayedCompany.average).text} across all survey categories from Microgenesis employees.`
               }
             </p>
           </div>
@@ -651,7 +593,7 @@ export function AnalyticsPage({
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-center md:justify-start gap-4 text-xs text-slate-400 dark:text-slate-500">
             <div className="flex items-center gap-1.5">
               <span>Combined average:</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-300">{formatNumber(displayedCompany.average, 2)} / {portfolioMaxRating.toFixed(0)}</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{formatCompositeScore(displayedCompany.type as SurveyType, displayedCompany.average).text}</span>
             </div>
             <span className="hidden sm:inline text-slate-200 dark:text-slate-800">|</span>
             <div className="flex items-center gap-1.5">
@@ -661,7 +603,7 @@ export function AnalyticsPage({
             <span className="hidden sm:inline text-slate-200 dark:text-slate-800">|</span>
             <div className="flex items-center gap-1.5">
               <span>Standing category:</span>
-              <span className={`font-semibold ${activeColor.text}`}>{standingDetails.label}</span>
+              <span className={`font-semibold ${activeColor.text}`}>{standingLabel}</span>
             </div>
           </div>
         </div>
@@ -695,7 +637,7 @@ export function AnalyticsPage({
               <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/50">
                 <span className="text-xs font-semibold text-slate-500">Employee Rating</span>
                 <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                  {topContractor.average.toFixed(2)} / {portfolioMaxRating.toFixed(0)} ({Math.round(topContractor.scorePercentage)}%)
+                  {formatCompositeScore('Courier', topContractor.average).text} ({Math.round(topContractor.scorePercentage)}%)
                 </span>
               </div>
             )}
@@ -726,7 +668,7 @@ export function AnalyticsPage({
               <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/50">
                 <span className="text-xs font-semibold text-slate-500">Employee Rating</span>
                 <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                  {topSupplier.average.toFixed(2)} / {portfolioMaxRating.toFixed(0)} ({Math.round(topSupplier.scorePercentage)}%)
+                  {formatCompositeScore('Supplier', topSupplier.average).text} ({Math.round(topSupplier.scorePercentage)}%)
                 </span>
               </div>
             )}
@@ -757,7 +699,7 @@ export function AnalyticsPage({
               <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/50">
                 <span className="text-xs font-semibold text-slate-500">Employee Rating</span>
                 <span className="text-xs font-bold text-orange-600 dark:text-orange-400">
-                  {topSubcontractor.average.toFixed(2)} / {portfolioMaxRating.toFixed(0)} ({Math.round(topSubcontractor.scorePercentage)}%)
+                  {formatCompositeScore('Subcontractor', topSubcontractor.average).text} ({Math.round(topSubcontractor.scorePercentage)}%)
                 </span>
               </div>
             )}
@@ -765,7 +707,7 @@ export function AnalyticsPage({
         </div>
       )}
 
-      <CompanyLeaderboardPanel responses={comparableResponses} />
+      <CompanyLeaderboardPanel responses={comparableResponses} rankingMode={rankingMode} />
 
       <CompanyAnalysisPanel responses={comparableResponses} archiveSeries={archiveSeries} />
 
@@ -994,7 +936,7 @@ export function AnalyticsPage({
                     {highestCompany.name}
                   </h4>
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Rating: <span className="text-emerald-600 dark:text-emerald-400 font-bold">{highestCompany.average.toFixed(2)}</span> / {portfolioMaxRating.toFixed(0)}
+                    Rating: <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatCompositeScore(highestCompany.type as SurveyType, highestCompany.average).text}</span>
                   </p>
                   <p className="text-[10px] text-slate-400 dark:text-slate-500">
                     Based on {highestCompany.count} evaluations
@@ -1038,7 +980,7 @@ export function AnalyticsPage({
                     {lowestCompany.name}
                   </h4>
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Rating: <span className="text-rose-500 dark:text-rose-400 font-bold">{lowestCompany.average.toFixed(2)}</span> / {portfolioMaxRating.toFixed(0)}
+                    Rating: <span className="text-rose-500 dark:text-rose-400 font-bold">{formatCompositeScore(lowestCompany.type as SurveyType, lowestCompany.average).text}</span>
                   </p>
                   <p className="text-[10px] text-slate-400 dark:text-slate-500">
                     Based on {lowestCompany.count} evaluations

@@ -43,6 +43,7 @@ import {
 import { AccreditationStatus, BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SupplierOrigin, SurveyResponse, SurveyType } from '../types/survey';
 import { getMaxRatingForResponses } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
+import { formatCompositeScore } from '../data/questionWeights';
 import { branchAwareCompanyLabel, computeDocumentStatus, computeCompanyDocumentSummary, CompanyDocumentSummary } from '../utils/compliance';
 import { CATEGORY_BUCKET_KEYS, computeCategoryRankSummary } from '../utils/categorySummary';
 import { getRequiredDocumentKeys, isExpiryDocument } from '../utils/documentRequirements';
@@ -260,7 +261,7 @@ export function PartnerCompaniesPage({
       return { rating: 'N/A', pct: 0, count: 0, label: 'Unrated', hex: '#94a3b8' };
     }
     return {
-      rating: `${composite.compositeScore.toFixed(1)}%`,
+      rating: formatCompositeScore(companyType, composite.compositeScore).text,
       pct: Math.round(composite.compositeScore),
       count: composite.evaluationCount,
       label: composite.band.label,

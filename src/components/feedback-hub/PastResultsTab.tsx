@@ -5,6 +5,7 @@ import { Search, Filter, Download, Send, BarChart3, CheckCircle2, Clock, AlertTr
 import { exportTablesAsPDF, ExportTable } from '../../utils/exporters';
 import { SurveyDetailModal } from './SurveyDetailModal';
 import { submissionScores } from '../../utils/analytics';
+import { formatCompositeScore } from '../../data/questionWeights';
 
 interface PastResultsTabProps {
   surveys: CustomForm[];
@@ -53,7 +54,7 @@ export function PastResultsTab({
           ['Survey Type', survey.surveyType],
           ['Completion Date', new Date(survey.createdAt).toLocaleDateString()],
           ['Total Submissions', String(count)],
-          ['Overall Score', `${satisfactionScore}%`],
+          ['Overall Score', formatCompositeScore(survey.surveyType, satisfactionScore).text],
         ],
       },
     ];

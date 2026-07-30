@@ -1,19 +1,17 @@
 import { useMemo, useState } from 'react';
 import { SurveyResponse, SurveyType } from '../types/survey';
-import { surveyTypeDisplayLabel } from '../data/questionWeights';
-import { getLeaderboard, getPureAverageLeaderboard, getOutliers } from '../utils/scoring';
+import { surveyTypeDisplayLabel, formatCompositeScore } from '../data/questionWeights';
+import { getLeaderboard, getPureAverageLeaderboard, getOutliers, RankingMode } from '../utils/scoring';
 
 interface CompanyLeaderboardPanelProps {
   responses: SurveyResponse[];
+  rankingMode: RankingMode;
 }
-
-type RankingMode = 'weighted' | 'pure';
 
 const surveyTypes: SurveyType[] = ['Courier', 'Supplier', 'Subcontractor'];
 
-export function CompanyLeaderboardPanel({ responses }: CompanyLeaderboardPanelProps) {
+export function CompanyLeaderboardPanel({ responses, rankingMode }: CompanyLeaderboardPanelProps) {
   const [surveyType, setSurveyType] = useState<SurveyType>('Courier');
-  const [rankingMode, setRankingMode] = useState<RankingMode>('weighted');
 
   const leaderboard = useMemo(
     () => rankingMode === 'weighted' ? getLeaderboard(responses, surveyType) : getPureAverageLeaderboard(responses, surveyType),
@@ -45,7 +43,7 @@ export function CompanyLeaderboardPanel({ responses }: CompanyLeaderboardPanelPr
               <div className="flex items-center gap-2 pr-2">
                 <p className="truncate flex-1 text-sm text-slate-700 dark:text-slate-200">{composite.company}</p>
                 <span className="shrink-0 text-sm font-semibold tabular-nums text-left" style={{ color: composite.band.hex }}>
-                  {composite.hasScore ? composite.compositeScore.toFixed(1) : '—'}
+                  {composite.hasScore ? formatCompositeScore(composite.surveyType, composite.compositeScore).value.toFixed(1) : '—'}
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -66,6 +64,14 @@ export function CompanyLeaderboardPanel({ responses }: CompanyLeaderboardPanelPr
                 {outlier?.isLowOutlier ? (
                   <span className="badge bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300">
                     Below peer average
+                  </span>
+                ) : null}
+                {composite.evaluationCount < 4 ? (
+                  <span
+                    className="badge bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                    title="Based on fewer than 4 evaluations — treat this score with caution until more responses come in."
+                  >
+                    Low sample size ({composite.evaluationCount}x)
                   </span>
                 ) : null}
                 <span className="text-xs text-slate-400 dark:text-slate-500">
@@ -91,46 +97,18 @@ export function CompanyLeaderboardPanel({ responses }: CompanyLeaderboardPanelPr
           </p>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800 w-full">
-            <div className="segmented-control flex-1 w-full md:w-auto grid grid-cols-3">
-              {surveyTypes.map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  className={`py-2 text-center w-full flex-1 ${surveyType === type ? 'segmented-active font-bold text-[#0063a9] dark:text-blue-400 shadow-sm' : ''}`}
-                  onClick={() => setSurveyType(type)}
-                >
-                  {surveyTypeDisplayLabel[type]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1 self-start">
-            <span className="text-xs text-slate-400 dark:text-slate-500 mr-1">Ranking:</span>
-            <button
-              type="button"
-              onClick={() => setRankingMode('weighted')}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                rankingMode === 'weighted'
-                  ? 'bg-[#0063a9] text-white'
-                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
-              }`}
-            >
-              Volume-Weighted
-            </button>
-            <button
-              type="button"
-              onClick={() => setRankingMode('pure')}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                rankingMode === 'pure'
-                  ? 'bg-[#0063a9] text-white'
-                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
-              }`}
-            >
-              Pure Average
-            </button>
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800 w-full">
+          <div className="segmented-control flex-1 w-full md:w-auto grid grid-cols-3">
+            {surveyTypes.map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={`py-2 text-center w-full flex-1 ${surveyType === type ? 'segmented-active font-bold text-[#0063a9] dark:text-blue-400 shadow-sm' : ''}`}
+                onClick={() => setSurveyType(type)}
+              >
+                {surveyTypeDisplayLabel[type]}
+              </button>
+            ))}
           </div>
         </div>
       </div>

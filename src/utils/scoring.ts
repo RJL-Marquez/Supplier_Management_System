@@ -39,6 +39,8 @@ export interface CompanyComposite {
   displayRank?: number;
 }
 
+export type RankingMode = 'weighted' | 'pure';
+
 export interface OutlierFlag {
   company: string;
   zScore: number;

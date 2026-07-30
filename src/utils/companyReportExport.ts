@@ -22,6 +22,7 @@ import {
 import { SurveyType } from '../types/survey';
 import { CompanyComposite } from './scoring';
 import { logExport } from './exportHistory';
+import { formatCompositeScore } from '../data/questionWeights';
 
 /** What graph sections the person chose to include, plus the captured chart images (if any). */
 export interface CompanyReportGraphSelection {
@@ -208,7 +209,7 @@ export async function exportCompanyReportAsPDF(
   doc.setFontSize(13.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...BRAND);
-  doc.text(`${data.composite.compositeScore.toFixed(1)} / 100`, marginLeft + 12, cursorY + 35);
+  doc.text(formatCompositeScore(data.surveyType, data.composite.compositeScore).text, marginLeft + 12, cursorY + 35);
   doc.setTextColor(20, 20, 20);
   doc.text(data.composite.band.label, marginLeft + 190, cursorY + 35);
   doc.text(String(data.composite.evaluationCount), marginLeft + 340, cursorY + 35);
@@ -455,7 +456,7 @@ export async function exportCompanyReportAsDocx(data: CompanyReportData) {
                 children: [new TextRun({ text: 'COMPOSITE SCORE', bold: true, size: 18, color: MUTED_HEX })],
               }),
               new Paragraph({
-                children: [new TextRun({ text: `${data.composite.compositeScore.toFixed(1)} / 100`, bold: true, size: 56, color: BRAND_HEX })],
+                children: [new TextRun({ text: formatCompositeScore(data.surveyType, data.composite.compositeScore).text, bold: true, size: 56, color: BRAND_HEX })],
               }),
             ],
           }),

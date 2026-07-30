@@ -10,10 +10,11 @@ import { SurveyType } from '../types/survey';
  * - Subcontractor (Form 3 Rev. A): every question is scored 0/1/2/N-A on the
  *   same discrete scale, so "maxPoints" is 2 for all of them. There's no
  *   official 100-point total for this form; we compute a 0-100 composite
- *   (average / 2 * 100) purely so every survey type can share one
- *   leaderboard axis, one set of chart components, and - as of the current
- *   scoring policy - one unified 8-tier band system (see UNIFIED_BANDS
- *   below), instead of type-specific thresholds.
+ *   (average / 2 * 100) internally so every survey type can share one
+ *   leaderboard axis and one set of chart components, but Subcontractor is
+ *   converted back to its native 0-2.0 scale for display (see
+ *   formatCompositeScore below) and banded on its own paper-form thresholds
+ *   (see SUBCONTRACTOR_BANDS / COURIER_SUPPLIER_BANDS below).
  */
 export interface QuestionWeight {
   questionId: string;
@@ -81,30 +82,58 @@ export interface ScoreBand {
   hex: string;
 }
 
-// Composite scores are already normalized to a shared 0-100 scale for every
-// survey type (see submissionScores in analytics.ts), so all three forms
-// - Courier, Supplier, Subcontractor - are ranked against the exact same
-// 8-tier scorecard instead of type-specific thresholds.
-const UNIFIED_BANDS: ScoreBand[] = [
-  { label: 'Top Performer', min: 92, hex: '#0d6b3f' },            // Darker Green
-  { label: 'Highly Satisfactory', min: 85, hex: '#1baf7a' },      // Regular Green
-  { label: 'Satisfactory', min: 80, hex: '#7bc96f' },             // Lighter Green
-  { label: 'Good', min: 75, hex: '#eab308' },                     // Yellow
-  { label: 'Fair', min: 50, hex: '#f97316' },                     // Orange
-  { label: 'Slightly Unsatisfactory', min: 40, hex: '#f4978e' },  // Lighter Red
-  { label: 'Unsatisfactory', min: 30, hex: '#e34948' },           // Red
-  { label: 'Critical', min: 0, hex: '#7f1d1d' },                  // Darker Red
+// 4-tier standing system taken from the paper Subcontractor Performance
+// Evaluation Report form (5 categories, 20% weight each, native 0-2.0
+// scale). Courier/Supplier use the same 4 tiers proportionally scaled onto
+// their 0-100 axis (min * 50) so every survey type shares one set of
+// labels/colors instead of the old 8-tier UNIFIED_BANDS.
+const COURIER_SUPPLIER_BANDS: ScoreBand[] = [
+  { label: 'Top Performer', min: 75, hex: '#0d6b3f' },       // Dark Green
+  { label: 'Good Performer', min: 50, hex: '#1baf7a' },      // Green
+  { label: 'Marginal Performer', min: 25, hex: '#eab308' },  // Yellow
+  { label: 'Poor Performer', min: 0, hex: '#f97316' },       // Orange
+];
+
+// Native 0-2.0 scale (0.2 increments, from 5 categories at 20% weight each).
+const SUBCONTRACTOR_BANDS: ScoreBand[] = [
+  { label: 'Top Performer', min: 1.5, hex: '#0d6b3f' },       // Dark Green
+  { label: 'Good Performer', min: 1.0, hex: '#1baf7a' },      // Green
+  { label: 'Marginal Performer', min: 0.5, hex: '#eab308' },  // Yellow
+  { label: 'Poor Performer', min: 0, hex: '#f97316' },        // Orange
 ];
 
 export const ratingBands: Record<SurveyType, ScoreBand[]> = {
-  Courier: UNIFIED_BANDS,
-  Supplier: UNIFIED_BANDS,
-  Subcontractor: UNIFIED_BANDS,
+  Courier: COURIER_SUPPLIER_BANDS,
+  Supplier: COURIER_SUPPLIER_BANDS,
+  Subcontractor: SUBCONTRACTOR_BANDS,
 };
 
+// percentScore is always the shared 0-100 composite value (see
+// computeCompanyComposite in scoring.ts) - Subcontractor is converted down
+// to its native 0-2.0 scale here so callers never have to know the
+// difference.
 export function getBand(surveyType: SurveyType, percentScore: number): ScoreBand {
   const bands = ratingBands[surveyType];
-  return bands.find((b) => percentScore >= b.min) ?? bands[bands.length - 1];
+  const scoreForLookup = surveyType === 'Subcontractor' ? percentScore / 50 : percentScore;
+  return bands.find((b) => scoreForLookup >= b.min) ?? bands[bands.length - 1];
+}
+
+export interface FormattedScore {
+  value: number; // native units: 0-100 for Courier/Supplier, 0-2 for Subcontractor
+  max: number; // 100 or 2
+  text: string; // e.g. "62.3 / 100" or "1.2 / 2.0"
+}
+
+// Converts a shared 0-100 composite value into the survey type's native
+// display scale. Only for company/submission-level composite scores - not
+// for per-question values, which stay on their own 0-100 normalization.
+export function formatCompositeScore(surveyType: SurveyType, compositeScore: number): FormattedScore {
+  if (surveyType === 'Subcontractor') {
+    const value = Number((compositeScore / 50).toFixed(1));
+    return { value, max: 2, text: `${value.toFixed(1)} / 2.0` };
+  }
+  const value = Number(compositeScore.toFixed(1));
+  return { value, max: 100, text: `${value.toFixed(1)} / 100` };
 }
 
 export const surveyTypeDisplayLabel: Record<SurveyType, string> = {

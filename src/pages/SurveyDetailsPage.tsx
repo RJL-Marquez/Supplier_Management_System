@@ -3,7 +3,7 @@ import { ArrowLeft, ExternalLink, Trash, Calendar, CalendarClock, Users, Clipboa
 import { CustomForm, SurveyResponse, PartnerCompany } from '../types/survey';
 import { CompletionStatusBar } from '../components/CompletionStatusBar';
 import { formatNumber, getSurveyEvaluationCompanies, scoredResponses, submissionScores } from '../utils/analytics';
-import { isScoredQuestion } from '../data/questionWeights';
+import { isScoredQuestion, getQuestionMaxPoints, formatCompositeScore } from '../data/questionWeights';
 
 interface SurveyDetailsPageProps {
   survey: CustomForm;
@@ -244,14 +244,16 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
 
               <div className="rounded-lg bg-slate-50 p-4 text-center dark:bg-slate-900/50">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Average Rating</p>
-                <p className="text-3xl font-bold text-[#0063a9] dark:text-blue-300 mt-1">{formatNumber(stats.avg, 2)} <span className="text-xs text-slate-400">/ 100</span></p>
+                <p className="text-3xl font-bold text-[#0063a9] dark:text-blue-300 mt-1">{formatCompositeScore(survey.surveyType, stats.avg).text}</p>
               </div>
             </div>
 
             <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
               <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1.5">
                 <span>Overall Performance Rating</span>
-                <span className="font-bold text-slate-800 dark:text-white">{stats.percentage}%</span>
+                <span className="font-bold text-slate-800 dark:text-white">
+                  {survey.surveyType === 'Subcontractor' ? formatCompositeScore(survey.surveyType, stats.avg).text : `${stats.percentage}%`}
+                </span>
               </div>
               <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                 <div
@@ -315,7 +317,9 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
                   const validAnswers = sub.answers.filter((a) => a.rating !== 'N/A');
                   const scoredAnswerCount = scoredResponses(sub.answers).length;
                   const submissionScore = submissionScores(sub.answers)[0]?.score;
-                  const score = scoredAnswerCount > 0 && submissionScore !== undefined ? formatNumber(submissionScore, 2) : 'N/A';
+                  const score = scoredAnswerCount > 0 && submissionScore !== undefined
+                    ? formatCompositeScore(survey.surveyType, submissionScore).text
+                    : 'N/A';
 
                   return (
                     <tr key={sub.responseId} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition">
@@ -325,7 +329,7 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
                       <td className="px-4 py-3">{new Date(sub.submissionDate).toLocaleString()}</td>
                       <td className="px-4 py-3 text-center">
                         <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-bold text-[#0063a9] dark:bg-blue-950/40 dark:text-blue-300">
-                          {score} / 100
+                          {score}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -435,6 +439,7 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
               
               {activeSubmissionDetail.answers.map((ans, idx) => {
                 const isScored = isScoredQuestion(ans.surveyType, ans.questionId);
+                const maxPoints = getQuestionMaxPoints(ans.surveyType, ans.questionId);
                 return (
                 <div key={ans.questionId} className="p-3.5 rounded-lg border border-slate-100 bg-slate-50/50 dark:border-slate-800/80 dark:bg-slate-900/20 space-y-2">
                   <div className="flex items-start justify-between gap-3">
@@ -446,9 +451,9 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
                     <span className={`inline-flex shrink-0 items-center justify-center h-7 px-2 rounded-md font-bold text-xs ${
                       ans.rating === 'N/A'
                         ? 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-                        : ans.rating >= 3 
-                        ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400' 
-                        : ans.rating === 2 
+                        : ans.rating === maxPoints
+                        ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400'
+                        : ans.rating === maxPoints - 1
                         ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:text-amber-400'
                         : 'bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400'
                     }`}>

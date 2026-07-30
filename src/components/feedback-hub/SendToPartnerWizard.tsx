@@ -42,7 +42,7 @@ import {
 } from 'recharts';
 import { CustomForm, PartnerCompany, SurveyResponse, SurveyType } from '../../types/survey';
 import { PartnerContact, QueuedReportEmail } from '../../types/feedbackHub';
-import { surveyTypeDisplayLabel } from '../../data/questionWeights';
+import { surveyTypeDisplayLabel, formatCompositeScore } from '../../data/questionWeights';
 import {
   captureChartImage,
   CompanyReportData,
@@ -723,7 +723,7 @@ export function SendToPartnerWizard({
 
                     <div className="w-24 shrink-0">
                       <p className="text-[10px] text-slate-500">Overall Score</p>
-                      <p className="font-extrabold text-[#0063a9] text-sm">{item.overallScore}%</p>
+                      <p className="font-extrabold text-[#0063a9] text-sm">{formatCompositeScore(item.company.type, item.overallScore).text}</p>
                     </div>
 
                     <div className="flex items-center gap-6 ml-auto">
@@ -874,7 +874,7 @@ export function SendToPartnerWizard({
                           <div>
                             <span className="text-slate-400">Composite Score:</span>
                             <span className="ml-1.5 font-black text-[#0063a9] dark:text-blue-300">
-                              {composite.compositeScore.toFixed(1)} / 100
+                              {formatCompositeScore(sType, composite.compositeScore).text}
                             </span>
                           </div>
                         </div>
@@ -1109,7 +1109,7 @@ export function SendToPartnerWizard({
                           <ReportPageHeader company={selectedCompanyName} />
                           <h2 className="mt-4 text-sm font-bold text-slate-800 dark:text-slate-100">Executive Summary</h2>
                           <div className="mt-2 grid grid-cols-3 gap-2">
-                            <SummaryStat label="Composite score" value={`${formatNumber(overallScore)} / 100`} />
+                            <SummaryStat label="Composite score" value={formatCompositeScore(sType, overallScore).text} />
                             <SummaryStat label="Rating band" value={composite?.band.label || 'N/A'} />
                             <SummaryStat label="Evaluations" value={String(responseCount)} />
                           </div>

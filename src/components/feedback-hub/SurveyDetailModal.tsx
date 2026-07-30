@@ -3,7 +3,7 @@ import { X, CheckCircle2, Download, Send, BarChart3, Users, FileText, Award, Cal
 import { CustomForm, PartnerCompany, SurveyResponse } from '../../types/survey';
 import { exportTablesAsPDF, ExportTable } from '../../utils/exporters';
 import { submissionScores } from '../../utils/analytics';
-import { getQuestionMaxPoints } from '../../data/questionWeights';
+import { getQuestionMaxPoints, formatCompositeScore } from '../../data/questionWeights';
 
 interface SurveyDetailModalProps {
   survey: CustomForm;
@@ -33,7 +33,7 @@ export function SurveyDetailModal({
   const satisfactionScore = totalResponsesCount > 0
     ? Number((subScores.reduce((sum, s) => sum + s.score, 0) / totalResponsesCount).toFixed(1))
     : 0;
-  const avgRating = (satisfactionScore / 100) * 5;
+  const avgRatingFormatted = formatCompositeScore(survey.surveyType, satisfactionScore).text;
 
   // Category breakdown
   const categoryEarnedMap = new Map<string, { earned: number; possible: number; count: number }>();
@@ -54,10 +54,9 @@ export function SurveyDetailModal({
 
   const categoryScores = Array.from(categoryEarnedMap.entries()).map(([cat, v]) => {
     const scorePct = v.possible > 0 ? (v.earned / v.possible) * 100 : 0;
-    const average = (scorePct / 100) * 5;
     return {
       category: cat,
-      average,
+      scoreText: formatCompositeScore(survey.surveyType, scorePct).text,
       scorePct,
       count: v.count,
     };
@@ -91,13 +90,13 @@ export function SurveyDetailModal({
           ['Survey Category', survey.surveyType],
           ['Total Submissions', String(totalResponsesCount)],
           ['Overall Satisfaction Score', `${satisfactionScore.toFixed(1)}%`],
-          ['Average Rating', `${avgRating.toFixed(2)} / 5.0`],
+          ['Average Rating', avgRatingFormatted],
         ],
       },
       {
         title: 'Category Score Breakdown',
         columns: ['Category', 'Average Rating', 'Score %'],
-        rows: categoryScores.map((c) => [c.category, c.average.toFixed(2), `${c.scorePct.toFixed(1)}%`]),
+        rows: categoryScores.map((c) => [c.category, c.scoreText, `${c.scorePct.toFixed(1)}%`]),
       },
     ];
 
@@ -157,7 +156,7 @@ export function SurveyDetailModal({
               <div className="mt-2 text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">
                 {satisfactionScore.toFixed(1)}%
               </div>
-              <p className="mt-1 text-[11px] text-slate-500">Average: {avgRating.toFixed(2)} / 5.0</p>
+              <p className="mt-1 text-[11px] text-slate-500">Average: {avgRatingFormatted}</p>
             </div>
 
             <div className="rounded-lg border border-slate-200 p-4 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
@@ -184,7 +183,7 @@ export function SurveyDetailModal({
                   <div className="flex items-center justify-between text-xs font-medium">
                     <span className="text-slate-700 dark:text-slate-300">{c.category}</span>
                     <span className="font-bold text-slate-900 dark:text-white">
-                      {c.average.toFixed(1)} / 5.0 ({c.scorePct.toFixed(0)}%)
+                      {c.scoreText} ({c.scorePct.toFixed(0)}%)
                     </span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">

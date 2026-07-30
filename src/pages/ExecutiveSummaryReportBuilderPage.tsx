@@ -38,7 +38,7 @@ import {
   Legend
 } from 'recharts';
 import { PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
-import { getQuestionMaxPoints, surveyTypeDisplayLabel } from '../data/questionWeights';
+import { getQuestionMaxPoints, surveyTypeDisplayLabel, formatCompositeScore } from '../data/questionWeights';
 import {
   formatNumber,
   getKpiSummary,
@@ -355,7 +355,7 @@ export function ExecutiveSummaryReportBuilderPage({
         items.push({
           type: 'alert',
           title: `Focus Required on ${lowestCat.surveyType} Category`,
-          text: `Average rating for "${lowestCat.surveyType}" is lagging at ${formatNumber(lowestCat.average)}%. Priority should be given to identifying root workflow bottlenecks in this division.`,
+          text: `Average rating for "${lowestCat.surveyType}" is lagging at ${formatCompositeScore(lowestCat.surveyType, lowestCat.average).text}. Priority should be given to identifying root workflow bottlenecks in this division.`,
         });
       }
 
@@ -363,7 +363,7 @@ export function ExecutiveSummaryReportBuilderPage({
         items.push({
           type: 'success',
           title: `Benchmark Set by ${highestCat.surveyType} Division`,
-          text: `The ${highestCat.surveyType} group is outstanding with an average rating of ${formatNumber(highestCat.average)}%. We recommend documenting their workflow practices to establish a standard company-wide template.`,
+          text: `The ${highestCat.surveyType} group is outstanding with an average rating of ${formatCompositeScore(highestCat.surveyType, highestCat.average).text}. We recommend documenting their workflow practices to establish a standard company-wide template.`,
         });
       }
     }
@@ -384,7 +384,7 @@ export function ExecutiveSummaryReportBuilderPage({
       items.push({
         type: 'action',
         title: `Supplier SLA Review Required`,
-        text: `"${worstCompany.company}" stands as the lowest ranked evaluated partner with a score of ${formatNumber(worstCompany.average)}%. Initiate formal communication regarding performance improvement targets.`,
+        text: `"${worstCompany.company}" stands as the lowest ranked evaluated partner with a score of ${formatCompositeScore(worstCompany.surveyType, worstCompany.average).text}. Initiate formal communication regarding performance improvement targets.`,
       });
     }
 
@@ -476,8 +476,8 @@ export function ExecutiveSummaryReportBuilderPage({
       if (showSurveyTable) {
         tables.push({
           title: 'Survey Division Breakdown',
-          columns: ['Survey Category', 'Average Score (%)', 'Total Submissions'],
-          rows: surveyPerformance.map((r) => [r.surveyType, `${formatNumber(r.average)}%`, r.responses]),
+          columns: ['Survey Category', 'Average Score', 'Total Submissions'],
+          rows: surveyPerformance.map((r) => [r.surveyType, formatCompositeScore(r.surveyType, r.average).text, r.responses]),
         });
       }
 
@@ -500,13 +500,13 @@ export function ExecutiveSummaryReportBuilderPage({
       if (showCompanyRankings) {
         tables.push({
           title: 'Top Performing Rated Partners',
-          columns: ['Partner Company', 'Composite Rating (%)', 'Submissions Count'],
-          rows: topCompanies.map((r) => [r.company, formatNumber(r.average), r.evaluations]),
+          columns: ['Partner Company', 'Composite Rating', 'Submissions Count'],
+          rows: topCompanies.map((r) => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations]),
         });
         tables.push({
           title: 'Lowest Rated Partners (Operational Alert)',
-          columns: ['Partner Company', 'Composite Rating (%)', 'Submissions Count'],
-          rows: leastRatedCompanies.map((r) => [r.company, formatNumber(r.average), r.evaluations]),
+          columns: ['Partner Company', 'Composite Rating', 'Submissions Count'],
+          rows: leastRatedCompanies.map((r) => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations]),
         });
       }
 
@@ -740,10 +740,10 @@ export function ExecutiveSummaryReportBuilderPage({
           doc.text('Survey Division Breakdown Summary', marginLeft, cursorY);
           cursorY += 10;
 
-          const tableHeaders = ['Survey Division Category', 'Average Score (%)', 'Total Submitted Evaluations'];
+          const tableHeaders = ['Survey Division Category', 'Average Score', 'Total Submitted Evaluations'];
           const tableRows = surveyPerformance.map((row) => [
             row.surveyType,
-            `${formatNumber(row.average)}%`,
+            formatCompositeScore(row.surveyType, row.average).text,
             String(row.responses),
           ]);
 
@@ -859,18 +859,18 @@ export function ExecutiveSummaryReportBuilderPage({
           cursorY += 20;
 
           if (topCompanies.length > 0) {
-            const tableHeaders = ['Performance Rank', 'Partner Company Name', 'Average Score (%)'];
+            const tableHeaders = ['Performance Rank', 'Partner Company Name', 'Average Score'];
             const tableRows = topCompanies.map((row, idx) => [
               `#${idx + 1}`,
               row.company,
-              `${formatNumber(row.average)}%`,
+              formatCompositeScore(row.surveyType, row.average).text,
             ]);
 
-            const leastHeaders = ['Alert Rank', 'Partner Company Name', 'Average Score (%)'];
+            const leastHeaders = ['Alert Rank', 'Partner Company Name', 'Average Score'];
             const leastRows = leastRatedCompanies.map((row, idx) => [
               `ALERT #${idx + 1}`,
               row.company,
-              `${formatNumber(row.average)}%`,
+              formatCompositeScore(row.surveyType, row.average).text,
             ]);
 
             const startY = cursorY;
@@ -1433,7 +1433,7 @@ export function ExecutiveSummaryReportBuilderPage({
                         <thead>
                           <tr className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
                             <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px]">Survey Division Category</th>
-                            <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Average Score (%)</th>
+                            <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Average Score</th>
                             <th className="p-2 font-bold text-slate-500 uppercase tracking-wider text-[9px] text-right">Total Submitted Evaluations</th>
                           </tr>
                         </thead>
@@ -1441,7 +1441,7 @@ export function ExecutiveSummaryReportBuilderPage({
                           {surveyPerformance.map((row) => (
                             <tr key={row.surveyType} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
                               <td className="p-2 font-medium">{row.surveyType}</td>
-                              <td className="p-2 text-right font-semibold text-[#0063a9]">{formatNumber(row.average)}%</td>
+                              <td className="p-2 text-right font-semibold text-[#0063a9]">{formatCompositeScore(row.surveyType, row.average).text}</td>
                               <td className="p-2 text-right text-slate-500">{row.responses}</td>
                             </tr>
                           ))}
@@ -1556,7 +1556,7 @@ export function ExecutiveSummaryReportBuilderPage({
                             <tr className="bg-emerald-50/50 dark:bg-emerald-950/20 border-b border-emerald-100 dark:border-emerald-900/30">
                               <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase">Performance Rank</th>
                               <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase">Partner Company Name</th>
-                              <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase text-right">Average Score (%)</th>
+                              <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase text-right">Average Score</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-emerald-100/50 dark:divide-emerald-900/20 text-slate-700 dark:text-slate-300">
@@ -1564,7 +1564,7 @@ export function ExecutiveSummaryReportBuilderPage({
                               <tr key={c.company} className="hover:bg-emerald-50/10">
                                 <td className="p-2 font-bold text-emerald-600">#{idx + 1}</td>
                                 <td className="p-2 font-medium">{c.company}</td>
-                                <td className="p-2 text-right font-black text-emerald-600">{formatNumber(c.average)}%</td>
+                                <td className="p-2 text-right font-black text-emerald-600">{formatCompositeScore(c.surveyType, c.average).text}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1586,7 +1586,7 @@ export function ExecutiveSummaryReportBuilderPage({
                             <tr className="bg-rose-50/50 dark:bg-rose-950/20 border-b border-rose-100 dark:border-rose-900/30">
                               <th className="p-2 font-bold text-rose-700 text-[9px] uppercase">Alert Rank</th>
                               <th className="p-2 font-bold text-rose-700 text-[9px] uppercase">Partner Company Name</th>
-                              <th className="p-2 font-bold text-rose-700 text-[9px] uppercase text-right">Average Score (%)</th>
+                              <th className="p-2 font-bold text-rose-700 text-[9px] uppercase text-right">Average Score</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-rose-100/50 dark:divide-rose-900/20 text-slate-700 dark:text-slate-300">
@@ -1594,7 +1594,7 @@ export function ExecutiveSummaryReportBuilderPage({
                               <tr key={c.company} className="hover:bg-rose-50/10">
                                 <td className="p-2 font-bold text-rose-500">ALERT #{idx + 1}</td>
                                 <td className="p-2 font-medium">{c.company}</td>
-                                <td className="p-2 text-right font-black text-rose-500">{formatNumber(c.average)}%</td>
+                                <td className="p-2 text-right font-black text-rose-500">{formatCompositeScore(c.surveyType, c.average).text}</td>
                               </tr>
                             ))}
                           </tbody>

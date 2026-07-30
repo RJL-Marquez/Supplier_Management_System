@@ -296,23 +296,24 @@ export function getKpiSummary(responses: SurveyResponse[]): KpiSummary {
 
 export function getCompanyPerformance(responses: SurveyResponse[]) {
   const scores = submissionScores(responses);
-  const companyMap = new Map<string, { totalScore: number; count: number }>();
-  
+  const companyMap = new Map<string, { totalScore: number; count: number; surveyType: SurveyType }>();
+
   scores.forEach(item => {
-    const current = companyMap.get(item.company) || { totalScore: 0, count: 0 };
+    const current = companyMap.get(item.company) || { totalScore: 0, count: 0, surveyType: item.surveyType };
     current.totalScore += item.score;
     current.count += 1;
     companyMap.set(item.company, current);
   });
-  
+
   const companyAverages = Array.from(companyMap.entries()).map(([company, data]) => ({
     company,
     average: data.totalScore / data.count,
     evaluations: data.count,
+    surveyType: data.surveyType,
   }));
-  
+
   companyAverages.sort((a, b) => b.average - a.average);
-  
+
   return companyAverages;
 }
 

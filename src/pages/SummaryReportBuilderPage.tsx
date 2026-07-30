@@ -35,6 +35,7 @@ import {
   averageBySurveyType,
   questionPerformance
 } from '../utils/analytics';
+import { formatCompositeScore } from '../data/questionWeights';
 
 interface SummaryReportBuilderPageProps {
   responses: SurveyResponse[];
@@ -219,8 +220,8 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
       if (showTable) {
         tables.push({
           title: 'Survey Category Summary',
-          columns: ['Survey Category', 'Average Rating (%)', 'Response Count'],
-          rows: surveyPerformance.map(r => [r.surveyType, formatNumber(r.average), r.responses]),
+          columns: ['Survey Category', 'Average Rating', 'Response Count'],
+          rows: surveyPerformance.map(r => [r.surveyType, formatCompositeScore(r.surveyType, r.average).text, r.responses]),
         });
       }
 
@@ -228,8 +229,8 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
       if (showTopCompanies && topCompanies.length > 0) {
         tables.push({
           title: 'Top Performing Evaluated Companies',
-          columns: ['Company', 'Average Score (%)', 'Evaluations Count'],
-          rows: topCompanies.map(r => [r.company, formatNumber(r.average), r.evaluations]),
+          columns: ['Company', 'Average Score', 'Evaluations Count'],
+          rows: topCompanies.map(r => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations]),
         });
       }
 
@@ -237,8 +238,8 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
       if (showBottomCompanies && leastRatedCompanies.length > 0) {
         tables.push({
           title: 'Lowest Rated Evaluated Companies',
-          columns: ['Company', 'Average Score (%)', 'Evaluations Count'],
-          rows: leastRatedCompanies.map(r => [r.company, formatNumber(r.average), r.evaluations]),
+          columns: ['Company', 'Average Score', 'Evaluations Count'],
+          rows: leastRatedCompanies.map(r => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations]),
         });
       }
 
@@ -445,10 +446,10 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
           doc.text('Survey Category Performance Table', marginLeft, cursorY);
           cursorY += 10;
 
-          const tableHeaders = ['Survey Category', 'Average Score (%)', 'Total Submissions'];
+          const tableHeaders = ['Survey Category', 'Average Score', 'Total Submissions'];
           const tableRows = surveyPerformance.map(row => [
             row.surveyType,
-            `${formatNumber(row.average)}%`,
+            formatCompositeScore(row.surveyType, row.average).text,
             String(row.responses)
           ]);
 
@@ -482,11 +483,11 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
             doc.text('Top Performing Evaluated Companies', marginLeft, cursorY);
             cursorY += 10;
 
-            const tableHeaders = ['Rank', 'Company Name', 'Average Score (%)', 'Evaluations Count'];
+            const tableHeaders = ['Rank', 'Company Name', 'Average Score', 'Evaluations Count'];
             const tableRows = topCompanies.map((row, idx) => [
               `#${idx + 1}`,
               row.company,
-              `${formatNumber(row.average)}%`,
+              formatCompositeScore(row.surveyType, row.average).text,
               String(row.evaluations)
             ]);
 
@@ -516,11 +517,11 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
             doc.text('Lowest Rated Evaluated Companies', marginLeft, cursorY);
             cursorY += 10;
 
-            const tableHeaders = ['Rank', 'Company Name', 'Average Score (%)', 'Evaluations Count'];
+            const tableHeaders = ['Rank', 'Company Name', 'Average Score', 'Evaluations Count'];
             const tableRows = leastRatedCompanies.map((row, idx) => [
               `#${leastRatedCompanies.length - idx}`,
               row.company,
-              `${formatNumber(row.average)}%`,
+              formatCompositeScore(row.surveyType, row.average).text,
               String(row.evaluations)
             ]);
 
@@ -939,7 +940,7 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
                       <thead>
                         <tr className="bg-[#0063a9] text-white">
                           <th className="px-3 py-1.5 font-bold">Survey Category</th>
-                          <th className="px-3 py-1.5 font-bold text-center">Average Score (%)</th>
+                          <th className="px-3 py-1.5 font-bold text-center">Average Score</th>
                           <th className="px-3 py-1.5 font-bold text-center">Total Submissions</th>
                         </tr>
                       </thead>
@@ -950,7 +951,7 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
                             className={index % 2 === 0 ? 'bg-slate-50 dark:bg-slate-800/20' : 'bg-white dark:bg-slate-900'}
                           >
                             <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300 font-semibold">{row.surveyType}</td>
-                            <td className="px-3 py-1.5 text-center text-slate-800 dark:text-slate-100 font-extrabold">{formatNumber(row.average)}%</td>
+                            <td className="px-3 py-1.5 text-center text-slate-800 dark:text-slate-100 font-extrabold">{formatCompositeScore(row.surveyType, row.average).text}</td>
                             <td className="px-3 py-1.5 text-center text-slate-600 dark:text-slate-400">{row.responses}</td>
                           </tr>
                         ))}
@@ -979,7 +980,7 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
                           <tr>
                             <th className="px-3 py-1.5">Rank</th>
                             <th className="px-3 py-1.5">Company Name</th>
-                            <th className="px-3 py-1.5 text-center">Average Score (%)</th>
+                            <th className="px-3 py-1.5 text-center">Average Score</th>
                             <th className="px-3 py-1.5 text-center">Evaluations Count</th>
                           </tr>
                         </thead>
@@ -988,7 +989,7 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
                             <tr key={row.company} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-900/20' : 'bg-white dark:bg-slate-950'}>
                               <td className="px-3 py-1 font-bold text-emerald-600 dark:text-emerald-400">#{idx + 1}</td>
                               <td className="px-3 py-1 font-semibold text-slate-800 dark:text-slate-200">{row.company}</td>
-                              <td className="px-3 py-1 text-center font-bold text-slate-700 dark:text-slate-300">{formatNumber(row.average)}%</td>
+                              <td className="px-3 py-1 text-center font-bold text-slate-700 dark:text-slate-300">{formatCompositeScore(row.surveyType, row.average).text}</td>
                               <td className="px-3 py-1 text-center text-slate-500">{row.evaluations}</td>
                             </tr>
                           ))}
@@ -1010,7 +1011,7 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
                           <tr>
                             <th className="px-3 py-1.5">Rank</th>
                             <th className="px-3 py-1.5">Company Name</th>
-                            <th className="px-3 py-1.5 text-center">Average Score (%)</th>
+                            <th className="px-3 py-1.5 text-center">Average Score</th>
                             <th className="px-3 py-1.5 text-center">Evaluations Count</th>
                           </tr>
                         </thead>
@@ -1019,7 +1020,7 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
                             <tr key={row.company} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-900/20' : 'bg-white dark:bg-slate-950'}>
                               <td className="px-3 py-1 font-bold text-rose-600 dark:text-rose-400">#{companyPerformance.length - idx}</td>
                               <td className="px-3 py-1 font-semibold text-slate-800 dark:text-slate-200">{row.company}</td>
-                              <td className="px-3 py-1 text-center font-bold text-slate-700 dark:text-slate-300">{formatNumber(row.average)}%</td>
+                              <td className="px-3 py-1 text-center font-bold text-slate-700 dark:text-slate-300">{formatCompositeScore(row.surveyType, row.average).text}</td>
                               <td className="px-3 py-1 text-center text-slate-500">{row.evaluations}</td>
                             </tr>
                           ))}

@@ -33,6 +33,7 @@ import {
   computeRankScore,
 } from '../utils/analytics';
 import { computeCategoryRankSummary } from '../utils/categorySummary';
+import { formatCompositeScore } from '../data/questionWeights';
 
 // ----------------------------------------------------
 // TYPES & WIDGET DEFINITIONS
@@ -778,7 +779,7 @@ export function DashboardPage({
                                 Acclaimed leader across {topPartner.count} employee feedback surveys.
                               </p>
                               <div className="mt-3 flex items-center gap-4 text-[11px] font-semibold text-slate-500">
-                                <span>Rating: {Math.round(topPartner.scorePercentage)} / 100</span>
+                                <span>Rating: {formatCompositeScore(topPartner.type as SurveyType, topPartner.scorePercentage).text}</span>
                                 <span>•</span>
                                 <span>{topPartner.count} reviews</span>
                               </div>
@@ -865,7 +866,7 @@ export function DashboardPage({
                             <div className="flex justify-between text-sm font-medium text-slate-600 dark:text-slate-400">
                               <span>Subcontractors ({groupAverages.counts.Subcontractor} submissions)</span>
                               <span className="font-bold text-slate-800 dark:text-slate-200">
-                                {groupAverages.Subcontractor ? `${Math.round(groupAverages.Subcontractor)} / 100` : 'N/A'}
+                                {groupAverages.Subcontractor ? formatCompositeScore('Subcontractor', groupAverages.Subcontractor).text : 'N/A'}
                               </span>
                             </div>
                             <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
@@ -931,7 +932,7 @@ export function DashboardPage({
                                   </p>
                                 </div>
                                 <span className="shrink-0 font-bold text-slate-900 dark:text-white">
-                                  {Math.round(resp.score)} / 100
+                                  {formatCompositeScore(resp.surveyType, resp.score).text}
                                 </span>
                               </div>
                             );
