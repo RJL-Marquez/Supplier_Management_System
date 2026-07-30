@@ -121,19 +121,29 @@ export function getBand(surveyType: SurveyType, percentScore: number): ScoreBand
 export interface FormattedScore {
   value: number; // native units: 0-100 for Courier/Supplier, 0-2 for Subcontractor
   max: number; // 100 or 2
-  text: string; // e.g. "62.3 / 100" or "1.2 / 2.0"
+  valueText: string; // value formatted to the type's display precision, no unit suffix - use for bare number display
+  text: string; // e.g. "62.3 / 100" or "1.74 / 2.0"
 }
 
 // Converts a shared 0-100 composite value into the survey type's native
 // display scale. Only for company/submission-level composite scores - not
 // for per-question values, which stay on their own 0-100 normalization.
+//
+// Subcontractor uses 2 decimals (not 1) because its native scale only spans
+// 0-2.0 - one decimal there collapses a 5-percentage-point band into a
+// single displayed number (e.g. 85%-89% all read "1.7"), which makes
+// distinct companies look tied - and same-score companies look mis-ranked -
+// when they aren't. Courier/Supplier's 0-100 scale doesn't have this
+// problem at 1 decimal.
 export function formatCompositeScore(surveyType: SurveyType, compositeScore: number): FormattedScore {
   if (surveyType === 'Subcontractor') {
-    const value = Number((compositeScore / 50).toFixed(1));
-    return { value, max: 2, text: `${value.toFixed(1)} / 2.0` };
+    const value = Number((compositeScore / 50).toFixed(2));
+    const valueText = value.toFixed(2);
+    return { value, max: 2, valueText, text: `${valueText} / 2.0` };
   }
   const value = Number(compositeScore.toFixed(1));
-  return { value, max: 100, text: `${value.toFixed(1)} / 100` };
+  const valueText = value.toFixed(1);
+  return { value, max: 100, valueText, text: `${valueText} / 100` };
 }
 
 export const surveyTypeDisplayLabel: Record<SurveyType, string> = {

@@ -212,15 +212,35 @@ export function AnalyticsPage({
   // compared, so a type-scoped ranking (e.g. "top Courier") pulls toward
   // that type's own mean/peers rather than all three forms combined.
   const rankCompanies = (list: typeof companyAverages) => {
+    // When every company in the list shares one survey type (e.g. "top
+    // Courier"), compare by the rounded value actually shown on screen
+    // (formatCompositeScore) so two companies that display identically
+    // aren't ordered by an invisible fractional difference - fall back to
+    // count as the tiebreak. Mixed-type lists (the "Overall" champion) keep
+    // comparing raw percent-space scores, since a Subcontractor's native
+    // 0-2.0 display value isn't comparable to a Courier's 0-100 one.
+    const uniformType = list.length > 0 && list.every((c) => c.type === list[0].type) ? (list[0].type as SurveyType) : null;
+    const displayValue = (score: number) => (uniformType ? formatCompositeScore(uniformType, score).value : score);
+
     if (rankingMode === 'pure') {
       return [...list]
         .map((c) => ({ ...c, rankScore: c.scorePercentage }))
-        .sort((a, b) => (b.scorePercentage !== a.scorePercentage ? b.scorePercentage - a.scorePercentage : b.count - a.count));
+        .sort((a, b) => {
+          const dispA = displayValue(a.scorePercentage);
+          const dispB = displayValue(b.scorePercentage);
+          return dispB !== dispA ? dispB - dispA : b.count - a.count;
+        });
     }
     const peers = list.map((c) => ({ score: c.scorePercentage, count: c.count }));
     return list
       .map((c) => ({ ...c, rankScore: computeRankScore(c.scorePercentage, c.count, peers) }))
-      .sort((a, b) => b.rankScore - a.rankScore);
+      .sort((a, b) => {
+        const dispA = displayValue(a.rankScore);
+        const dispB = displayValue(b.rankScore);
+        if (dispB !== dispA) return dispB - dispA;
+        if (b.count !== a.count) return b.count - a.count;
+        return b.rankScore - a.rankScore;
+      });
   };
 
   const evaluatedCompanyAverages = useMemo(

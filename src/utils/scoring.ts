@@ -1,6 +1,6 @@
 import { ArchiveSeries, SurveyResponse, SurveyType } from '../types/survey';
 import { numericRating, submissionScores, submissionCount, computeRankScore } from './analytics';
-import { ScoreBand, getBand, questionWeights, getCanonicalQuestionId } from '../data/questionWeights';
+import { ScoreBand, getBand, questionWeights, getCanonicalQuestionId, formatCompositeScore } from '../data/questionWeights';
 
 // Returned instead of a real band when a company has zero submissions with
 // at least one non-N/A answer - e.g. a single respondent who marked every
@@ -195,7 +195,17 @@ export function getLeaderboard(responses: SurveyResponse[], surveyType: SurveyTy
 
   const rankedScored = scored
     .map((c) => ({ ...c, rankScore: computeRankScore(c.compositeScore, c.evaluationCount, peers) }))
-    .sort((a, b) => b.rankScore - a.rankScore);
+    .sort((a, b) => {
+      // Sort by the rounded value actually shown on screen first, so two
+      // companies that display identically (e.g. both "1.74") are ordered
+      // by evaluation count next instead of an invisible fractional
+      // difference in the underlying rankScore.
+      const dispA = formatCompositeScore(surveyType, a.rankScore).value;
+      const dispB = formatCompositeScore(surveyType, b.rankScore).value;
+      if (dispB !== dispA) return dispB - dispA;
+      if (b.evaluationCount !== a.evaluationCount) return b.evaluationCount - a.evaluationCount;
+      return b.rankScore - a.rankScore;
+    });
 
   const sortedUnscored = [...unscored].sort((a, b) => a.company.localeCompare(b.company));
 
@@ -217,8 +227,16 @@ export function getPureAverageLeaderboard(responses: SurveyResponse[], surveyTyp
   const scored = composites.filter((c) => c.hasScore);
   const unscored = composites.filter((c) => !c.hasScore);
 
+  // Compare by the rounded value actually shown on screen, not the raw
+  // compositeScore - two companies whose displayed numbers are identical
+  // should be treated as tied (and ordered by evaluation count) even if
+  // their exact underlying averages differ by a fraction too small to show.
+  const displayValue = (score: number) => formatCompositeScore(surveyType, score).value;
+
   const sorted = [...scored].sort((a, b) => {
-    if (b.compositeScore !== a.compositeScore) return b.compositeScore - a.compositeScore;
+    const dispA = displayValue(a.compositeScore);
+    const dispB = displayValue(b.compositeScore);
+    if (dispB !== dispA) return dispB - dispA;
     return b.evaluationCount - a.evaluationCount;
   });
 
@@ -230,7 +248,7 @@ export function getPureAverageLeaderboard(responses: SurveyResponse[], surveyTyp
     } else {
       const prev = sorted[i - 1];
       const prevRank = ranked[i - 1].displayRank!;
-      if (c.compositeScore === prev.compositeScore && c.evaluationCount === prev.evaluationCount) {
+      if (displayValue(c.compositeScore) === displayValue(prev.compositeScore) && c.evaluationCount === prev.evaluationCount) {
         ranked.push({ ...c, displayRank: prevRank });
       } else {
         ranked.push({ ...c, displayRank: i + 1 });

@@ -43,7 +43,7 @@ export function CompanyLeaderboardPanel({ responses, rankingMode }: CompanyLeade
               <div className="flex items-center gap-2 pr-2">
                 <p className="truncate flex-1 text-sm text-slate-700 dark:text-slate-200">{composite.company}</p>
                 <span className="shrink-0 text-sm font-semibold tabular-nums text-left" style={{ color: composite.band.hex }}>
-                  {composite.hasScore ? formatCompositeScore(composite.surveyType, composite.rankScore).value.toFixed(1) : '—'}
+                  {composite.hasScore ? formatCompositeScore(composite.surveyType, composite.rankScore).valueText : '—'}
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
