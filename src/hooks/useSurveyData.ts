@@ -19,12 +19,14 @@ import { computeCompanyDocumentSummary, computeDocumentStatus, EXPIRING_SOON_DAY
 import { getRequiredDocumentKeys } from '../utils/documentRequirements';
 import { getNotificationSettings, NOTIFICATION_SETTINGS_CHANGED_EVENT } from '../utils/documentNotificationSettings';
 
-// Bumped from _v6: the baseline registry changed from a 41-company hand-typed
-// demo list to the full Master List snapshot (partnerCompaniesSeed.ts, ~1129
-// companies). Any browser without existing _v7 data starts from that snapshot;
-// once loaded, admin edits (add/update/archive/import) persist under _v7
-// exactly like before - this only changes what day-one state looks like.
-const PARTNER_COMPANIES_STORAGE_KEY = 'survey_analytics_partner_companies_v7';
+// Bumped from _v7: the Master List's format changed (columns shifted, one
+// more legend row added, Status dropdown expanded to 6 values) and
+// partnerCompaniesSeed.ts was regenerated from the updated file (~1129
+// companies) to match. Any browser without existing _v8 data starts from
+// that refreshed snapshot; once loaded, admin edits (add/update/archive/
+// import) persist under _v8 exactly like before - this only changes what
+// day-one state looks like.
+const PARTNER_COMPANIES_STORAGE_KEY = 'survey_analytics_partner_companies_v8';
 
 const NOTIFICATION_HISTORY_LIMIT = 200;
 const INITIAL_NOTIFICATION_SEED = 15;
@@ -1425,6 +1427,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     localStorage.removeItem('survey_analytics_partner_companies_v4');
     localStorage.removeItem('survey_analytics_partner_companies_v5');
     localStorage.removeItem('survey_analytics_partner_companies_v6');
+    localStorage.removeItem('survey_analytics_partner_companies_v7');
     localStorage.removeItem(PARTNER_COMPANIES_STORAGE_KEY);
     localStorage.removeItem('survey_analytics_full_dataset_active');
     window.location.reload();

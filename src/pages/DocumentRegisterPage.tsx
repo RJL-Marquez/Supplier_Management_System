@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, Globe, MapPin, Truck, Package, Briefcase, RefreshCw, X, Check, Users, ShieldCheck, Clock, XCircle, Gauge, LayoutGrid, Settings2, RotateCcw, AlertTriangle, History, ChevronUp, ChevronDown, BellPlus, Plus } from 'lucide-react';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Legend, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SupplierOrigin } from '../types/survey';
+import { BranchRecord, BranchStatus, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SupplierOrigin } from '../types/survey';
 import { branchAwareCompanyLabel, computeCompanyDocumentSummary, computeDocumentStatus, isNTBranch } from '../utils/compliance';
 import { getRequiredDocumentKeys, isExpiryDocument } from '../utils/documentRequirements';
 import { SimClock, getEffectiveNow, getEffectiveTodayStr } from '../utils/simClock';
@@ -16,7 +16,7 @@ import {
   restoreDefaultNotificationSettings,
 } from '../utils/documentNotificationSettings';
 import { ChartCard } from '../components/ChartCard';
-import { typeBadgeClasses } from './PartnerCompaniesPage';
+import { typeBadgeClasses, BRANCH_STATUS_OPTIONS, branchStatusBadgeClasses } from './PartnerCompaniesPage';
 
 interface DocumentRegisterPageProps {
   partnerCompanies: PartnerCompany[];
@@ -461,6 +461,9 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
       if (sortKey === 'ntType') {
         return Number(a.isNT) - Number(b.isNT);
       }
+      if (sortKey === 'branchStatus') {
+        return (a.branch?.status ?? '').localeCompare(b.branch?.status ?? '');
+      }
       if (sortKey === 'bpCode') {
         return (a.branch?.bpCode ?? '').localeCompare(b.branch?.bpCode ?? '');
       }
@@ -636,6 +639,14 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
   const requestFlagToggle = (company: PartnerCompany, branch: BranchRecord, docName: string) => {
     if (!canRenewDocuments) return;
     setFlagConfirmTarget({ company, branch, docName });
+  };
+
+  const updateBranchStatus = (company: PartnerCompany, branchId: string, status: BranchStatus) => {
+    if (!canRenewDocuments) return;
+    const updatedBranches = (company.branches ?? []).map((b) =>
+      b.id === branchId ? { ...b, status } : b
+    );
+    onUpdateCompany({ ...company, branches: updatedBranches });
   };
 
   const confirmRenewal = () => {
@@ -1155,7 +1166,10 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                     <SortHeaderButton label="BP Code" sortKeyValue="bpCode" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
                   </th>
                   <th className="px-3 py-2.5 min-w-[130px]">
-                    <SortHeaderButton label="With or Without NT" sortKeyValue="ntType" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
+                    <SortHeaderButton label="Trade/No-Trade" sortKeyValue="ntType" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
+                  </th>
+                  <th className="px-3 py-2.5 min-w-[120px]">
+                    <SortHeaderButton label="Status" sortKeyValue="branchStatus" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
                   </th>
                   {docColumns.map((docName) => (
                     <th key={docName} className="px-3 py-2.5 min-w-[120px] max-w-[150px] align-bottom" title={docName}>
@@ -1214,8 +1228,27 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                               : 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700'
                           }`}
                         >
-                          {row.isNT ? 'With NT' : 'Without NT'}
+                          {row.isNT ? 'NO-TRADE' : 'TRADE'}
                         </span>
+                      </td>
+                      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                        {row.branch ? (
+                          <select
+                            value={row.branch.status ?? ''}
+                            onChange={(e) => updateBranchStatus(row.company, row.branch!.id, e.target.value as BranchStatus)}
+                            disabled={!canRenewDocuments}
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${canRenewDocuments ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'} ${
+                              row.branch.status ? branchStatusBadgeClasses(row.branch.status) : 'bg-slate-50 text-slate-400 border-slate-200 dark:bg-slate-900 dark:text-slate-500 dark:border-slate-700'
+                            }`}
+                          >
+                            <option value="" disabled>Set status</option>
+                            {BRANCH_STATUS_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-slate-300 dark:text-slate-600">—</span>
+                        )}
                       </td>
                       {cells.map(({ docName, status, daysLeft, doc, branch, expiryBased }) => {
                         const interactive = canRenewDocuments && !!branch;

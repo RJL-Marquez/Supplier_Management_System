@@ -10,14 +10,22 @@ import {
 import { computeDocumentStatus } from './compliance';
 import { COMMON_DOCUMENTS, FOREIGN_SUPPLIER_DOCUMENTS, LOCAL_SUPPLIER_DOCUMENTS } from './documentRequirements';
 
-// The sheet opens with 18 rows of legend/summary blocks before the real
-// header row (row 19, 1-based / index 18). Data starts at index 19.
-const HEADER_ROW_INDEX = 18;
-const DATA_START_ROW_INDEX = 19;
+// The sheet opens with 19 rows of legend/summary blocks before the real
+// header row (row 20, 1-based / index 19). Data starts at index 20.
+const HEADER_ROW_INDEX = 19;
+const DATA_START_ROW_INDEX = 20;
 
 // Column indices as laid out in "Masterlist Database" (0-based). Positional
 // indexing is used instead of header-name lookups because the header cells
 // contain inconsistent line breaks/trailing spaces.
+//
+// V2 layout (7-30-26 format revision): several columns were inserted into the
+// "GENERAL INFORMATION" block (Credit Line; Open Checks Balance in FC, BP
+// Currency, Sales Employee Code, Industry2, Conglomerate, FACT Code; Active,
+// BP Type) ahead of the documents block, shifting every column after BP
+// Address to the right relative to the prior layout. Indices below match
+// that header row exactly - re-verify against row 19 (0-based 18) if the
+// sheet layout changes again.
 const COL = {
   status: 2,
   category: 3,
@@ -25,43 +33,43 @@ const COL = {
   bpCode: 5,
   bpName: 6,
   bpAddress: 7,
-  federalTaxId: 8,
-  industry: 9,
-  contactPerson: 10,
-  position: 11,
-  mobilePhone: 12,
-  email: 13,
-  dateAccredited: 14,
-  confidentiality: 15,
-  letterOfAccreditation: 16,
-  codeOfConduct: 17,
+  federalTaxId: 9,
+  industry: 10,
+  contactPerson: 17,
+  position: 18,
+  mobilePhone: 19,
+  email: 20,
+  dateAccredited: 23,
+  confidentiality: 24,
+  letterOfAccreditation: 25,
+  codeOfConduct: 26,
   // Local supplier checklist
   local: {
-    sif: 18,
-    bir2303: 19,
-    sec: 20,
-    articlesOfIncorporation: 21,
-    afs: 22,
-    afsExpiry: 22,
-    gis: 25,
-    dti: 28,
-    businessPermit: 31,
-    importPermit: 34,
-    productProfile: 37,
-    proofOfAddress: 38,
-    ownersId: 39,
-    otherDocuments: 40,
+    sif: 27,
+    bir2303: 28,
+    sec: 29,
+    articlesOfIncorporation: 30,
+    afs: 31,
+    afsExpiry: 31,
+    gis: 34,
+    dti: 37,
+    businessPermit: 40,
+    importPermit: 43,
+    productProfile: 46,
+    proofOfAddress: 47,
+    ownersId: 48,
+    otherDocuments: 49,
   },
   // Foreign supplier checklist
   foreign: {
-    sif: 41,
-    articlesOfIncorporation: 42,
-    certOfIncorporation: 43,
-    afs: 44,
-    businessPermitLicense: 47,
-    ownersId: 50,
-    productProfile: 51,
-    otherDocuments: 52,
+    sif: 50,
+    articlesOfIncorporation: 51,
+    certOfIncorporation: 52,
+    afs: 53,
+    businessPermitLicense: 56,
+    ownersId: 59,
+    productProfile: 60,
+    otherDocuments: 61,
   },
 } as const;
 
@@ -205,10 +213,13 @@ function toIsoDate(year: number, month: number, day: number): string | undefined
 
 export function normalizeBranchStatus(raw: string): BranchStatus | undefined {
   const v = raw.trim().toLowerCase();
+  if (v === 'pending') return 'Pending';
+  if (v === 'updated') return 'Updated';
   if (v === 'outdated') return 'Outdated';
   if (v === 'incomplete') return 'Incomplete';
-  if (v === 'completed' || v === 'complete') return 'Complete';
-  return undefined; // blank / "Inactive" / other noise - not a recognized checklist state
+  if (v === 'completed' || v === 'complete') return 'Completed';
+  if (v === 'inactive') return 'Inactive';
+  return undefined; // blank / other noise - not a recognized status
 }
 
 export interface CategoryResolution {

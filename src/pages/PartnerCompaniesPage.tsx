@@ -40,7 +40,7 @@ import {
   Phone,
   AlertTriangle
 } from 'lucide-react';
-import { AccreditationStatus, BranchRecord, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SupplierOrigin, SurveyResponse, SurveyType } from '../types/survey';
+import { AccreditationStatus, BranchRecord, BranchStatus, ComplianceDocument, DocumentStatus, PartnerCompany, PartnerCompanyType, SupplierOrigin, SurveyResponse, SurveyType } from '../types/survey';
 import { getMaxRatingForResponses } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
 import { formatCompositeScore } from '../data/questionWeights';
@@ -70,6 +70,27 @@ export function typeBadgeClasses(type: PartnerCompanyType): string {
       return 'bg-orange-50 text-orange-700 border-orange-100 dark:bg-orange-950/20 dark:text-orange-400';
     default:
       return 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700';
+  }
+}
+
+// Toggle options for a branch's Status field - mirrors the Master List's own
+// "Status" column dropdown (Masterlist Database sheet) exactly, so a value
+// picked here round-trips cleanly through a future re-import.
+export const BRANCH_STATUS_OPTIONS: BranchStatus[] = ['Pending', 'Updated', 'Outdated', 'Incomplete', 'Completed', 'Inactive'];
+
+export function branchStatusBadgeClasses(status: BranchStatus): string {
+  switch (status) {
+    case 'Completed':
+    case 'Updated':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400';
+    case 'Outdated':
+      return 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/20 dark:text-amber-400';
+    case 'Incomplete':
+      return 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/20 dark:text-rose-400';
+    case 'Inactive':
+      return 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700';
+    default:
+      return 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-950/20 dark:text-blue-400'; // Pending
   }
 }
 
@@ -500,6 +521,18 @@ export function PartnerCompaniesPage({
     if (!selectedCompany) return;
     const updatedBranches = (selectedCompany.branches ?? []).map((b) =>
       b.id === branchId ? { ...b, [field]: value } : b
+    );
+    const updated = { ...selectedCompany, branches: updatedBranches };
+    setSelectedCompany(updated);
+    onUpdateCompany(updated);
+  };
+
+  // Lets an admin toggle a branch's Status directly in the registry, the same
+  // field the Master List import populates from its "Status" column dropdown.
+  const updateBranchStatus = (branchId: string, status: BranchStatus) => {
+    if (!selectedCompany) return;
+    const updatedBranches = (selectedCompany.branches ?? []).map((b) =>
+      b.id === branchId ? { ...b, status } : b
     );
     const updated = { ...selectedCompany, branches: updatedBranches };
     setSelectedCompany(updated);
@@ -1428,16 +1461,25 @@ export function PartnerCompaniesPage({
                             <span className="text-[10px] text-slate-400 uppercase tracking-wide">{branch.rawCategory}</span>
                           )}
                         </div>
-                        {branch.status && (
-                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${
-                            branch.status === 'Complete'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400'
-                              : branch.status === 'Outdated'
-                              ? 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/20 dark:text-amber-400'
-                              : 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/20 dark:text-rose-400'
-                          }`}>
-                            {branch.status}
-                          </span>
+                        {canRenew ? (
+                          <select
+                            value={branch.status ?? ''}
+                            onChange={(e) => updateBranchStatus(branch.id, e.target.value as BranchStatus)}
+                            className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer ${
+                              branch.status ? branchStatusBadgeClasses(branch.status) : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700'
+                            }`}
+                          >
+                            <option value="" disabled>Set status</option>
+                            {BRANCH_STATUS_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          branch.status && (
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${branchStatusBadgeClasses(branch.status)}`}>
+                              {branch.status}
+                            </span>
+                          )
                         )}
                       </div>
 
