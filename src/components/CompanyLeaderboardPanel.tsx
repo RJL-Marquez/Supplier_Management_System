@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { SurveyResponse, SurveyType } from '../types/survey';
 import { surveyTypeDisplayLabel, formatCompositeScore } from '../data/questionWeights';
-import { getLeaderboard, getPureAverageLeaderboard, getOutliers, RankingMode } from '../utils/scoring';
+import { getLeaderboard, getPureAverageLeaderboard, RankingMode } from '../utils/scoring';
 
 interface CompanyLeaderboardPanelProps {
   responses: SurveyResponse[];
@@ -17,9 +17,6 @@ export function CompanyLeaderboardPanel({ responses, rankingMode }: CompanyLeade
     () => rankingMode === 'weighted' ? getLeaderboard(responses, surveyType) : getPureAverageLeaderboard(responses, surveyType),
     [responses, surveyType, rankingMode]
   );
-  const outliers = useMemo(() => getOutliers(leaderboard), [leaderboard]);
-  const outlierMap = useMemo(() => new Map(outliers.map((o) => [o.company, o])), [outliers]);
-
   // Split the ranked list into two even columns, preserving rank order
   // (column 1 gets ranks 1..N/2, column 2 continues from there).
   const [columnOne, columnTwo] = useMemo(() => {
@@ -33,7 +30,6 @@ export function CompanyLeaderboardPanel({ responses, rankingMode }: CompanyLeade
     <ol className="divide-y divide-slate-100 dark:divide-slate-800">
       {items.map((composite, i) => {
         const rank = composite.displayRank ?? startIndex + i + 1;
-        const outlier = outlierMap.get(composite.company);
         return (
           <li key={composite.company} className="flex items-center gap-3 px-2 py-2.5">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
@@ -53,27 +49,6 @@ export function CompanyLeaderboardPanel({ responses, rankingMode }: CompanyLeade
                 >
                   {composite.band.label}
                 </span>
-                {composite.stdDev >= 20 ? (
-                  <span
-                    className="badge bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
-                    title="Spread between this company's highest- and lowest-scoring question categories (e.g. quality vs. pricing) in this period — not a measure of reliability over time."
-                  >
-                    Uneven across categories (±{composite.stdDev})
-                  </span>
-                ) : null}
-                {outlier?.isLowOutlier ? (
-                  <span className="badge bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300">
-                    Below peer average
-                  </span>
-                ) : null}
-                {composite.evaluationCount < 4 ? (
-                  <span
-                    className="badge bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
-                    title="Based on fewer than 4 evaluations — treat this score with caution until more responses come in."
-                  >
-                    Low sample size ({composite.evaluationCount}x)
-                  </span>
-                ) : null}
                 <span className="text-xs text-slate-400 dark:text-slate-500">
                   {composite.evaluationCount} evaluation{composite.evaluationCount === 1 ? '' : 's'}
                 </span>
