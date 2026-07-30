@@ -201,18 +201,21 @@ export function AnalyticsPage({
   // have actually been evaluated, not registry entries sitting at a default
   // 0/100 because nobody has scored them yet.
   //
-  // Respects the page-level rankingMode toggle: "weighted" ranks by a
-  // volume-weighted score so a company with one lucky evaluation can't
-  // outrank one with dozens (see computeRankScore in analytics.ts); "pure"
-  // ranks by raw average with evaluation count as a tiebreak, matching
-  // getPureAverageLeaderboard in scoring.ts. `peers`/ties are whatever group
-  // is being compared, so a type-scoped ranking (e.g. "top Courier") pulls
-  // toward that type's own mean/peers rather than all three forms combined.
+  // Respects the page-level rankingMode toggle: "weighted" ranks by (and
+  // displays) a volume-weighted score so a company with one lucky evaluation
+  // can't outrank one with dozens (see computeRankScore in analytics.ts);
+  // "pure" ranks and displays the raw average with evaluation count as a
+  // tiebreak, matching getPureAverageLeaderboard in scoring.ts. Every
+  // returned item carries `rankScore` - callers should display that (not
+  // `.average`/`.scorePercentage`) so the number shown always matches the
+  // mode that produced the ranking. `peers`/ties are whatever group is being
+  // compared, so a type-scoped ranking (e.g. "top Courier") pulls toward
+  // that type's own mean/peers rather than all three forms combined.
   const rankCompanies = (list: typeof companyAverages) => {
     if (rankingMode === 'pure') {
-      return [...list].sort((a, b) =>
-        b.scorePercentage !== a.scorePercentage ? b.scorePercentage - a.scorePercentage : b.count - a.count
-      );
+      return [...list]
+        .map((c) => ({ ...c, rankScore: c.scorePercentage }))
+        .sort((a, b) => (b.scorePercentage !== a.scorePercentage ? b.scorePercentage - a.scorePercentage : b.count - a.count));
     }
     const peers = list.map((c) => ({ score: c.scorePercentage, count: c.count }));
     return list
@@ -222,20 +225,20 @@ export function AnalyticsPage({
 
   const evaluatedCompanyAverages = useMemo(
     () => rankCompanies(companyAverages.filter((c) => c.count > 0)),
-    [companyAverages]
+    [companyAverages, rankingMode]
   );
 
   const categoryCompanyAverages = useMemo(() => {
     if (activeCategory === 'All') return evaluatedCompanyAverages;
     return rankCompanies(companyAverages.filter((c) => c.count > 0 && c.type === activeCategory));
-  }, [companyAverages, evaluatedCompanyAverages, activeCategory]);
+  }, [companyAverages, evaluatedCompanyAverages, activeCategory, rankingMode]);
 
   const highestCompany = useMemo(() => {
-    return categoryCompanyAverages[0] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, count: 0, type: 'N/A' };
+    return categoryCompanyAverages[0] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, rankScore: 0, count: 0, type: 'N/A' };
   }, [categoryCompanyAverages]);
 
   const lowestCompany = useMemo(() => {
-    return categoryCompanyAverages[categoryCompanyAverages.length - 1] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, count: 0, type: 'N/A' };
+    return categoryCompanyAverages[categoryCompanyAverages.length - 1] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, rankScore: 0, count: 0, type: 'N/A' };
   }, [categoryCompanyAverages]);
 
   const highestLabel = activeCategory === 'All' 
@@ -258,31 +261,31 @@ export function AnalyticsPage({
   }, [activeCategory]);
 
   const topCompany = useMemo(() => {
-    return evaluatedCompanyAverages[0] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, type: 'N/A', count: 0 };
+    return evaluatedCompanyAverages[0] || { name: 'No Evaluated Partners', average: 0, scorePercentage: 0, rankScore: 0, type: 'N/A', count: 0 };
   }, [evaluatedCompanyAverages]);
 
   const topContractor = useMemo(
     () => rankCompanies(companyAverages.filter((c) => c.count > 0 && c.type === 'Courier'))[0],
-    [companyAverages]
+    [companyAverages, rankingMode]
   );
   const topSupplier = useMemo(
     () => rankCompanies(companyAverages.filter((c) => c.count > 0 && c.type === 'Supplier'))[0],
-    [companyAverages]
+    [companyAverages, rankingMode]
   );
   const topSubcontractor = useMemo(
     () => rankCompanies(companyAverages.filter((c) => c.count > 0 && c.type === 'Subcontractor'))[0],
-    [companyAverages]
+    [companyAverages, rankingMode]
   );
 
   const displayedCompany = useMemo(() => {
     if (selectedChampionType === 'Overall') return topCompany;
-    if (selectedChampionType === 'Courier') return topContractor || { name: 'No Evaluated Couriers', average: 0, scorePercentage: 0, type: 'Courier', count: 0 };
-    if (selectedChampionType === 'Supplier') return topSupplier || { name: 'No Evaluated Suppliers', average: 0, scorePercentage: 0, type: 'Supplier', count: 0 };
-    if (selectedChampionType === 'Subcontractor') return topSubcontractor || { name: 'No Evaluated Subcontractors', average: 0, scorePercentage: 0, type: 'Subcontractor', count: 0 };
+    if (selectedChampionType === 'Courier') return topContractor || { name: 'No Evaluated Couriers', average: 0, scorePercentage: 0, rankScore: 0, type: 'Courier', count: 0 };
+    if (selectedChampionType === 'Supplier') return topSupplier || { name: 'No Evaluated Suppliers', average: 0, scorePercentage: 0, rankScore: 0, type: 'Supplier', count: 0 };
+    if (selectedChampionType === 'Subcontractor') return topSubcontractor || { name: 'No Evaluated Subcontractors', average: 0, scorePercentage: 0, rankScore: 0, type: 'Subcontractor', count: 0 };
     return topCompany;
   }, [selectedChampionType, topCompany, topContractor, topSupplier, topSubcontractor]);
 
-  const score = displayedCompany.scorePercentage;
+  const score = displayedCompany.rankScore;
   const activeColor = categoryColors[displayedCompany.type] || categoryColors['N/A'];
   const standingLabel = displayedCompany.type === 'N/A' ? 'No Data' : getBand(displayedCompany.type as SurveyType, score).label;
 
@@ -585,7 +588,7 @@ export function AnalyticsPage({
             <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-2xl">
               {displayedCompany.name.startsWith('No Evaluated')
                 ? 'No evaluations are registered. Employees can submit evaluations using the published survey forms.'
-                : `${displayedCompany.name} is recognized as the top-performing ${displayedCompany.type.toLowerCase()} partner, earning the highest combined satisfaction score of ${formatCompositeScore(displayedCompany.type as SurveyType, displayedCompany.average).text} across all survey categories from Microgenesis employees.`
+                : `${displayedCompany.name} is recognized as the top-performing ${displayedCompany.type.toLowerCase()} partner, earning the highest combined satisfaction score of ${formatCompositeScore(displayedCompany.type as SurveyType, displayedCompany.rankScore).text} across all survey categories from Microgenesis employees.`
               }
             </p>
           </div>
@@ -593,7 +596,7 @@ export function AnalyticsPage({
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-center md:justify-start gap-4 text-xs text-slate-400 dark:text-slate-500">
             <div className="flex items-center gap-1.5">
               <span>Combined average:</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-300">{formatCompositeScore(displayedCompany.type as SurveyType, displayedCompany.average).text}</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{formatCompositeScore(displayedCompany.type as SurveyType, displayedCompany.rankScore).text}</span>
             </div>
             <span className="hidden sm:inline text-slate-200 dark:text-slate-800">|</span>
             <div className="flex items-center gap-1.5">
@@ -637,7 +640,7 @@ export function AnalyticsPage({
               <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/50">
                 <span className="text-xs font-semibold text-slate-500">Employee Rating</span>
                 <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                  {formatCompositeScore('Courier', topContractor.average).text} ({Math.round(topContractor.scorePercentage)}%)
+                  {formatCompositeScore('Courier', topContractor.rankScore).text} ({Math.round(topContractor.rankScore)}%)
                 </span>
               </div>
             )}
@@ -668,7 +671,7 @@ export function AnalyticsPage({
               <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/50">
                 <span className="text-xs font-semibold text-slate-500">Employee Rating</span>
                 <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                  {formatCompositeScore('Supplier', topSupplier.average).text} ({Math.round(topSupplier.scorePercentage)}%)
+                  {formatCompositeScore('Supplier', topSupplier.rankScore).text} ({Math.round(topSupplier.rankScore)}%)
                 </span>
               </div>
             )}
@@ -699,7 +702,7 @@ export function AnalyticsPage({
               <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/50">
                 <span className="text-xs font-semibold text-slate-500">Employee Rating</span>
                 <span className="text-xs font-bold text-orange-600 dark:text-orange-400">
-                  {formatCompositeScore('Subcontractor', topSubcontractor.average).text} ({Math.round(topSubcontractor.scorePercentage)}%)
+                  {formatCompositeScore('Subcontractor', topSubcontractor.rankScore).text} ({Math.round(topSubcontractor.rankScore)}%)
                 </span>
               </div>
             )}
@@ -936,7 +939,7 @@ export function AnalyticsPage({
                     {highestCompany.name}
                   </h4>
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Rating: <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatCompositeScore(highestCompany.type as SurveyType, highestCompany.average).text}</span>
+                    Rating: <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatCompositeScore(highestCompany.type as SurveyType, highestCompany.rankScore).text}</span>
                   </p>
                   <p className="text-[10px] text-slate-400 dark:text-slate-500">
                     Based on {highestCompany.count} evaluations
@@ -959,12 +962,12 @@ export function AnalyticsPage({
                       className="stroke-emerald-500 dark:stroke-emerald-400 fill-none"
                       strokeWidth="6"
                       strokeDasharray="238.76"
-                      strokeDashoffset={238.76 - (238.76 * (highestCompany.scorePercentage / 100))}
+                      strokeDashoffset={238.76 - (238.76 * (highestCompany.rankScore / 100))}
                       strokeLinecap="round"
                     />
                   </svg>
                   <div className="absolute text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                    {Math.round(highestCompany.scorePercentage)}%
+                    {Math.round(highestCompany.rankScore)}%
                   </div>
                 </div>
               </div>
@@ -980,7 +983,7 @@ export function AnalyticsPage({
                     {lowestCompany.name}
                   </h4>
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Rating: <span className="text-rose-500 dark:text-rose-400 font-bold">{formatCompositeScore(lowestCompany.type as SurveyType, lowestCompany.average).text}</span>
+                    Rating: <span className="text-rose-500 dark:text-rose-400 font-bold">{formatCompositeScore(lowestCompany.type as SurveyType, lowestCompany.rankScore).text}</span>
                   </p>
                   <p className="text-[10px] text-slate-400 dark:text-slate-500">
                     Based on {lowestCompany.count} evaluations
@@ -1003,12 +1006,12 @@ export function AnalyticsPage({
                       className="stroke-rose-500 dark:stroke-rose-400 fill-none"
                       strokeWidth="6"
                       strokeDasharray="238.76"
-                      strokeDashoffset={238.76 - (238.76 * (lowestCompany.scorePercentage / 100))}
+                      strokeDashoffset={238.76 - (238.76 * (lowestCompany.rankScore / 100))}
                       strokeLinecap="round"
                     />
                   </svg>
                   <div className="absolute text-sm font-bold text-rose-500 dark:text-rose-400">
-                    {Math.round(lowestCompany.scorePercentage)}%
+                    {Math.round(lowestCompany.rankScore)}%
                   </div>
                 </div>
               </div>
