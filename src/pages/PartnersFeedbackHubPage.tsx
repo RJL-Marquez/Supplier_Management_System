@@ -20,6 +20,9 @@ import { SentReportsTab } from '../components/feedback-hub/SentReportsTab';
 import { SendToPartnerWizard } from '../components/feedback-hub/SendToPartnerWizard';
 import { BulkHiddenChartCapturer } from '../components/feedback-hub/BulkHiddenChartCapturer';
 import { isMsalConfigured } from '../services/msalAuth';
+import { getSurveyCompletionSummary } from '../utils/surveyCompletion';
+import { SimulatableAccount } from '../hooks/useSurveyData';
+import { SimClock } from '../utils/simClock';
 
 import { FileText, Archive, Send, Clock, ShieldAlert, Sparkles, SendToBack } from 'lucide-react';
 
@@ -27,6 +30,8 @@ interface PartnersFeedbackHubPageProps {
   surveys: CustomForm[];
   responses: SurveyResponse[];
   partnerCompanies: PartnerCompany[];
+  accounts?: SimulatableAccount[];
+  simClock?: SimClock | null;
   currentUser: UserAccount | null;
   onNavigatePage?: (page: string) => void;
   onMarkSurveyComplete?: (surveyId: string) => void;
@@ -38,6 +43,8 @@ export function PartnersFeedbackHubPage({
   surveys,
   responses,
   partnerCompanies,
+  accounts = [],
+  simClock = null,
   currentUser,
   onNavigatePage,
   onMarkSurveyComplete,
@@ -314,21 +321,15 @@ export function PartnersFeedbackHubPage({
 
   const queuedCount = sentReports.filter((r) => r.status === 'Queued').length;
 
-  // Check if all active surveys are completed to enable Bulk Sending
+  // Check if all active surveys are completed to enable Bulk Sending.
+  // "Completed" here means: an admin manually marked it complete, its
+  // deadline has passed, or every eligible employee has evaluated 100% of
+  // the companies this survey is currently scoped to (its "Modify Companies
+  // to Evaluate" selection).
   const activeSurveys = surveys.filter((s) => s.status !== 'Archived');
-  const hasOngoingSurveys = activeSurveys.some((s) => {
-    const surveyResponses = responses.filter(
-      (r) => r.surveyType === s.surveyType && !r.archived
-    );
-    const responseCount = new Set(surveyResponses.map((r) => r.responseId)).size;
-    const companiesForType = partnerCompanies.filter((c) => c.type === s.surveyType && !c.isArchived);
-    const targetResponses = Math.max(companiesForType.length, responseCount, 10);
-    const isCompleted =
-      s.status === 'Completed' ||
-      responseCount >= targetResponses ||
-      (s.deadlineDate && new Date(s.deadlineDate) < new Date());
-    return !isCompleted;
-  });
+  const hasOngoingSurveys = activeSurveys.some(
+    (s) => !getSurveyCompletionSummary(s, accounts, partnerCompanies, responses, simClock).isComplete
+  );
   const areAllSurveysCompleted = !hasOngoingSurveys;
 
   // If Dispatch Wizard is open, render it inline (whole page experience!)
@@ -449,6 +450,8 @@ export function PartnersFeedbackHubPage({
           surveys={surveys}
           responses={responses}
           partnerCompanies={partnerCompanies}
+          accounts={accounts}
+          simClock={simClock}
           sentReports={sentReports}
           onSendToPartner={handleOpenSendToPartner}
           onMarkSurveyComplete={onMarkSurveyComplete}

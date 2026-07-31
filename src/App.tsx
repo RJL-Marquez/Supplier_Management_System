@@ -744,6 +744,8 @@ export default function App() {
         surveys={userAccessibleSurveys}
         responses={userAccessibleResponses}
         partnerCompanies={userAccessiblePartnerCompanies}
+        accounts={accounts}
+        simClock={simClock}
         currentUser={profile}
         onNavigatePage={(p) => setActivePage(p as PageKey)}
         onMarkSurveyComplete={(id) => updateSurvey(id, { status: 'Completed' })}

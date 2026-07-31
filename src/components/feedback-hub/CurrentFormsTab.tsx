@@ -4,12 +4,16 @@ import { QueuedReportEmail } from '../../types/feedbackHub';
 import { Clock, CheckCircle2, Send, Users, ChevronRight, AlertCircle, Sparkles, Filter, Search } from 'lucide-react';
 import { SurveyProgressModal } from './SurveyProgressModal';
 import { SurveyDetailModal } from './SurveyDetailModal';
-import { submissionScores } from '../../utils/analytics';
+import { getSurveyCompletionSummary } from '../../utils/surveyCompletion';
+import { SimulatableAccount } from '../../hooks/useSurveyData';
+import { SimClock } from '../../utils/simClock';
 
 interface CurrentFormsTabProps {
   surveys: CustomForm[];
   responses: SurveyResponse[];
   partnerCompanies: PartnerCompany[];
+  accounts?: SimulatableAccount[];
+  simClock?: SimClock | null;
   sentReports: QueuedReportEmail[];
   onSendToPartner: (survey: CustomForm, partnerCompany?: PartnerCompany) => void;
   onMarkSurveyComplete?: (surveyId: string) => void;
@@ -20,6 +24,8 @@ export function CurrentFormsTab({
   surveys,
   responses,
   partnerCompanies,
+  accounts = [],
+  simClock = null,
   sentReports,
   onSendToPartner,
   onMarkSurveyComplete,
@@ -82,27 +88,27 @@ export function CurrentFormsTab({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredSurveys.map((survey) => {
-            // Calculate survey responses
-            const surveyResponses = responses.filter(
-              (r) => r.surveyType === survey.surveyType && !r.archived
-            );
-
-            // Response count (unique submission keys: company + respondent + date)
-            const responseCount = submissionScores(surveyResponses).length;
-            const companiesForType = partnerCompanies.filter((c) => c.type === survey.surveyType && !c.isArchived);
-            const targetResponses = Math.max(companiesForType.length, responseCount, 10);
+            // Companies this survey actually evaluates right now (respects
+            // the admin's "Modify Companies to Evaluate" selection) and each
+            // eligible employee's progress against that same list.
+            const completion = getSurveyCompletionSummary(survey, accounts, partnerCompanies, responses, simClock);
+            const targetResponses = Math.max(completion.companiesTotal, 1);
+            const employeesAt100 = completion.eligibleEmployees.filter((e) => e.completed >= e.total && e.total > 0).length;
+            const responseCount = completion.eligibleEmployees.length
+              ? Math.round(
+                  (completion.eligibleEmployees.reduce((sum, e) => sum + e.completed, 0) /
+                    completion.eligibleEmployees.length)
+                )
+              : 0;
             const progressPct = Math.min(100, Math.round((responseCount / targetResponses) * 100));
 
             // Check report status in sentReports log for this specific survey
             const reportLog = sentReports.find((r) => r.surveyId === survey.id);
 
-            // Status Logic:
-            // Ongoing: active & responseCount < quota & not manually marked completed
-            // Completed: deadline passed OR responseCount >= quota OR status === 'Completed'
-            const isCompleted =
-              survey.status === 'Completed' ||
-              responseCount >= targetResponses ||
-              (survey.deadlineDate && new Date(survey.deadlineDate) < new Date());
+            // Status Logic - Completed only when an admin manually marked it,
+            // its deadline has passed, or every eligible employee reached
+            // 100% of their needed evaluations. See getSurveyCompletionSummary.
+            const isCompleted = completion.isComplete;
 
             const isOngoing = !isCompleted;
 
@@ -169,10 +175,10 @@ export function CurrentFormsTab({
                   <div className="flex items-center justify-between text-xs font-medium">
                     <span className="text-slate-500 flex items-center gap-1">
                       <Users size={13} />
-                      Response Progress
+                      Avg. Companies Evaluated
                     </span>
                     <span className="font-bold text-slate-800 dark:text-slate-200">
-                      {responseCount} / {targetResponses} responses
+                      {responseCount} / {targetResponses}
                     </span>
                   </div>
 
@@ -185,12 +191,17 @@ export function CurrentFormsTab({
                     />
                   </div>
 
+                  {completion.eligibleEmployees.length > 0 && (
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span>Employees at 100%</span>
+                      <span className="font-semibold text-slate-600 dark:text-slate-300">
+                        {employeesAt100} / {completion.eligibleEmployees.length}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between pt-1 text-[11px] text-slate-400">
-                    <span>
-                      {survey.deadlineDate
-                        ? `Deadline: ${new Date(survey.deadlineDate).toLocaleDateString()}`
-                        : 'Active Survey'}
-                    </span>
+                    <span>{survey.deadlineDate ? `Deadline: ${survey.deadlineDate}` : 'Active Survey'}</span>
                     <span className="font-semibold text-[#0063a9] dark:text-blue-300 flex items-center gap-0.5 group-hover:translate-x-0.5 transition">
                       View Details
                       <ChevronRight size={12} />
@@ -208,6 +219,9 @@ export function CurrentFormsTab({
         <SurveyProgressModal
           survey={selectedSurveyForProgress}
           responses={responses}
+          partnerCompanies={partnerCompanies}
+          accounts={accounts}
+          simClock={simClock}
           onClose={() => setSelectedSurveyForProgress(null)}
           onMarkComplete={onMarkSurveyComplete}
           isAdmin={isAdmin}

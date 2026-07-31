@@ -1,12 +1,18 @@
 import React from 'react';
 import { X, Clock, AlertTriangle, Users, BarChart3, CheckCircle2, ShieldAlert } from 'lucide-react';
-import { CustomForm, SurveyResponse } from '../../types/survey';
+import { CustomForm, PartnerCompany, SurveyResponse } from '../../types/survey';
 import { submissionScores } from '../../utils/analytics';
 import { formatCompositeScore } from '../../data/questionWeights';
+import { getSurveyCompletionSummary } from '../../utils/surveyCompletion';
+import { SimulatableAccount } from '../../hooks/useSurveyData';
+import { SimClock } from '../../utils/simClock';
 
 interface SurveyProgressModalProps {
   survey: CustomForm;
   responses: SurveyResponse[];
+  partnerCompanies: PartnerCompany[];
+  accounts?: SimulatableAccount[];
+  simClock?: SimClock | null;
   onClose: () => void;
   onMarkComplete?: (surveyId: string) => void;
   isAdmin?: boolean;
@@ -15,6 +21,9 @@ interface SurveyProgressModalProps {
 export function SurveyProgressModal({
   survey,
   responses,
+  partnerCompanies,
+  accounts = [],
+  simClock = null,
   onClose,
   onMarkComplete,
   isAdmin,
@@ -40,7 +49,12 @@ export function SurveyProgressModal({
   const respondentsList = Array.from(uniqueRespondentsMap.values());
   const subScores = submissionScores(surveyResponses);
   const totalCount = subScores.length;
-  const targetResponses = 10; // Target standard quota
+
+  // Real target: the companies this survey is currently scoped to evaluate
+  // (its "Modify Companies to Evaluate" selection, live against the Partner
+  // Registry), plus each eligible employee's own progress against that list.
+  const completion = getSurveyCompletionSummary(survey, accounts, partnerCompanies, responses, simClock);
+  const targetResponses = Math.max(completion.companiesTotal, 1);
   const progressPercent = Math.min(100, Math.round((totalCount / targetResponses) * 100));
 
   // Compute partial score
@@ -124,10 +138,47 @@ export function SurveyProgressModal({
                 <Clock size={14} className="text-slate-400" />
               </div>
               <div className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                {survey.deadlineDate ? new Date(survey.deadlineDate).toLocaleDateString() : 'Active (No strict deadline)'}
+                {survey.deadlineDate || 'Active (No strict deadline)'}
               </div>
               <p className="mt-1 text-[11px] text-slate-500">Auto-completes at deadline</p>
             </div>
+          </div>
+
+          {/* Per-Employee Completion (drives the "all employees at 100%" auto-completion rule) */}
+          <div>
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3 flex items-center justify-between">
+              <span>
+                Employee Completion ({completion.eligibleEmployees.filter((e) => e.completed >= e.total && e.total > 0).length} / {completion.eligibleEmployees.length} at 100%)
+              </span>
+              <span className="text-xs font-normal text-slate-500">{completion.companiesTotal} companies in scope</span>
+            </h4>
+            {completion.eligibleEmployees.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500 dark:border-slate-800">
+                No employees currently have access to this survey's department/role scope.
+              </div>
+            ) : (
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+                {completion.eligibleEmployees.map((emp) => (
+                  <div key={emp.email} className="flex items-center justify-between p-3 text-xs gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-800 dark:text-slate-200 truncate">{emp.email}</p>
+                      <p className="text-[11px] text-slate-500">{emp.department}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                        <div
+                          className={`h-full transition-all duration-300 ${emp.pct >= 100 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                          style={{ width: `${emp.pct}%` }}
+                        />
+                      </div>
+                      <span className={`font-bold w-10 text-right ${emp.pct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                        {emp.completed}/{emp.total}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* List of Respondents */}
@@ -163,20 +214,23 @@ export function SurveyProgressModal({
 
         {/* Modal Footer */}
         <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
-          {isAdmin && onMarkComplete ? (
-            <button
-              onClick={() => {
-                onMarkComplete(survey.id);
-                onClose();
-              }}
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-emerald-700 transition"
-            >
-              <CheckCircle2 size={15} />
-              Mark Survey as Complete
-            </button>
-          ) : (
-            <span className="text-xs text-slate-500">Actions locked until completion</span>
-          )}
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-slate-500 max-w-xs">
+              Completes automatically once every employee reaches 100% or the deadline passes.
+            </span>
+            {isAdmin && onMarkComplete && (
+              <button
+                onClick={() => {
+                  onMarkComplete(survey.id);
+                  onClose();
+                }}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-emerald-700 transition w-fit"
+              >
+                <CheckCircle2 size={15} />
+                Mark Survey as Complete Now
+              </button>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="secondary-button text-xs"

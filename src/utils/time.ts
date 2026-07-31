@@ -64,3 +64,18 @@ export function getDDMMYYYYError(value: string): string {
   if (!isValidDDMMYYYY(value)) return 'Enter a valid date in dd/mm/yyyy format.';
   return '';
 }
+
+/**
+ * Parses a dd/mm/yyyy string (the format CustomForm.deadlineDate is stored in)
+ * into a real Date at local midnight. Returns null for anything empty or not
+ * in that exact format - callers should treat null as "no deadline" rather
+ * than falling back to the native Date constructor, which misreads
+ * dd/mm/yyyy as mm/dd/yyyy (or returns Invalid Date outright).
+ */
+export function parseDDMMYYYY(value?: string | null): Date | null {
+  if (!value) return null;
+  if (!isValidDDMMYYYY(value)) return null;
+  const [day, month, year] = value.trim().split('/').map((part) => parseInt(part, 10));
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
