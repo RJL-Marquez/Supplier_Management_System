@@ -47,7 +47,10 @@ export function computeDocumentStatus(
 // documents required for this company's category (Local/Foreign suppliers
 // carry expiry-bearing docs; Couriers/Subcontractors only carry the common
 // flag checklist, so they can never land in Expired/Expiring Soon here).
-export type CompanyDocumentStatus = 'Current' | 'Expiring Soon' | 'Expired';
+// 'Missing' means a required flag document was never provided at all - not
+// having submitted it is not compliance, so it must never fall through to
+// 'Current' just because nothing has actually expired.
+export type CompanyDocumentStatus = 'Current' | 'Expiring Soon' | 'Expired' | 'Missing';
 
 export interface CompanyDocumentSummary {
   status: CompanyDocumentStatus;
@@ -89,7 +92,7 @@ export function computeCompanyDocumentSummary(
   });
 
   const status: CompanyDocumentStatus =
-    expiredCount > 0 ? 'Expired' : expiringSoonCount > 0 ? 'Expiring Soon' : 'Current';
+    expiredCount > 0 ? 'Expired' : missingCount > 0 ? 'Missing' : expiringSoonCount > 0 ? 'Expiring Soon' : 'Current';
 
   return { status, expiredCount, expiringSoonCount, missingCount, totalRequired: requiredKeys.length };
 }

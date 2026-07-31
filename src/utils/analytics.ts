@@ -22,6 +22,10 @@ export function getSurveyEvaluationCompanies(
   const companiesOfType = partnerCompanies.filter((c) => {
     if (c.type !== survey.surveyType) return false;
     if (c.isArchived) return false;
+    // Only an actually-expired document takes a company out of evaluation
+    // eligibility - a 'Missing' (never-submitted) document is an ordinary
+    // in-progress onboarding state for a freshly imported company, not
+    // grounds to make it un-evaluable indefinitely.
     if (computeCompanyDocumentSummary(c, referenceDate).status === 'Expired') return false;
     return true;
   });

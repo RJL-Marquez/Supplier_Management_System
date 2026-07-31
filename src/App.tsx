@@ -225,7 +225,7 @@ const adminNavItems: NavItem<PageKey>[] = [
     icon: Users,
     children: [
       { key: 'partner-companies', label: 'Partner Companies' },
-      { key: 'document-register', label: 'Document Register' },
+      { key: 'document-register', label: 'Document Tracker' },
       { key: 'partners-feedback-hub', label: 'Feedback Hub' },
     ],
   },
@@ -630,7 +630,7 @@ export default function App() {
       return 'Dashboard';
     }
     if (activePage === 'partner-companies') return 'Administrative Partner Registry';
-    if (activePage === 'document-register') return 'Document Register';
+    if (activePage === 'document-register') return 'Document Tracker';
     if (activePage === 'account-management') return 'Account Management';
     if (activePage === 'create-form') return editingSurveyId ? 'Edit Survey Form' : 'Create Survey Form';
     if (activePage === 'view-form') {

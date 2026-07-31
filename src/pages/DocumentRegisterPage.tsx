@@ -56,7 +56,7 @@ const OVERVIEW_WIDGETS: { id: string; label: string; kind: 'kpi' | 'chart' | 'ta
   { id: 'kpi-expiring', label: 'Expiring ≤ 30 Days', kind: 'kpi' },
   { id: 'kpi-expired', label: 'Expired / For Update', kind: 'kpi' },
   { id: 'kpi-rate', label: 'Compliance Rate', kind: 'kpi' },
-  { id: 'chart-compliance', label: 'Compliance Status (donut)', kind: 'chart' },
+  { id: 'chart-compliance', label: 'Status Breakdown (donut)', kind: 'chart' },
   { id: 'chart-attention', label: 'Documents Needing Attention (bar)', kind: 'chart' },
   { id: 'chart-trend', label: 'Compliance Rate Trend', kind: 'chart' },
   { id: 'table-doc-status', label: 'Document Status Summary', kind: 'table' },
@@ -107,6 +107,25 @@ const CHART_WARNING = '#a16207';
 const CHART_CRITICAL = '#f43f5e';
 const CHART_INK = '#172033'; // matches the app's `ink` design token
 
+// Colors for the branch Status donut - one slice per BRANCH_STATUS_OPTIONS
+// value (plus 'Not Set' for a branch with no status chosen yet), kept
+// visually distinct from each other regardless of the pill badge colors
+// used elsewhere on the page.
+const STATUS_CHART_COLORS: Record<string, string> = {
+  Pending: '#3b82f6',
+  Updated: '#10b981',
+  Outdated: '#a16207',
+  Incomplete: '#f43f5e',
+  Completed: '#059669',
+  Accredited: '#0d9488',
+  Inactive: '#94a3b8',
+  'Not Set': '#cbd5e1',
+};
+// Compliance Rate = share of branches whose Status reflects a completed
+// accreditation cycle - not a document-expiry rollup. Matches the request
+// to count Completed/Updated/Accredited as "compliant" regardless of category.
+const COMPLIANT_BRANCH_STATUSES = new Set(['Completed', 'Updated', 'Accredited']);
+
 const STATUS_STYLES: Record<string, string> = {
   Current: 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40',
   'Expiring Soon': 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/40',
@@ -150,6 +169,16 @@ const DOC_STATUS_SORT_RANK: Record<DocumentStatus, number> = {
 // 'company'/'compliance'/'ntType'/'bpCode' are fixed keys; a document column
 // uses `doc:${docName}` so it can't collide with those.
 type MatrixSortKey = 'company' | 'compliance' | 'ntType' | 'bpCode' | string;
+
+// Matches the Master List's own "Supplier Rank" column values exactly, so an
+// edit here round-trips cleanly through a future re-import.
+const SUPPLIER_RANK_OPTIONS = ['Major', 'Regular'];
+
+function supplierRankTextClasses(rank?: string): string {
+  if (/major/i.test(rank ?? '')) return 'text-amber-600 dark:text-amber-400';
+  if (/regular/i.test(rank ?? '')) return 'text-slate-600 dark:text-slate-300';
+  return 'text-slate-300 dark:text-slate-600';
+}
 
 function formatDaysLabel(daysLeft?: number): string | undefined {
   if (typeof daysLeft !== 'number') return undefined;
@@ -464,6 +493,9 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
       if (sortKey === 'branchStatus') {
         return (a.branch?.status ?? '').localeCompare(b.branch?.status ?? '');
       }
+      if (sortKey === 'supplierRank') {
+        return (a.branch?.supplierRank ?? '').localeCompare(b.branch?.supplierRank ?? '');
+      }
       if (sortKey === 'bpCode') {
         return (a.branch?.bpCode ?? '').localeCompare(b.branch?.bpCode ?? '');
       }
@@ -495,12 +527,23 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
   // Categories" view, where companies carry different document sets
   // (e.g. Foreign suppliers don't have GIS/DTI/Import Permit).
   const overview = useMemo(() => {
-    let fullyCompliant = 0;
-    let partiallyCompliant = 0;
-    let nonCompliant = 0;
     let activeAccreditation = 0;
     let expiringSoonDocs = 0;
     let expiredDocs = 0;
+
+    // Status Breakdown is per BRANCH (one row per BP Code, same as the
+    // matrix table below) rather than per company, since branch.status is
+    // what's actually being tallied.
+    const statusCounts: Record<string, number> = {};
+    let brandedBranchTotal = 0;
+    let compliantBranchTotal = 0;
+    displayRows.forEach((row) => {
+      if (!row.branch) return;
+      brandedBranchTotal++;
+      const status = row.branch.status ?? 'Not Set';
+      statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+      if (COMPLIANT_BRANCH_STATUSES.has(status)) compliantBranchTotal++;
+    });
 
     const perDocAttention: Record<string, { expiringSoon: number; expired: number }> = {};
     // Advanced-view breakdowns - only populated for expiry-bearing docs.
@@ -510,10 +553,6 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
 
     categoryCompanies.forEach((c) => {
       const summary = computeCompanyDocumentSummary(c, effectiveNow);
-      if (summary.status === 'Current') fullyCompliant++;
-      else if (summary.status === 'Expiring Soon') partiallyCompliant++;
-      else nonCompliant++;
-
       if (c.accreditationStatus === 'Accredited') activeAccreditation++;
       expiringSoonDocs += summary.expiringSoonCount;
       expiredDocs += summary.expiredCount;
@@ -547,13 +586,11 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     });
 
     const total = categoryCompanies.length;
-    const complianceRate = total > 0 ? Math.round((fullyCompliant / total) * 100) : 0;
+    const complianceRate = brandedBranchTotal > 0 ? Math.round((compliantBranchTotal / brandedBranchTotal) * 100) : 0;
 
-    const donutData = [
-      { name: 'Fully Compliant', value: fullyCompliant, color: CHART_GOOD },
-      { name: 'Partially Compliant', value: partiallyCompliant, color: CHART_WARNING },
-      { name: 'Non-Compliant', value: nonCompliant, color: CHART_CRITICAL },
-    ].filter((d) => d.value > 0);
+    const donutData = [...BRANCH_STATUS_OPTIONS, 'Not Set']
+      .map((status) => ({ name: status, value: statusCounts[status] ?? 0, color: STATUS_CHART_COLORS[status] }))
+      .filter((d) => d.value > 0);
 
     const barData = Object.entries(perDocAttention)
       .map(([docName, counts]) => ({
@@ -579,7 +616,7 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
       total, activeAccreditation, expiringSoonDocs, expiredDocs, complianceRate,
       donutData, barData, docStatusTable, agingTable, upcomingTable,
     };
-  }, [categoryCompanies, effectiveNow]);
+  }, [categoryCompanies, displayRows, effectiveNow]);
 
   // Records today's compliance rate for whichever category is currently
   // being viewed - this is what actually builds the trend chart's history
@@ -647,6 +684,22 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
       b.id === branchId ? { ...b, status } : b
     );
     onUpdateCompany({ ...company, branches: updatedBranches });
+  };
+
+  const updateSupplierRank = (company: PartnerCompany, branch: BranchRecord, supplierRank: string) => {
+    if (!canRenewDocuments) return;
+    const previousRank = branch.supplierRank || 'unset';
+    const updatedBranches = (company.branches ?? []).map((b) =>
+      b.id === branch.id ? { ...b, supplierRank } : b
+    );
+    onUpdateCompany({ ...company, branches: updatedBranches });
+    logDocumentModification({
+      actorEmail: currentUserEmail || 'unknown',
+      category: viewLabel,
+      companyName: branchAwareCompanyLabel(company, branch),
+      docName: 'Supplier Rank',
+      change: `Changed from ${previousRank} to ${supplierRank}`,
+    });
   };
 
   const confirmRenewal = () => {
@@ -874,7 +927,7 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                     icon={Gauge}
                     label="Compliance Rate"
                     value={`${overview.complianceRate}%`}
-                    caption="Fully compliant partners"
+                    caption="Completed, Updated & Accredited"
                     accent={overview.complianceRate >= 90 ? 'text-[#059669]' : overview.complianceRate >= 70 ? 'text-[#a16207]' : 'text-[#f43f5e]'}
                   />
                 )}
@@ -885,7 +938,7 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
               <div className={chartsGridClass}>
                 {isWidgetVisible('chart-compliance') && (
                   <div className={chartsToShow.length === 2 ? 'lg:col-span-2' : ''}>
-                    <ChartCard title="Compliance Status" subtitle={viewLabel} contentClassName="h-64">
+                    <ChartCard title="Status Breakdown" subtitle={viewLabel} contentClassName="h-64">
                       {overview.donutData.length === 0 ? (
                         <div className="h-full flex items-center justify-center text-xs text-slate-400">
                           No companies in this view yet.
@@ -1171,7 +1224,9 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                   <th className="px-3 py-2.5 min-w-[120px]">
                     <SortHeaderButton label="Status" sortKeyValue="branchStatus" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
                   </th>
-                  <th className="px-3 py-2.5 min-w-[110px]">Supplier Rank</th>
+                  <th className="px-3 py-2.5 min-w-[110px]">
+                    <SortHeaderButton label="Supplier Rank" sortKeyValue="supplierRank" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
+                  </th>
                   {docColumns.map((docName) => (
                     <th key={docName} className="px-3 py-2.5 min-w-[120px] max-w-[150px] align-bottom" title={docName}>
                       <SortHeaderButton
@@ -1240,8 +1295,30 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                           <span className="text-slate-300 dark:text-slate-600">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
-                        {row.branch?.supplierRank || <span className="text-slate-300 dark:text-slate-600">—</span>}
+                      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                        {row.branch ? (
+                          canRenewDocuments ? (
+                            <div className="relative inline-flex items-center">
+                              <select
+                                value={row.branch.supplierRank ?? ''}
+                                onChange={(e) => updateSupplierRank(row.company, row.branch!, e.target.value)}
+                                className={`appearance-none bg-transparent pr-3.5 text-xs font-bold cursor-pointer focus:outline-none ${supplierRankTextClasses(row.branch.supplierRank)}`}
+                              >
+                                <option value="" disabled>Set rank</option>
+                                {SUPPLIER_RANK_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                              <ChevronDown size={11} className={`pointer-events-none absolute right-0 opacity-60 ${supplierRankTextClasses(row.branch.supplierRank)}`} />
+                            </div>
+                          ) : (
+                            <span className={`text-xs font-bold ${supplierRankTextClasses(row.branch.supplierRank)}`}>
+                              {row.branch.supplierRank || '—'}
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-slate-300 dark:text-slate-600">—</span>
+                        )}
                       </td>
                       {cells.map(({ docName, status, daysLeft, doc, branch, expiryBased }) => {
                         const interactive = canRenewDocuments && !!branch;

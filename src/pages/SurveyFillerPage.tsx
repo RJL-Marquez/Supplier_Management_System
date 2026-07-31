@@ -736,6 +736,28 @@ export const SurveyFillerPage = forwardRef<SurveyFillerHandle, SurveyFillerPageP
               Section 1: Details
             </div>
 
+            {surveys.length > 1 ? (
+              <div>
+                <label htmlFor="filler-survey" className="field-label">Survey Form to Answer *</label>
+                <select
+                  id="filler-survey"
+                  className="field text-sm font-semibold"
+                  value={selectedSurveyId}
+                  onChange={(e) => setSelectedSurveyId(e.target.value)}
+                >
+                  {surveys.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title} ({s.surveyType})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : activeSurvey && (
+              <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-2.5 text-xs text-slate-500 dark:bg-slate-900/40 dark:border-slate-800">
+                Survey Form: <strong className="text-slate-700 dark:text-slate-200">{activeSurvey.title}</strong> ({activeSurvey.surveyType})
+              </div>
+            )}
+
             {!hasEvaluatedAll ? (
               <>
                 <div className="grid gap-4 sm:grid-cols-2 mb-5">

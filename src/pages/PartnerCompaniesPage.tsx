@@ -44,7 +44,7 @@ import { AccreditationStatus, BranchRecord, BranchStatus, ComplianceDocument, Do
 import { getMaxRatingForResponses } from '../utils/analytics';
 import { computeCompanyComposite } from '../utils/scoring';
 import { formatCompositeScore } from '../data/questionWeights';
-import { branchAwareCompanyLabel, computeDocumentStatus, computeCompanyDocumentSummary, CompanyDocumentSummary } from '../utils/compliance';
+import { branchAwareCompanyLabel, computeDocumentStatus, computeCompanyDocumentSummary, CompanyDocumentSummary, isNTBranch } from '../utils/compliance';
 import { CATEGORY_BUCKET_KEYS, computeCategoryRankSummary } from '../utils/categorySummary';
 import { getRequiredDocumentKeys, isExpiryDocument } from '../utils/documentRequirements';
 import { findMissingProfileFields, MISSING_FIELD_LABELS, MissingProfileField } from '../utils/dataCompleteness';
@@ -95,6 +95,29 @@ export function branchStatusBadgeClasses(status: BranchStatus): string {
       return 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-950/20 dark:text-blue-400'; // Pending
   }
 }
+
+// A company can hold more than one branch (e.g. a normal + "-NT" BP Code) -
+// the non-NT branch is treated as the "primary" one for any single-value
+// summary of the company (e.g. the simplified registry list), falling back
+// to whichever branch exists when there's no non-NT one.
+export function primaryBranch(c: Pick<PartnerCompany, 'branches'>): BranchRecord | undefined {
+  const branches = c.branches ?? [];
+  if (branches.length === 0) return undefined;
+  return branches.find((b) => !isNTBranch(b)) ?? branches[0];
+}
+
+// Higher = more urgent/needs-action, for sorting the simplified list's
+// Document Status column by the same Status value shown in the Document
+// Tracker, worst-first.
+const BRANCH_STATUS_SEVERITY: Record<BranchStatus, number> = {
+  Incomplete: 5,
+  Outdated: 4,
+  Pending: 3,
+  Completed: 2,
+  Updated: 1,
+  Accredited: 0,
+  Inactive: -1,
+};
 
 // Registries can hold 1000+ companies (the full Master List) - rendering
 // every row at once tanks scroll/interaction performance, so the list/table
@@ -292,9 +315,13 @@ export function PartnerCompaniesPage({
     };
   };
 
-  // Partition companies into Active, Expired, Archived based on their rolled-up
-  // compliance document status (any required document Expired -> Expired),
-  // not a single contract date - see computeCompanyDocumentSummary.
+  // "Active Partners" is every non-archived (i.e. accredited/categorized)
+  // company - the whole roster you can track documents for - not a subset
+  // that shrinks based on document compliance. "Expired" is a filtered LENS
+  // into that same active roster (which companies need a renewal right
+  // now), not a separate partition subtracted from Active - a company with
+  // an expired document is still an active partner, just one that needs
+  // attention, so it appears in both Active and Expired.
   const classifiedCompanies = useMemo(() => {
     const active: PartnerCompany[] = [];
     const expired: PartnerCompany[] = [];
@@ -303,10 +330,11 @@ export function PartnerCompaniesPage({
     partnerCompanies.forEach((c) => {
       if (c.isArchived) {
         archived.push(c);
-      } else if (computeCompanyDocumentSummary(c, effectiveNow).status === 'Expired') {
+        return;
+      }
+      active.push(c);
+      if (computeCompanyDocumentSummary(c, effectiveNow).status === 'Expired') {
         expired.push(c);
-      } else {
-        active.push(c);
       }
     });
 
@@ -475,11 +503,11 @@ export function PartnerCompaniesPage({
     }
 
     if (sortConfig) {
-      // docStatus has no direct field on PartnerCompany - rank by rolled-up
-      // compliance severity (Expired worst) instead of a plain value compare.
+      // docStatus has no direct field on PartnerCompany - rank by the primary
+      // branch's Status value (same one shown/edited in the Document Tracker).
       const docSeverity = (c: PartnerCompany) => {
-        const s = computeCompanyDocumentSummary(c, effectiveNow).status;
-        return s === 'Expired' ? 2 : s === 'Expiring Soon' ? 1 : 0;
+        const status = primaryBranch(c)?.status;
+        return status ? BRANCH_STATUS_SEVERITY[status] : -2;
       };
       baseList = [...baseList].sort((a, b) => {
         const valA = sortConfig.key === 'docStatus' ? docSeverity(a) : (a[sortConfig.key] || '');
@@ -774,7 +802,7 @@ export function PartnerCompaniesPage({
                   </tr>
                 </tbody>
               </table>
-              <p className="px-4 py-2 text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800">Supplier branches only, from each branch's Supplier Rank field.</p>
+              <p className="px-4 py-2 text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800">Every branch's Supplier Rank field, company-wide.</p>
             </div>
           </div>
         )}
@@ -997,25 +1025,17 @@ export function PartnerCompaniesPage({
                       <td className="px-5 py-3.5 align-top whitespace-nowrap text-xs font-medium">
                         {c.isArchived ? (
                           <span className="text-slate-400 italic">Archived</span>
-                        ) : docSummary.status === 'Expired' ? (
-                          <span className="inline-flex items-center gap-1 text-rose-600 font-bold">
-                            <AlertCircle size={12} />
-                            {docSummary.expiredCount} document{docSummary.expiredCount === 1 ? '' : 's'} expired
-                          </span>
-                        ) : docSummary.status === 'Expiring Soon' ? (
-                          <span className="inline-flex items-center gap-1 text-amber-600 font-extrabold animate-pulse">
-                            <Clock size={12} />
-                            {docSummary.expiringSoonCount} expiring soon
+                        ) : primaryBranch(c)?.status ? (
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${branchStatusBadgeClasses(primaryBranch(c)!.status!)}`}>
+                            {primaryBranch(c)!.status}
                           </span>
                         ) : (
-                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                            Current
-                          </span>
+                          <span className="text-slate-300 dark:text-slate-600">—</span>
                         )}
                       </td>
                       <td className="px-5 py-3.5 align-top text-right">
                         <div className="flex flex-wrap justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          {docSummary.status === 'Expired' && canRenew && (
+                          {(docSummary.status === 'Expired' || docSummary.status === 'Missing') && canRenew && (
                             <button
                               onClick={() => handleCompanyClick(c)}
                               className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1 px-2.5 text-xs cursor-pointer transition"
@@ -1059,7 +1079,7 @@ export function PartnerCompaniesPage({
               >
                 {/* Card Status Indicator Border */}
                 <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${
-                  c.isArchived ? 'bg-slate-300' : docSummary.status === 'Expired' ? 'bg-rose-500' : isExpiringSoon ? 'bg-amber-400' : 'bg-emerald-500'
+                  c.isArchived ? 'bg-slate-300' : (docSummary.status === 'Expired' || docSummary.status === 'Missing') ? 'bg-rose-500' : isExpiringSoon ? 'bg-amber-400' : 'bg-emerald-500'
                 }`} />
 
                 {/* Top segment: Title, prominent badges and Action */}
@@ -1127,6 +1147,8 @@ export function PartnerCompaniesPage({
                       <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">Archived</span>
                     ) : docSummary.status === 'Expired' ? (
                       <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-950 dark:text-rose-400 dark:border-rose-900 animate-pulse">Expired</span>
+                    ) : docSummary.status === 'Missing' ? (
+                      <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-950 dark:text-rose-400 dark:border-rose-900">Missing Docs</span>
                     ) : isExpiringSoon ? (
                       <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-900 animate-pulse">Expiring Soon</span>
                     ) : (
@@ -1381,6 +1403,10 @@ export function PartnerCompaniesPage({
                   ) : selectedCompanyDocSummary.status === 'Expired' ? (
                     <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-lg text-xs font-medium dark:bg-rose-950/20 dark:border-rose-900 dark:text-rose-400">
                       ⚠️ <strong>{selectedCompanyDocSummary.expiredCount} required document{selectedCompanyDocSummary.expiredCount === 1 ? ' is' : 's are'} EXPIRED.</strong> This company has been automatically disabled from evaluation forms. Renew the expired document(s) below to reactivate.
+                    </div>
+                  ) : selectedCompanyDocSummary.status === 'Missing' ? (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-lg text-xs font-medium dark:bg-rose-950/20 dark:border-rose-900 dark:text-rose-400">
+                      ⚠️ <strong>{selectedCompanyDocSummary.missingCount} required document{selectedCompanyDocSummary.missingCount === 1 ? ' was' : 's were'} never provided.</strong> Not yet fully compliant - still eligible for audits. Provide the missing document(s) below.
                     </div>
                   ) : selectedCompanyDocSummary.status === 'Expiring Soon' ? (
                     <div className="bg-amber-50 border border-amber-200 text-amber-700 p-3 rounded-lg text-xs font-medium dark:bg-amber-950/20 dark:border-amber-900 dark:text-amber-400">

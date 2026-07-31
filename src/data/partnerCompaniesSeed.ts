@@ -2920,7 +2920,7 @@ export const seedPartnerCompanies: PartnerCompany[] = [
         "position": "Product Specialist",
         "mobilePhone": "0917 6399998",
         "email": "meriel@banbros.ph",
-        "rawCategory": "Supplier-Local",
+        "rawCategory": "Supplier-Local-NT",
         "status": "Incomplete",
         "sourceRow": 147,
         "documents": {
