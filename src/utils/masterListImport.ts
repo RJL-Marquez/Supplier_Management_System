@@ -10,10 +10,10 @@ import {
 import { computeDocumentStatus } from './compliance';
 import { COMMON_DOCUMENTS, FOREIGN_SUPPLIER_DOCUMENTS, LOCAL_SUPPLIER_DOCUMENTS } from './documentRequirements';
 
-// The sheet opens with 19 rows of legend/summary blocks before the real
-// header row (row 20, 1-based / index 19). Data starts at index 20.
+// The sheet opens with a legend/summary block before the real header row -
+// its exact row count has varied between revisions, so findHeaderRowIndex
+// locates it by content. This is only the last-known fallback position.
 const HEADER_ROW_INDEX = 19;
-const DATA_START_ROW_INDEX = 20;
 
 // Column indices as laid out in "Masterlist Database" (0-based). Positional
 // indexing is used instead of header-name lookups because the header cells
@@ -93,6 +93,21 @@ export interface RawMasterListRow {
 
 // --- Parsing ---------------------------------------------------------------
 
+// The legend/summary block above the header has grown by a row between sheet
+// revisions (a "GENERAL INFORMATION" banner row got inserted ahead of the
+// header in the 7-31-26 file), so the header row is located by content
+// instead of trusting a fixed index - COL's column positions are unaffected,
+// only which row they start counting from.
+function findHeaderRowIndex(rows: unknown[][]): number {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (String(row[0] ?? '').trim() === '#' && String(row[COL.bpName] ?? '').trim().toUpperCase() === 'BP NAME') {
+      return i;
+    }
+  }
+  return HEADER_ROW_INDEX; // fallback to the last-known layout
+}
+
 export function parseMasterListWorkbook(data: ArrayBuffer | Uint8Array): RawMasterListRow[] {
   const workbook = XLSX.read(data, { type: 'array', cellDates: false });
   const sheetName = workbook.SheetNames.includes('Masterlist Database')
@@ -102,11 +117,12 @@ export function parseMasterListWorkbook(data: ArrayBuffer | Uint8Array): RawMast
   const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
 
   const str = (v: unknown) => (v == null ? '' : String(v).trim());
+  const dataStartRowIndex = findHeaderRowIndex(rows) + 1;
 
   return rows
-    .slice(DATA_START_ROW_INDEX)
+    .slice(dataStartRowIndex)
     .map((cells, i) => ({
-      sourceRow: DATA_START_ROW_INDEX + i + 1, // 1-based Excel row number
+      sourceRow: dataStartRowIndex + i + 1, // 1-based Excel row number
       status: str(cells[COL.status]),
       category: str(cells[COL.category]),
       supplierRank: str(cells[COL.supplierRank]),
@@ -218,6 +234,7 @@ export function normalizeBranchStatus(raw: string): BranchStatus | undefined {
   if (v === 'outdated') return 'Outdated';
   if (v === 'incomplete') return 'Incomplete';
   if (v === 'completed' || v === 'complete') return 'Completed';
+  if (v === 'accredited') return 'Accredited';
   if (v === 'inactive') return 'Inactive';
   return undefined; // blank / other noise - not a recognized status
 }

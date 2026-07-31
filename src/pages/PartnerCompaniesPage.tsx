@@ -76,13 +76,15 @@ export function typeBadgeClasses(type: PartnerCompanyType): string {
 // Toggle options for a branch's Status field - mirrors the Master List's own
 // "Status" column dropdown (Masterlist Database sheet) exactly, so a value
 // picked here round-trips cleanly through a future re-import.
-export const BRANCH_STATUS_OPTIONS: BranchStatus[] = ['Pending', 'Updated', 'Outdated', 'Incomplete', 'Completed', 'Inactive'];
+export const BRANCH_STATUS_OPTIONS: BranchStatus[] = ['Pending', 'Updated', 'Outdated', 'Incomplete', 'Completed', 'Accredited', 'Inactive'];
 
 export function branchStatusBadgeClasses(status: BranchStatus): string {
   switch (status) {
     case 'Completed':
     case 'Updated':
       return 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400';
+    case 'Accredited':
+      return 'bg-teal-50 text-teal-700 border-teal-100 dark:bg-teal-950/20 dark:text-teal-400';
     case 'Outdated':
       return 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/20 dark:text-amber-400';
     case 'Incomplete':

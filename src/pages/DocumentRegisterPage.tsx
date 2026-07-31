@@ -16,7 +16,7 @@ import {
   restoreDefaultNotificationSettings,
 } from '../utils/documentNotificationSettings';
 import { ChartCard } from '../components/ChartCard';
-import { typeBadgeClasses, BRANCH_STATUS_OPTIONS, branchStatusBadgeClasses } from './PartnerCompaniesPage';
+import { BRANCH_STATUS_OPTIONS, branchStatusBadgeClasses } from './PartnerCompaniesPage';
 
 interface DocumentRegisterPageProps {
   partnerCompanies: PartnerCompany[];
@@ -1171,6 +1171,7 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                   <th className="px-3 py-2.5 min-w-[120px]">
                     <SortHeaderButton label="Status" sortKeyValue="branchStatus" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
                   </th>
+                  <th className="px-3 py-2.5 min-w-[110px]">Supplier Rank</th>
                   {docColumns.map((docName) => (
                     <th key={docName} className="px-3 py-2.5 min-w-[120px] max-w-[150px] align-bottom" title={docName}>
                       <SortHeaderButton
@@ -1202,12 +1203,7 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                   return (
                     <tr key={row.key} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/20 transition-colors">
                       <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-950 z-10">
-                        <div className="flex items-center gap-2">
-                          <span>{c.name}</span>
-                          <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider border shrink-0 ${typeBadgeClasses(c.type)}`}>
-                            {c.type === 'Supplier' ? c.supplierOrigin : c.type}
-                          </span>
-                        </div>
+                        <span>{c.name}</span>
                       </td>
                       <td className="px-3 py-2 align-middle">
                         <div className="flex flex-col gap-1 min-w-[64px]">
@@ -1221,14 +1217,8 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                         {row.branch?.bpCode || '—'}
                       </td>
                       <td className="px-3 py-2">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border shrink-0 ${
-                            row.isNT
-                              ? 'bg-purple-50 text-purple-700 border-purple-100 dark:bg-purple-950/20 dark:text-purple-400 dark:border-purple-900/40'
-                              : 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700'
-                          }`}
-                        >
-                          {row.isNT ? 'NO-TRADE' : 'TRADE'}
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          {row.isNT ? 'No-Trade' : 'Trade'}
                         </span>
                       </td>
                       <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
@@ -1237,7 +1227,7 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                             value={row.branch.status ?? ''}
                             onChange={(e) => updateBranchStatus(row.company, row.branch!.id, e.target.value as BranchStatus)}
                             disabled={!canRenewDocuments}
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${canRenewDocuments ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'} ${
+                            className={`rounded-md px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider border ${canRenewDocuments ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'} ${
                               row.branch.status ? branchStatusBadgeClasses(row.branch.status) : 'bg-slate-50 text-slate-400 border-slate-200 dark:bg-slate-900 dark:text-slate-500 dark:border-slate-700'
                             }`}
                           >
@@ -1249,6 +1239,9 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                         ) : (
                           <span className="text-slate-300 dark:text-slate-600">—</span>
                         )}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
+                        {row.branch?.supplierRank || <span className="text-slate-300 dark:text-slate-600">—</span>}
                       </td>
                       {cells.map(({ docName, status, daysLeft, doc, branch, expiryBased }) => {
                         const interactive = canRenewDocuments && !!branch;

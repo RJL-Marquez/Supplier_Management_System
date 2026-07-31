@@ -19,7 +19,7 @@ export type AccreditationStatus = 'Accredited' | 'Unaccredited';
 // day countdown, so it never passes through 'Expiring Soon'/'Expired'.
 export type DocumentStatus = 'Current' | 'Expiring Soon' | 'Expired' | 'Missing' | 'For Update';
 
-export type BranchStatus = 'Pending' | 'Updated' | 'Outdated' | 'Incomplete' | 'Completed' | 'Inactive';
+export type BranchStatus = 'Pending' | 'Updated' | 'Outdated' | 'Incomplete' | 'Completed' | 'Inactive' | 'Accredited';
 
 export interface ComplianceDocument {
   provided?: boolean;
