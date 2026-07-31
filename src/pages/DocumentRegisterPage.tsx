@@ -218,7 +218,7 @@ function getCellDateLine(status: string, expiryDate: string | undefined, daysLef
 function formatShortDate(dateString?: string): string {
   if (!dateString) return '—';
   try {
-    return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   } catch {
     return dateString;
   }
