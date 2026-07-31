@@ -1,142 +1,37 @@
 {
-  "hash": "9bb0792a",
-  "configHash": "cec86785",
+  "hash": "281da7ea",
+  "configHash": "de9b14dd",
   "lockfileHash": "0602fe53",
-  "browserHash": "5e426657",
+  "browserHash": "822e5058",
   "optimized": {
     "react": {
       "src": "../../node_modules/react/index.js",
       "file": "react.js",
-      "fileHash": "ac270e81",
+      "fileHash": "1ffc7efe",
       "needsInterop": true
     },
     "react-dom": {
       "src": "../../node_modules/react-dom/index.js",
       "file": "react-dom.js",
-      "fileHash": "3aa99f72",
+      "fileHash": "6a4bc774",
       "needsInterop": true
     },
     "react/jsx-dev-runtime": {
       "src": "../../node_modules/react/jsx-dev-runtime.js",
       "file": "react_jsx-dev-runtime.js",
-      "fileHash": "4f2f70cd",
+      "fileHash": "d8110680",
       "needsInterop": true
     },
     "react/jsx-runtime": {
       "src": "../../node_modules/react/jsx-runtime.js",
       "file": "react_jsx-runtime.js",
-      "fileHash": "cec8e9c5",
+      "fileHash": "0e4ae293",
       "needsInterop": true
-    },
-    "react-dom/client": {
-      "src": "../../node_modules/react-dom/client.js",
-      "file": "react-dom_client.js",
-      "fileHash": "7af15028",
-      "needsInterop": true
-    },
-    "lucide-react": {
-      "src": "../../node_modules/lucide-react/dist/esm/lucide-react.js",
-      "file": "lucide-react.js",
-      "fileHash": "46025345",
-      "needsInterop": false
-    },
-    "recharts": {
-      "src": "../../node_modules/recharts/es6/index.js",
-      "file": "recharts.js",
-      "fileHash": "2e3bcd4e",
-      "needsInterop": false
-    },
-    "motion/react": {
-      "src": "../../node_modules/motion/dist/es/react.mjs",
-      "file": "motion_react.js",
-      "fileHash": "6c097719",
-      "needsInterop": false
-    },
-    "papaparse": {
-      "src": "../../node_modules/papaparse/papaparse.min.js",
-      "file": "papaparse.js",
-      "fileHash": "62bd30fa",
-      "needsInterop": true
-    },
-    "xlsx": {
-      "src": "../../node_modules/xlsx/xlsx.mjs",
-      "file": "xlsx.js",
-      "fileHash": "c1e741d5",
-      "needsInterop": false
-    },
-    "jspdf": {
-      "src": "../../node_modules/jspdf/dist/jspdf.es.min.js",
-      "file": "jspdf.js",
-      "fileHash": "604a53cd",
-      "needsInterop": false
-    },
-    "jspdf-autotable": {
-      "src": "../../node_modules/jspdf-autotable/dist/jspdf.plugin.autotable.js",
-      "file": "jspdf-autotable.js",
-      "fileHash": "7f2a3f6b",
-      "needsInterop": true
-    },
-    "html2canvas": {
-      "src": "../../node_modules/html2canvas/dist/html2canvas.esm.js",
-      "file": "html2canvas.js",
-      "fileHash": "6ec02a65",
-      "needsInterop": false
-    },
-    "@azure/msal-browser": {
-      "src": "../../node_modules/@azure/msal-browser/dist/index.mjs",
-      "file": "@azure_msal-browser.js",
-      "fileHash": "31dab448",
-      "needsInterop": false
-    },
-    "docx": {
-      "src": "../../node_modules/docx/dist/index.mjs",
-      "file": "docx.js",
-      "fileHash": "027c8415",
-      "needsInterop": false
-    },
-    "pptxgenjs": {
-      "src": "../../node_modules/pptxgenjs/dist/pptxgen.es.js",
-      "file": "pptxgenjs.js",
-      "fileHash": "3569556e",
-      "needsInterop": false
     }
   },
   "chunks": {
-    "purify.es-LQTREGQ6": {
-      "file": "purify__es-LQTREGQ6.js"
-    },
-    "index.es-HXATFH2R": {
-      "file": "index__es-HXATFH2R.js"
-    },
-    "BrowserPerformanceMeasurement-7BKX62UW": {
-      "file": "BrowserPerformanceMeasurement-7BKX62UW.js"
-    },
-    "node_fs-ECDZHUPR": {
-      "file": "node_fs-ECDZHUPR.js"
-    },
-    "node_https-QRXJFBYV": {
-      "file": "node_https-QRXJFBYV.js"
-    },
-    "chunk-4KAHAYFA": {
-      "file": "chunk-4KAHAYFA.js"
-    },
-    "chunk-YRTHPB3T": {
-      "file": "chunk-YRTHPB3T.js"
-    },
-    "chunk-UZNMMFWU": {
-      "file": "chunk-UZNMMFWU.js"
-    },
-    "chunk-N4N5IM6X": {
-      "file": "chunk-N4N5IM6X.js"
-    },
-    "chunk-YPZB2K24": {
-      "file": "chunk-YPZB2K24.js"
-    },
-    "chunk-JSGKMUIC": {
-      "file": "chunk-JSGKMUIC.js"
-    },
-    "chunk-LK32TJAX": {
-      "file": "chunk-LK32TJAX.js"
+    "chunk-GFWMZNU4": {
+      "file": "chunk-GFWMZNU4.js"
     }
   }
 }

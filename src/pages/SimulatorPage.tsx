@@ -251,7 +251,7 @@ export function SimulatorPage({
                 <div>
                   <span className="text-xs font-bold text-slate-800 dark:text-white block">Complete Response (All responded)</span>
                   <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 block">
-                    Pre-populates a 100% full dataset where every non-admin synthetic employee evaluates every registered partner company.
+                    Pre-populates a 100% full dataset where every non-admin synthetic employee evaluates every company each survey is currently scoped to evaluate (its "Modify Companies to Evaluate" selection).
                   </span>
                 </div>
               </button>

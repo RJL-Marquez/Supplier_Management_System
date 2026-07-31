@@ -1,4 +1,5 @@
 import { Rating, SurveyResponse, SurveyType, CustomForm, PartnerCompany } from '../types/survey';
+import { getSurveyEvaluationCompanies } from '../utils/analytics';
 
 const respondentTypes = [
   'Rank & File',
@@ -43,6 +44,10 @@ const negativeComments = [
 function seededRandom(seed: number) {
   const value = Math.sin(seed) * 10000;
   return value - Math.floor(value);
+}
+
+function dateStr(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 // Generates an integer rating between min and max (inclusive) that is biased
@@ -125,8 +130,11 @@ export function generateMockResponses(
 
   // Let's generate mock evaluations
   surveysToUse.forEach((survey) => {
-    // Filter companies matching this survey's type
-    const matchingCompanies = companiesToUse.filter((c) => c.type === survey.surveyType && !c.isArchived);
+    // Only simulate companies this survey is actually scoped to evaluate -
+    // the admin's "Modify Companies to Evaluate" selection (or every
+    // eligible company by default), never every company of this type
+    // regardless of selection/expired-document status.
+    const matchingCompanies = getSurveyEvaluationCompanies(survey, companiesToUse);
     
     matchingCompanies.forEach((company, compIdx) => {
       // Create 2-3 evaluations per company, from different users (avoid duplicate user evaluations for same company)
@@ -274,7 +282,7 @@ export function generateAllMockResponses(
   const dateSeed = Math.floor(targetDate.getTime() / (1000 * 60 * 60 * 24)) * 7919;
 
   surveysToUse.forEach((survey) => {
-    const matchingCompanies = companiesToUse.filter((c) => c.type === survey.surveyType && !c.isArchived);
+    const matchingCompanies = getSurveyEvaluationCompanies(survey, companiesToUse, dateStr(targetDate));
     matchingCompanies.forEach((company, compIdx) => {
       usersToUse.forEach((user, userIdx) => {
         submissionCounter++;
@@ -412,8 +420,10 @@ export function generateSingleMockResponse(
   // Pick a random survey
   const survey = surveysToUse[Math.floor(Math.random() * surveysToUse.length)];
 
-  // Pick a random company of that survey's type
-  const matchingCompanies = companiesToUse.filter((c) => c.type === survey.surveyType && !c.isArchived);
+  // Pick a random company this survey is actually scoped to evaluate (the
+  // admin's "Modify Companies to Evaluate" selection, live against the
+  // registry) - never every company of that type regardless of selection.
+  const matchingCompanies = getSurveyEvaluationCompanies(survey, companiesToUse, dateStr(targetDate));
   if (matchingCompanies.length === 0) {
     return [];
   }

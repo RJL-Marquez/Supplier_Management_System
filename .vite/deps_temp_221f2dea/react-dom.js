@@ -1,9 +1,7 @@
 import {
+  __commonJS,
   require_react
-} from "./chunk-N4N5IM6X.js";
-import {
-  __commonJS
-} from "./chunk-LK32TJAX.js";
+} from "./chunk-GFWMZNU4.js";
 
 // node_modules/scheduler/cjs/scheduler.development.js
 var require_scheduler_development = __commonJS({
@@ -21642,10 +21640,7 @@ var require_react_dom = __commonJS({
     }
   }
 });
-
-export {
-  require_react_dom
-};
+export default require_react_dom();
 /*! Bundled license information:
 
 scheduler/cjs/scheduler.development.js:
@@ -21683,4 +21678,4 @@ react-dom/cjs/react-dom.development.js:
    * @license Modernizr 3.0.0pre (Custom Build) | MIT
    *)
 */
-//# sourceMappingURL=chunk-YRTHPB3T.js.map
+//# sourceMappingURL=react-dom.js.map
