@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { QueuedReportEmail, EmailStatus } from '../../types/feedbackHub';
-import { Clock, CheckCircle2, RotateCcw, Send, AlertTriangle, FileText, Search, History, Sparkles, X, Settings } from 'lucide-react';
+import { Clock, CheckCircle2, RotateCcw, Send, AlertTriangle, FileText, Search, History, Sparkles, X, Settings, Eye, Mail } from 'lucide-react';
 import { ReturnReasonModal } from './ReturnReasonModal';
 
 interface SentReportsTabProps {
@@ -9,6 +9,7 @@ interface SentReportsTabProps {
   onReturnReport: (reportId: string, reason: string, returnedBy: string) => void;
   onReviseReport: (report: QueuedReportEmail) => void;
   onResendReport: (report: QueuedReportEmail) => void;
+  onPreviewDocument: (report: QueuedReportEmail) => void;
   onUpdateTimerSettings: (minutes: number) => void;
   currentTimerMinutes: number;
   userEmail: string;
@@ -20,6 +21,7 @@ export function SentReportsTab({
   onReturnReport,
   onReviseReport,
   onResendReport,
+  onPreviewDocument,
   onUpdateTimerSettings,
   currentTimerMinutes,
   userEmail,
@@ -36,6 +38,9 @@ export function SentReportsTab({
 
   // Modal State for Return Reason
   const [reportToReturn, setReportToReturn] = useState<QueuedReportEmail | null>(null);
+
+  // Modal State for reviewing the exact email text/format + attached document
+  const [reportToPreview, setReportToPreview] = useState<QueuedReportEmail | null>(null);
 
   // Modal State for Audit History
   const [historyReport, setHistoryReport] = useState<QueuedReportEmail | null>(null);
@@ -228,6 +233,15 @@ export function SentReportsTab({
                         {isQueued && (
                           <>
                             <button
+                              onClick={() => setReportToPreview(report)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-blue-50 text-[#0063a9] hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 px-2.5 py-1 text-[11px] font-bold transition"
+                              title="Review the exact email text, formatting, and attached report document before it sends"
+                            >
+                              <Eye size={12} />
+                              Preview
+                            </button>
+
+                            <button
                               onClick={() => onConfirmNow(report.id)}
                               className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold transition shadow-sm"
                               title="Send immediately, skipping rest of timer"
@@ -300,6 +314,78 @@ export function SentReportsTab({
             setReportToReturn(null);
           }}
         />
+      )}
+
+      {/* Email Preview Modal — exact text/format that will be sent, plus a
+          link to generate the same PDF document the recipient will get. */}
+      {reportToPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+              <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-white">
+                <Mail size={18} className="text-[#0063a9]" />
+                Email Preview — {reportToPreview.companyName}
+              </div>
+              <button
+                onClick={() => setReportToPreview(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto text-xs">
+              <div className="space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex gap-2">
+                  <span className="w-14 shrink-0 font-bold text-slate-500">To:</span>
+                  <span className="text-slate-800 dark:text-slate-200">{reportToPreview.recipientEmail}</span>
+                </div>
+                {reportToPreview.ccEmails.length > 0 && (
+                  <div className="flex gap-2">
+                    <span className="w-14 shrink-0 font-bold text-slate-500">CC:</span>
+                    <span className="text-slate-800 dark:text-slate-200">{reportToPreview.ccEmails.join(', ')}</span>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <span className="w-14 shrink-0 font-bold text-slate-500">Subject:</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{reportToPreview.subject}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="w-14 shrink-0 font-bold text-slate-500">Attach:</span>
+                  <span className="text-slate-800 dark:text-slate-200">{reportToPreview.companyName.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')}_Feedback_Report.pdf</span>
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-1.5 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Message body (exactly as it will render in the recipient's inbox)</p>
+                <div
+                  className="rounded-lg border border-slate-200 bg-white p-4 text-slate-800 leading-relaxed dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                  // Same plain-text -> HTML conversion applied at real send
+                  // time (PartnersFeedbackHubPage), so this is byte-for-byte
+                  // what the recipient's email client will show.
+                  dangerouslySetInnerHTML={{ __html: reportToPreview.body.replace(/\n/g, '<br/>') }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-slate-200 px-6 py-3 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
+              <button
+                onClick={() => onPreviewDocument(reportToPreview)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#0063a9] hover:bg-[#00548d] text-white px-3 py-1.5 text-[11px] font-bold transition shadow-sm"
+                title="Generate and open the exact PDF report that will be attached"
+              >
+                <FileText size={13} />
+                View Attached PDF Document
+              </button>
+              <button
+                onClick={() => setReportToPreview(null)}
+                className="secondary-button text-xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Audit History Log Modal */}

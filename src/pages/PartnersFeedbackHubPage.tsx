@@ -59,6 +59,12 @@ export function PartnersFeedbackHubPage({
   // in flight - mounts the hidden chart capturer below just long enough to
   // regenerate the PDF and email it, then clears once handleRealSendResult runs.
   const [realSendReport, setRealSendReport] = useState<QueuedReportEmail | null>(null);
+  // Set while a queued report's attached PDF is being regenerated for the
+  // admin to review before it sends (see SentReportsTab's "Preview" button).
+  // Uses the exact same capture pipeline/graph selection as the real send
+  // above, so what's previewed here is what actually goes out.
+  const [previewDocReport, setPreviewDocReport] = useState<QueuedReportEmail | null>(null);
+  const [previewDocWindow, setPreviewDocWindow] = useState<Window | null>(null);
 
   // Dispatch Flow Inline State
   const [isDispatchWizardOpen, setIsDispatchWizardOpen] = useState(false);
@@ -272,6 +278,24 @@ export function PartnersFeedbackHubPage({
     setRealSendReport(null);
   };
 
+  // Preview Document action - opens a blank tab immediately (so it isn't
+  // blocked as a popup once the async PDF generation resolves), then mounts
+  // BulkHiddenChartCapturer in its no-sendVia "preview" mode to render the
+  // report and redirect that tab to the generated PDF once ready.
+  const handlePreviewDocument = (report: QueuedReportEmail) => {
+    const newWindow = window.open('about:blank', '_blank');
+    if (newWindow) {
+      newWindow.document.write('<p style="font-family: sans-serif; text-align: center; margin-top: 50px; color: #475569;">Generating PDF preview, please wait...</p>');
+    }
+    setPreviewDocWindow(newWindow);
+    setPreviewDocReport(report);
+  };
+
+  const handlePreviewDocComplete = () => {
+    setPreviewDocReport(null);
+    setPreviewDocWindow(null);
+  };
+
   // Return Report action
   const handleReturnReport = (reportId: string, reason: string, returnedBy: string) => {
     const nowIso = new Date().toISOString();
@@ -476,6 +500,7 @@ export function PartnersFeedbackHubPage({
           onReturnReport={handleReturnReport}
           onReviseReport={handleOpenRevisionOrResend}
           onResendReport={handleOpenRevisionOrResend}
+          onPreviewDocument={handlePreviewDocument}
           onUpdateTimerSettings={(min) => handleUpdateSettings({ ...settings, defaultTimerMinutes: min })}
           currentTimerMinutes={settings.defaultTimerMinutes}
           userEmail={currentUser?.email || 'admin@mgenesis.com'}
@@ -502,6 +527,20 @@ export function PartnersFeedbackHubPage({
             htmlBody: realSendReport.body.replace(/\n/g, '<br/>'),
           }}
           onSendResult={(result) => handleRealSendResult(realSendReport.id, result)}
+        />
+      )}
+
+      {/* Document preview in flight (see handlePreviewDocument). Same
+          all-graphs-and-comments config as the real send above, so the PDF
+          the admin reviews here matches what actually gets attached. */}
+      {previewDocReport && (
+        <BulkHiddenChartCapturer
+          item={{ company: { name: previewDocReport.companyName }, survey: { surveyType: previewDocReport.surveyType } }}
+          responses={responses}
+          graphs={{ bar: true, radar: true, trend: true, perQuestion: true }}
+          includeComments
+          previewWindow={previewDocWindow}
+          onComplete={handlePreviewDocComplete}
         />
       )}
     </div>

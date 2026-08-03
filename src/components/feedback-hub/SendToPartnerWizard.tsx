@@ -50,6 +50,7 @@ import {
 } from '../../utils/companyReportExport';
 import { computeCompanyComposite, getCompanyTrend, getSectionPeerAverages } from '../../utils/scoring';
 import { formatNumber, getScoreAxisDomain, questionPerformance, submissionScores } from '../../utils/analytics';
+import { radarPointLabel } from '../../utils/radarChartLabels';
 import { BulkHiddenChartCapturer } from './BulkHiddenChartCapturer';
 
 const PRIMARY_COLOR = '#0063a9';
@@ -1158,10 +1159,16 @@ export function SendToPartnerWizard({
                                     <PolarAngleAxis dataKey="section" tick={{ fontSize: 8 }} tickFormatter={radarTickFormatter} />
                                     <PolarRadiusAxis domain={sectionAxisDomain} tick={{ fontSize: 7 }} />
                                     <Radar name={selectedCompanyName} dataKey={selectedCompanyName} stroke={PRIMARY_COLOR} fill={PRIMARY_COLOR} fillOpacity={0.3} isAnimationActive={false}>
-                                      <LabelList dataKey={selectedCompanyName} position="top" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 8, fill: PRIMARY_COLOR, fontWeight: 'bold' }} />
+                                      <LabelList
+                                        dataKey={selectedCompanyName}
+                                        content={radarPointLabel({ categoryCount: sectionChartData.length, fill: PRIMARY_COLOR, fontSize: 8, radialInset: 10, lane: -5 })}
+                                      />
                                     </Radar>
                                     <Radar name={PEER_LABEL} dataKey={PEER_LABEL} stroke={PEER_COLOR} fill={PEER_COLOR} fillOpacity={0.25} isAnimationActive={false}>
-                                      <LabelList dataKey={PEER_LABEL} position="bottom" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 8, fill: PEER_COLOR, fontWeight: 'bold' }} />
+                                      <LabelList
+                                        dataKey={PEER_LABEL}
+                                        content={radarPointLabel({ categoryCount: sectionChartData.length, fill: PEER_COLOR, fontSize: 8, radialInset: 10, lane: 5 })}
+                                      />
                                     </Radar>
                                     <Tooltip />
                                   </RadarChart>
@@ -1421,10 +1428,16 @@ export function SendToPartnerWizard({
                     <PolarAngleAxis dataKey="section" tick={{ fontSize: 10 }} tickFormatter={radarTickFormatter} />
                     <PolarRadiusAxis domain={sectionAxisDomain} tick={{ fontSize: 9 }} />
                     <Radar name={composite.company} dataKey={composite.company} stroke={PRIMARY_COLOR} fill={PRIMARY_COLOR} fillOpacity={0.35} isAnimationActive={false}>
-                      <LabelList dataKey={composite.company} position="top" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 11, fill: PRIMARY_COLOR, fontWeight: 'bold' }} />
+                      <LabelList
+                        dataKey={composite.company}
+                        content={radarPointLabel({ categoryCount: sectionChartData.length, fill: PRIMARY_COLOR, fontSize: 11, lane: -7 })}
+                      />
                     </Radar>
                     <Radar name={PEER_LABEL} dataKey={PEER_LABEL} stroke={PEER_COLOR} fill={PEER_COLOR} fillOpacity={0.3} isAnimationActive={false}>
-                      <LabelList dataKey={PEER_LABEL} position="bottom" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 11, fill: PEER_COLOR, fontWeight: 'bold' }} />
+                      <LabelList
+                        dataKey={PEER_LABEL}
+                        content={radarPointLabel({ categoryCount: sectionChartData.length, fill: PEER_COLOR, fontSize: 11, lane: 7 })}
+                      />
                     </Radar>
                     <Legend verticalAlign="top" align="left" layout="vertical" iconSize={10} wrapperStyle={{ fontSize: 10, paddingBottom: 12, left: 0 }} />
                     <Tooltip />

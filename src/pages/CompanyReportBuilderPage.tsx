@@ -34,6 +34,7 @@ import { surveyTypeDisplayLabel, formatCompositeScore } from '../data/questionWe
 import { formatNumber, getScoreAxisDomain, questionPerformance } from '../utils/analytics';
 import { computeCompanyComposite, getCompanyTrend, getLeaderboard, getSectionPeerAverages } from '../utils/scoring';
 import { captureChartImage, CompanyReportData, exportCompanyReportAsDocx, exportCompanyReportAsPDF } from '../utils/companyReportExport';
+import { radarPointLabel } from '../utils/radarChartLabels';
 
 interface CompanyReportBuilderPageProps {
   responses: SurveyResponse[];
@@ -443,7 +444,10 @@ export function CompanyReportBuilderPage({ responses, partnerCompanies, canExpor
                               fillOpacity={0.35}
                               isAnimationActive={false}
                             >
-                              <LabelList dataKey={composite.company} position="top" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 11, fill: PRIMARY_COLOR, fontWeight: 'bold' }} />
+                              <LabelList
+                                dataKey={composite.company}
+                                content={radarPointLabel({ categoryCount: sectionChartData.length, fill: PRIMARY_COLOR, fontSize: 11, lane: -7 })}
+                              />
                             </Radar>
                             <Radar
                               name={PEER_LABEL}
@@ -453,7 +457,10 @@ export function CompanyReportBuilderPage({ responses, partnerCompanies, canExpor
                               fillOpacity={0.3}
                               isAnimationActive={false}
                             >
-                              <LabelList dataKey={PEER_LABEL} position="bottom" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 11, fill: PEER_COLOR, fontWeight: 'bold' }} />
+                              <LabelList
+                                dataKey={PEER_LABEL}
+                                content={radarPointLabel({ categoryCount: sectionChartData.length, fill: PEER_COLOR, fontSize: 11, lane: 7 })}
+                              />
                             </Radar>
                             <Legend verticalAlign="top" align="left" layout="vertical" iconSize={10} wrapperStyle={{ fontSize: 10, paddingBottom: 12, left: 0 }} />
                             <Tooltip />

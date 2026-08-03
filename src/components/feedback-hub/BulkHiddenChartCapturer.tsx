@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { captureChartImage, exportCompanyReportAsPDF, CompanyReportData } from '../../utils/companyReportExport';
 import { computeCompanyComposite, getCompanyTrend, getSectionPeerAverages } from '../../utils/scoring';
 import { getScoreAxisDomain, questionPerformance } from '../../utils/analytics';
+import { radarPointLabel } from '../../utils/radarChartLabels';
 import { SurveyResponse } from '../../types/survey';
 import { getGraphAccessToken } from '../../services/msalAuth';
 import { sendGraphMail, dataUrlToBase64 } from '../../services/graphMailService';
@@ -253,10 +254,16 @@ export function BulkHiddenChartCapturer({
           <PolarAngleAxis dataKey="section" tick={{ fontSize: 10 }} tickFormatter={radarTickFormatter} />
           <PolarRadiusAxis domain={sectionAxisDomain} tick={{ fontSize: 9 }} />
           <Radar name={companyName} dataKey={companyName} stroke={PRIMARY_COLOR} fill={PRIMARY_COLOR} fillOpacity={0.35} isAnimationActive={false}>
-            <LabelList dataKey={companyName} position="top" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 11, fill: PRIMARY_COLOR, fontWeight: 'bold' }} />
+            <LabelList
+              dataKey={companyName}
+              content={radarPointLabel({ categoryCount: sectionChartData.length, fill: PRIMARY_COLOR, fontSize: 11, lane: -7 })}
+            />
           </Radar>
           <Radar name={PEER_LABEL} dataKey={PEER_LABEL} stroke={PEER_COLOR} fill={PEER_COLOR} fillOpacity={0.3} isAnimationActive={false}>
-            <LabelList dataKey={PEER_LABEL} position="bottom" formatter={(val: number) => typeof val === 'number' ? val.toFixed(1) : val} style={{ fontSize: 11, fill: PEER_COLOR, fontWeight: 'bold' }} />
+            <LabelList
+              dataKey={PEER_LABEL}
+              content={radarPointLabel({ categoryCount: sectionChartData.length, fill: PEER_COLOR, fontSize: 11, lane: 7 })}
+            />
           </Radar>
           <Legend verticalAlign="top" align="left" layout="vertical" iconSize={10} wrapperStyle={{ fontSize: 10, paddingBottom: 12, left: 0 }} />
           <Tooltip />

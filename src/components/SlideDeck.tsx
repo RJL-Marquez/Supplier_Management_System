@@ -48,6 +48,7 @@ import { SurveyResponse, SurveyType } from '../types/survey';
 import { surveyTypeDisplayLabel } from '../data/questionWeights';
 import { getScoreAxisDomain } from '../utils/analytics';
 import { computeCompanyComposite, getCompanyTrend, getSectionPeerAverages } from '../utils/scoring';
+import { radarPointLabel } from '../utils/radarChartLabels';
 
 interface SlideDeckProps {
   slides: Slide[];
@@ -81,19 +82,6 @@ const CHART_TOOLTIP_STYLE = {
   padding: '8px 12px',
 };
 const CHART_TOOLTIP_LABEL_STYLE = { color: '#334155', fontWeight: 700, marginBottom: 2 };
-
-/** Renders a numeric value at each radar vertex so scores read at a glance
- * instead of requiring a hover - the same "always-labeled" treatment every
- * other chart in the deck already uses. */
-function RadarValueLabel(props: { x?: number; y?: number; value?: number; fill?: string }) {
-  const { x, y, value, fill = '#334155' } = props;
-  if (x === undefined || y === undefined || value === undefined) return null;
-  return (
-    <text x={x} y={y - 8} textAnchor="middle" fontSize={10} fontWeight={700} fill={fill}>
-      {Math.round(value)}
-    </text>
-  );
-}
 
 // Every slide is laid out once at this fixed "design" resolution, then the
 // whole canvas is uniformly scaled (CSS transform) to whatever space is
@@ -472,7 +460,7 @@ function OverviewSlide({
                         stroke={bandColor}
                         fill={bandColor}
                         fillOpacity={0.2}
-                        label={<RadarValueLabel fill={bandColor} />}
+                        label={radarPointLabel({ categoryCount: radarData.length, fill: bandColor, fontSize: 10, radialInset: 9, formatter: (v) => String(Math.round(v)) })}
                       />
                       <Radar name="Peer Average" dataKey="peer" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.05} />
                       <Tooltip wrapperStyle={{ fontSize: 8 }} contentStyle={{ ...CHART_TOOLTIP_STYLE, fontSize: 10, padding: '4px 8px' }} />
@@ -1047,7 +1035,7 @@ function LeaderboardSlide({ slide, responses = [] }: { slide: Extract<Slide, { k
                     stroke={composite?.band.hex ?? '#2563eb'}
                     fill={composite?.band.hex ?? '#2563eb'}
                     fillOpacity={0.25}
-                    label={<RadarValueLabel fill={composite?.band.hex ?? '#2563eb'} />}
+                    label={radarPointLabel({ categoryCount: radarData.length, fill: composite?.band.hex ?? '#2563eb', fontSize: 10, radialInset: 10, formatter: (v) => String(Math.round(v)) })}
                   />
                   <Radar name="Peer Average" dataKey="peer" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.08} />
                   <Tooltip wrapperStyle={{ fontSize: 9 }} contentStyle={{ ...CHART_TOOLTIP_STYLE, fontSize: 10, padding: '4px 8px' }} />
@@ -1348,7 +1336,7 @@ function SpotlightSlide({ slide }: { slide: Extract<Slide, { kind: 'spotlight' }
               <PolarGrid />
               <PolarAngleAxis dataKey="section" tick={{ fontSize: 10 }} />
               <PolarRadiusAxis domain={[0, 100]} tick={{ fontSize: 9 }} />
-              <Radar name={slide.company} dataKey="value" stroke={slide.hex} fill={slide.hex} fillOpacity={0.35} label={<RadarValueLabel fill={slide.hex} />} />
+              <Radar name={slide.company} dataKey="value" stroke={slide.hex} fill={slide.hex} fillOpacity={0.35} label={radarPointLabel({ categoryCount: slide.radar.length, fill: slide.hex, fontSize: 10, radialInset: 11, formatter: (v) => String(Math.round(v)) })} />
               <Radar name="Peer average" dataKey="peer" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.15} />
               <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelStyle={CHART_TOOLTIP_LABEL_STYLE} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
