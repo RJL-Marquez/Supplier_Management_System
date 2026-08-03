@@ -65,12 +65,20 @@ export interface PartnerCompany {
   affiliation?: string;
   createdAt: string;
   // When this partner record was registered in the system. Purely
-  // descriptive metadata - eligibility/compliance is driven entirely by
-  // per-document expiry (see computeCompanyDocumentSummary), not by a
-  // contract date.
+  // descriptive metadata - document compliance (see computeCompanyDocumentSummary)
+  // is tracked independently and no longer affects evaluation eligibility.
   registeredAt?: string;
   isArchived?: boolean;
   accreditationStatus?: AccreditationStatus;
+  // Only meaningful when type === 'Supplier'. 1-20, admin-curated via the
+  // Supplier Ranking page - determines which 20 of the non-archived
+  // Suppliers are evaluable by default (see getSurveyEvaluationCompanies in
+  // analytics.ts). Unset/out-of-range means "not in the Top 20".
+  // NOT the same field as BranchRecord.supplierRank below (a per-branch
+  // 'Major'/'Regular' tier classification, edited from the Document
+  // Register and unrelated to evaluation eligibility) - always label this
+  // one "Evaluation Rank" in UI copy to avoid confusing the two.
+  evaluationRank?: number;
   // 1..n; almost always 1. Absent/empty means "not yet migrated" — callers
   // should treat that the same as a single minimal branch.
   branches?: BranchRecord[];
@@ -80,6 +88,13 @@ export interface SurveyResponse {
   responseId: string;
   surveyType: SurveyType;
   respondentType: string;
+  // When the respondent began answering (opened the Questions Form step, or
+  // - for an imported row - the source file's own "Start time" column).
+  // Absent on responses recorded before this field existed; never
+  // backfilled, since the real moment they started is unrecoverable.
+  startTime?: string;
+  // When the respondent completed/submitted - what "Completion time"/"Date"
+  // means everywhere else in the app (analytics, exports, etc.).
   submissionDate: string;
   company: string;
   department?: string;

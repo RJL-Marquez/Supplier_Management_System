@@ -214,6 +214,7 @@ interface CompressedSubmission {
   i: string; // responseId
   t: SurveyType; // surveyType
   r: string; // respondentType
+  st?: string; // startTime
   s: string; // submissionDate
   c: string; // company
   d?: string; // department
@@ -258,6 +259,7 @@ function compressResponses(responses: SurveyResponse[]): CompressedSubmission[] 
         c: resp.company,
         a: []
       };
+      if (resp.startTime !== undefined) comp.st = resp.startTime;
       if (resp.department !== undefined) comp.d = resp.department;
       if (resp.address !== undefined) comp.ad = resp.address;
       if (resp.respondentEmail !== undefined) comp.e = resp.respondentEmail;
@@ -307,6 +309,7 @@ function decompressResponses(compressed: any[]): SurveyResponse[] {
         rating: ans.v,
         comment: ans.m
       };
+      if (item.st !== undefined) resp.startTime = item.st;
       if (item.d !== undefined) resp.department = item.d;
       if (item.ad !== undefined) resp.address = item.ad;
       if (item.e !== undefined) resp.respondentEmail = item.e;
@@ -1312,7 +1315,8 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     respondentType: string,
     address: string | undefined,
     answers: { questionId: string; questionNumber: number; question: string; questionCategory: string; rating: Rating; comment: string }[],
-    respondentEmail?: string
+    respondentEmail?: string,
+    startTime?: string
   ) => {
     const targetSurvey = surveys.find((s) => s.id === surveyId);
     if (!targetSurvey) return null;
@@ -1324,6 +1328,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
       responseId,
       surveyType: targetSurvey.surveyType,
       respondentType,
+      startTime,
       submissionDate,
       company,
       department,
@@ -1383,6 +1388,19 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
       return updated;
     });
     return normalizedCompany;
+  };
+
+  // Update several partner companies in one state update/localStorage write
+  // (e.g. Supplier Ranking's drag-reorder, which can touch up to 20 rows at
+  // once) instead of one updatePartnerCompany call per row. Mirrors
+  // updateSurveysBulk's identical rationale/pattern above.
+  const updatePartnerCompaniesBulk = (updatedCompaniesList: PartnerCompany[]) => {
+    const map = new Map(updatedCompaniesList.map((c) => [c.id, normalizePartnerCompany(c)]));
+    setPartnerCompanies((currentCompanies) => {
+      const updated = currentCompanies.map((c) => map.has(c.id) ? map.get(c.id)! : c);
+      safeSetItem(PARTNER_COMPANIES_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   // Import the Master List Excel: fuzzy-matches each row's BP Name against
@@ -1880,6 +1898,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     partnerCompanies,
     addPartnerCompany,
     updatePartnerCompany,
+    updatePartnerCompaniesBulk,
     removePartnerCompany,
     previewMasterListImport,
     commitMasterListImport,

@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { ArchiveSeries, SurveyResponse, SurveyType } from '../types/survey';
 import { ExportTable, exportTablesAsCSV, exportTablesAsExcel } from './exporters';
+import { FORM_SPECS } from './rawEvaluationImport';
 
 // Single source of truth for the archived-response export/import shape, so
 // a file exported here can always be re-imported losslessly by the parser
@@ -15,7 +16,7 @@ import { ExportTable, exportTablesAsCSV, exportTablesAsExcel } from './exporters
 // - converting it into this same long-format shape before merging. See
 // convertWideBlocksToLegacyRows for that side.
 const COLUMNS = [
-  'responseId', 'surveyType', 'respondentType', 'submissionDate', 'company',
+  'responseId', 'surveyType', 'respondentType', 'startTime', 'submissionDate', 'company',
   'department', 'address', 'questionId', 'questionNumber', 'question',
   'questionCategory', 'rating', 'comment', 'respondentEmail',
   'archived', 'archivedAt', 'archivedBySurveyId', 'archivedBySurveyTitle',
@@ -88,6 +89,7 @@ function rowToResponse(row: Record<string, unknown>): { response?: SurveyRespons
       responseId,
       surveyType,
       respondentType: String(row.respondentType ?? '').trim(),
+      startTime: row.startTime ? String(row.startTime).trim() : undefined,
       submissionDate: String(row.submissionDate ?? '').trim(),
       company,
       department: row.department ? String(row.department) : undefined,
@@ -172,7 +174,16 @@ function blockToLegacyRows(block: ParsedBlock): Record<string, unknown>[] {
   });
 }
 
-const RAW_EXPORT_METADATA_HEADERS = new Set(['id', 'submission date', 'email', 'designation', 'department', 'company name']);
+// Legacy headers (pre-original-format-fidelity raw exports) plus every
+// metadata header the current FORM_SPECS-driven export can produce, across
+// all 3 survey types - a blanket "not a question column" filter that works
+// regardless of which era exported the file, or which survey type it's for
+// (Courier has no Designation:/Department:, Supplier/Subcontractor have no
+// Address, etc. - see rawResponseExport.ts).
+const RAW_EXPORT_METADATA_HEADERS = new Set([
+  'id', 'submission date', 'email', 'designation', 'department', 'company name',
+  ...Object.values(FORM_SPECS).flatMap((spec) => spec.metaHeaders).map((h) => h.trim().toLowerCase()),
+]);
 
 interface QuestionLookupEntry {
   questionId: string;
@@ -184,6 +195,31 @@ interface QuestionLookupEntry {
   isText: boolean;
 }
 
+// Matches a wide-export column header against the official form layout
+// (verbatim header text, e.g. "Reliablity/Delivery Remarks") - always
+// available, independent of whatever data already happens to be loaded.
+// Matrix-remark columns aren't included here: on export their text isn't
+// its own question, it's folded into the comment of the sub-questions it
+// applies to (see attachOfficialMatrixRemarks below), mirroring how
+// rawEvaluationImport.ts's forward import handles the same column.
+function buildOfficialQuestionLookup(surveyType: SurveyType): Map<string, QuestionLookupEntry> {
+  const lookup = new Map<string, QuestionLookupEntry>();
+  FORM_SPECS[surveyType].columns.forEach((col) => {
+    if (col.kind === 'matrix-remark') return;
+    lookup.set(col.originalHeader.trim().toLowerCase(), {
+      questionId: col.questionId,
+      questionNumber: col.questionNumber,
+      questionCategory: col.questionCategory,
+      isText: col.kind === 'text',
+    });
+  });
+  return lookup;
+}
+
+// Falls back to whatever's already in the app's data for this survey type -
+// covers older raw exports (headers were the app's own paraphrased question
+// text, not the verbatim form headers) and fully custom admin-authored
+// questions that were never part of an official form.
 function buildQuestionLookup(existingResponses: SurveyResponse[], surveyType: SurveyType): Map<string, QuestionLookupEntry> {
   const byId = new Map<string, { questionNumber: number; question: string; questionCategory: string; allNa: boolean }>();
   existingResponses
@@ -210,6 +246,25 @@ function buildQuestionLookup(existingResponses: SurveyResponse[], surveyType: Su
   return lookup;
 }
 
+// Header text -> the questionIds a matrix-remark column's value should be
+// attached to as `comment` (see attachOfficialMatrixRemarks).
+function buildOfficialMatrixRemarkLookup(surveyType: SurveyType): Map<string, string[]> {
+  const lookup = new Map<string, string[]>();
+  FORM_SPECS[surveyType].columns.forEach((col) => {
+    if (col.kind === 'matrix-remark') lookup.set(col.originalHeader.trim().toLowerCase(), col.appliesTo);
+  });
+  return lookup;
+}
+
+function findColIndex(header: string[], candidates: string[]): number {
+  const lowered = header.map((h) => h.trim().toLowerCase());
+  for (const candidate of candidates) {
+    const idx = lowered.indexOf(candidate);
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
 // The raw export's filename always starts with "<surveytype>_raw_evaluations"
 // (see rawResponseExport.ts) - trust that first, since a header-overlap
 // guess only works once the app already has some live data of that type to
@@ -227,9 +282,13 @@ function resolveSurveyTypeForImport(
   let bestType: SurveyType = VALID_SURVEY_TYPES[0];
   let bestScore = -1;
   VALID_SURVEY_TYPES.forEach((type) => {
-    const known = new Set(
-      existingResponses.filter((r) => r.surveyType === type).map((r) => r.question.trim().toLowerCase())
-    );
+    // Official form headers are always known, even before any data of this
+    // type exists yet - existing live/imported question text is folded in
+    // too, so a still-unmatched older export (paraphrased headers) keeps working.
+    const known = new Set([
+      ...FORM_SPECS[type].columns.map((col) => col.originalHeader.trim().toLowerCase()),
+      ...existingResponses.filter((r) => r.surveyType === type).map((r) => r.question.trim().toLowerCase()),
+    ]);
     const overlap = [...headerSet].filter((h) => known.has(h)).length;
     if (overlap > bestScore) {
       bestScore = overlap;
@@ -250,17 +309,22 @@ function convertWideBlocksToLegacyRows(
   const firstHeader = blocks[0]?.header ?? [];
   const questionHeaders = firstHeader.filter((h) => !RAW_EXPORT_METADATA_HEADERS.has(h.trim().toLowerCase()));
   const surveyType = resolveSurveyTypeForImport(fileName, questionHeaders, existingResponses);
-  const questionLookup = buildQuestionLookup(existingResponses, surveyType);
+  const officialLookup = buildOfficialQuestionLookup(surveyType);
+  const officialMatrixRemarks = buildOfficialMatrixRemarkLookup(surveyType);
+  const fallbackLookup = buildQuestionLookup(existingResponses, surveyType);
 
   const rows: Record<string, unknown>[] = [];
 
   blocks.forEach((block) => {
-    const colIndex = (name: string) => block.header.findIndex((h) => h.trim().toLowerCase() === name);
-    const dateIdx = colIndex('submission date');
-    const emailIdx = colIndex('email');
-    const designationIdx = colIndex('designation');
-    const departmentIdx = colIndex('department');
-    const companyNameIdx = colIndex('company name');
+    const dateIdx = findColIndex(block.header, ['completion time', 'submission date']);
+    const startTimeIdx = findColIndex(block.header, ['start time']);
+    const emailIdx = findColIndex(block.header, ['email']);
+    const designationIdx = findColIndex(block.header, ['designation:', 'designation']);
+    const departmentIdx = findColIndex(block.header, ['department:', 'department']);
+    const companyNameIdx = findColIndex(
+      block.header,
+      [...FORM_SPECS[surveyType].metaHeaders.filter((h) => h.toLowerCase().endsWith('name:')).map((h) => h.toLowerCase()), 'company name']
+    );
     const questionCols = block.header
       .map((h, i) => ({ h, i }))
       .filter(({ h }) => !RAW_EXPORT_METADATA_HEADERS.has(h.trim().toLowerCase()));
@@ -269,32 +333,48 @@ function convertWideBlocksToLegacyRows(
       const company = (companyNameIdx >= 0 ? String(row[companyNameIdx] ?? '') : block.title).trim() || block.title;
       const email = emailIdx >= 0 ? String(row[emailIdx] ?? '').trim() : '';
       const submissionDate = dateIdx >= 0 ? String(row[dateIdx] ?? '').trim() : '';
+      const startTime = startTimeIdx >= 0 ? String(row[startTimeIdx] ?? '').trim() : '';
       const designation = designationIdx >= 0 ? String(row[designationIdx] ?? '').trim() : '';
       const department = departmentIdx >= 0 ? String(row[departmentIdx] ?? '').trim() : '';
       // Deterministic (not random), so re-importing the same export twice
       // is recognized as a duplicate instead of creating copies.
       const responseId = `WIDE::${surveyType}::${company}::${email}::${submissionDate}`;
 
+      // Matrix-remark columns (Subcontractor only) don't produce their own
+      // row - their text attaches as `comment` on every sub-question row it
+      // applies to, mirroring rawEvaluationImport.ts's forward-import behavior.
+      const remarkByQuestionId = new Map<string, string>();
+      questionCols.forEach(({ h, i }) => {
+        const appliesTo = officialMatrixRemarks.get(h.trim().toLowerCase());
+        if (!appliesTo) return;
+        const raw = row[i];
+        const remark = raw === undefined || raw === null ? '' : String(raw).trim();
+        if (remark) appliesTo.forEach((qid) => remarkByQuestionId.set(qid, remark));
+      });
+
       questionCols.forEach(({ h, i }, qIdx) => {
+        if (officialMatrixRemarks.has(h.trim().toLowerCase())) return; // handled above, not its own question row
         const raw = row[i];
         const value = raw === undefined || raw === null ? '' : String(raw).trim();
         if (value === '') return; // nothing recorded for this question on this row
 
-        const known = questionLookup.get(h.trim().toLowerCase());
+        const known = officialLookup.get(h.trim().toLowerCase()) ?? fallbackLookup.get(h.trim().toLowerCase());
         const questionId = known?.questionId ?? `IMPORTED-${surveyType}-${qIdx}`;
         const questionNumber = known?.questionNumber ?? qIdx + 1;
         const questionCategory = known?.questionCategory ?? 'Imported';
-        // No match for this exact question text anywhere in the live
-        // dataset (a brand-new deployment, or a renamed question) - fall
-        // back to a plain numeric-vs-text guess so the row still imports.
+        // No match for this exact question text anywhere in the official
+        // form or the live dataset (a brand-new deployment, or a renamed
+        // question) - fall back to a plain numeric-vs-text guess so the
+        // row still imports.
         const isText = known ? known.isText : !(value !== 'N/A' && Number.isFinite(Number(value)));
         const rating = !isText && value !== 'N/A' ? Number(value) : 'N/A';
-        const comment = isText && value !== 'N/A' ? value : '';
+        const comment = isText && value !== 'N/A' ? value : (remarkByQuestionId.get(questionId) ?? '');
 
         rows.push({
           responseId,
           surveyType,
           respondentType: designation,
+          startTime: startTime || undefined,
           submissionDate,
           company,
           department,

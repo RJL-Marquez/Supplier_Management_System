@@ -16,6 +16,11 @@ type RatingColumn = {
   questionNumber: number;
   question: string;
   questionCategory: string;
+  // Verbatim header text from the official Microsoft Forms export (this
+  // exact column, whitespace-collapsed) - kept distinct from `question`
+  // (the app's own paraphrased/display wording) so the Raw Data Export can
+  // reproduce the original form's header row exactly. See rawResponseExport.ts.
+  originalHeader: string;
 };
 
 type TextColumn = {
@@ -25,6 +30,7 @@ type TextColumn = {
   questionNumber: number;
   question: string;
   questionCategory: string;
+  originalHeader: string;
 };
 
 // Subcontractor-only: a shared remarks column that attaches its text as the
@@ -35,11 +41,20 @@ type MatrixRemarkColumn = {
   kind: 'matrix-remark';
   col: number;
   appliesTo: string[];
+  originalHeader: string;
 };
 
-type ColumnDef = RatingColumn | TextColumn | MatrixRemarkColumn;
+export type ColumnDef = RatingColumn | TextColumn | MatrixRemarkColumn;
 
-interface FormSpec {
+// Ordered slot kinds behind each of FormSpec's `metaHeaders` entries - lets
+// the Raw Data Export fill every metadata column generically (see
+// rawResponseExport.ts's metaCellValue) instead of hardcoding per-surveyType
+// column positions in two places. 'start'/'name'/'lastModified' have no
+// backing data in this app's SurveyResponse model (Microsoft Forms captures
+// them; nothing here does yet), so those columns are always exported blank.
+export type MetaFieldKind = 'id' | 'start' | 'completion' | 'email' | 'name' | 'lastModified' | 'designation' | 'department' | 'address' | 'company';
+
+export interface FormSpec {
   surveyType: SurveyType;
   idCol: number;
   startTimeCol: number;
@@ -50,10 +65,17 @@ interface FormSpec {
   nameCol: number;
   addressCol?: number;
   headerAnchor: { col: number; text: string };
+  // Verbatim headers for the non-question columns (ID..company name/address),
+  // in the same order as the official form - see MetaFieldKind above.
+  metaHeaders: string[];
+  metaFields: MetaFieldKind[];
   columns: ColumnDef[];
 }
 
-const FORM_SPECS: Record<SurveyType, FormSpec> = {
+// Exported so the Raw Data Export (rawResponseExport.ts) can reproduce this
+// exact official-form header/column layout instead of deriving headers from
+// whatever's already in the response data.
+export const FORM_SPECS: Record<SurveyType, FormSpec> = {
   Supplier: {
     surveyType: 'Supplier',
     idCol: 0,
@@ -64,30 +86,32 @@ const FORM_SPECS: Record<SurveyType, FormSpec> = {
     departmentCol: 7,
     nameCol: 8,
     headerAnchor: { col: 8, text: 'Supplier Name' },
+    metaHeaders: ['ID', 'Start time', 'Completion time', 'Email', 'Name', 'Last modified time', 'Designation:', 'Department:', 'Supplier Name:'],
+    metaFields: ['id', 'start', 'completion', 'email', 'name', 'lastModified', 'designation', 'department', 'company'],
     columns: [
-      { kind: 'text', col: 9, questionId: 'Q-SUP-03', questionNumber: 1, question: 'Period Covered', questionCategory: 'General' },
-      { kind: 'rating', col: 10, questionId: 'Q-SUP-05', questionNumber: 2, question: 'Does the supplier use the correct documents to facilitate the delivery of sale transaction? (BIR Registered, DR, SI/BS, OR/CR)', questionCategory: 'Documentation' },
-      { kind: 'rating', col: 11, questionId: 'Q-SUP-06', questionNumber: 3, question: 'Are the required documents complete for every transaction?', questionCategory: 'Documentation' },
-      { kind: 'rating', col: 12, questionId: 'Q-SUP-07', questionNumber: 4, question: 'Are documents clean, neat and readable?', questionCategory: 'Documentation' },
-      { kind: 'rating', col: 13, questionId: 'Q-SUP-08', questionNumber: 5, question: 'Are documents presented/submitted upon delivery?', questionCategory: 'Documentation' },
-      { kind: 'rating', col: 14, questionId: 'Q-SUP-09', questionNumber: 6, question: 'Are documents presented/submitted upon payments?', questionCategory: 'Documentation' },
-      { kind: 'text', col: 15, questionId: 'Q-SUP-10', questionNumber: 7, question: 'Documentation Remarks', questionCategory: 'Documentation' },
-      { kind: 'rating', col: 16, questionId: 'Q-SUP-11', questionNumber: 8, question: 'Does the supplier deliver the product on time based on the agreed schedule?', questionCategory: 'Delivery' },
-      { kind: 'rating', col: 17, questionId: 'Q-SUP-12', questionNumber: 9, question: 'Does the supplier deliver the product in proper packaging and in good condition?', questionCategory: 'Delivery' },
-      { kind: 'rating', col: 18, questionId: 'Q-SUP-13', questionNumber: 10, question: 'Does the supplier deliver the products sealed and safe and free for possible contamination?', questionCategory: 'Delivery' },
-      { kind: 'text', col: 19, questionId: 'Q-SUP-14', questionNumber: 11, question: 'Delivery Remarks', questionCategory: 'Delivery' },
-      { kind: 'rating', col: 20, questionId: 'Q-SUP-15', questionNumber: 12, question: 'Does the supplier change the price without any notice to MBS Procurement/BSM?', questionCategory: 'Price' },
-      { kind: 'rating', col: 21, questionId: 'Q-SUP-16', questionNumber: 13, question: 'Is the supplier open for negotiation in terms of price?', questionCategory: 'Price' },
-      { kind: 'rating', col: 22, questionId: 'Q-SUP-17', questionNumber: 14, question: 'Is the supplier pricing competitive with other suppliers?', questionCategory: 'Price' },
-      { kind: 'text', col: 23, questionId: 'Q-SUP-18', questionNumber: 15, question: 'Price/Cost Effectiveness Remarks', questionCategory: 'Price' },
-      { kind: 'rating', col: 24, questionId: 'Q-SUP-19', questionNumber: 16, question: 'Does the supplier deliver the product with good quality?', questionCategory: 'Quality' },
-      { kind: 'rating', col: 25, questionId: 'Q-SUP-20', questionNumber: 17, question: 'Does the supplier take immediate action for defective product upon delivery/RMA?', questionCategory: 'Quality' },
-      { kind: 'rating', col: 26, questionId: 'Q-SUP-21', questionNumber: 18, question: 'Does the supplier replace the defective product immediately?', questionCategory: 'Quality' },
-      { kind: 'text', col: 27, questionId: 'Q-SUP-22', questionNumber: 19, question: 'Quality Remarks', questionCategory: 'Quality' },
-      { kind: 'rating', col: 28, questionId: 'Q-SUP-23', questionNumber: 20, question: 'Do supplier responsive and easy to contact?', questionCategory: 'Communication' },
-      { kind: 'rating', col: 29, questionId: 'Q-SUP-24', questionNumber: 21, question: 'Does the supplier proactively communicate to MBS Representatives in terms of any discrepancy or changes in transaction?', questionCategory: 'Communication' },
-      { kind: 'rating', col: 30, questionId: 'Q-SUP-25', questionNumber: 22, question: 'Does the supplier proactively communicate to MBS Representatives fact-based concern on product/technology?', questionCategory: 'Communication' },
-      { kind: 'text', col: 31, questionId: 'Q-SUP-26', questionNumber: 23, question: 'Communication Remarks', questionCategory: 'Communication' },
+      { kind: 'text', col: 9, questionId: 'Q-SUP-03', questionNumber: 1, question: 'Period Covered', questionCategory: 'General', originalHeader: 'Period Covered:' },
+      { kind: 'rating', col: 10, questionId: 'Q-SUP-05', questionNumber: 2, question: 'Does the supplier use the correct documents to facilitate the delivery of sale transaction? (BIR Registered, DR, SI/BS, OR/CR)', questionCategory: 'Documentation', originalHeader: 'Does the supplier use the correct documents to facilitate the delivery of sale transaction? (BIR Registered, DR, SI/BS, OR/CR)' },
+      { kind: 'rating', col: 11, questionId: 'Q-SUP-06', questionNumber: 3, question: 'Are the required documents complete for every transaction?', questionCategory: 'Documentation', originalHeader: 'Are the required documents complete for every transaction?' },
+      { kind: 'rating', col: 12, questionId: 'Q-SUP-07', questionNumber: 4, question: 'Are documents clean, neat and readable?', questionCategory: 'Documentation', originalHeader: 'Are documents clean, neat and readable ?' },
+      { kind: 'rating', col: 13, questionId: 'Q-SUP-08', questionNumber: 5, question: 'Are documents presented/submitted upon delivery?', questionCategory: 'Documentation', originalHeader: 'Are documents presented/submitted upon delivery?' },
+      { kind: 'rating', col: 14, questionId: 'Q-SUP-09', questionNumber: 6, question: 'Are documents presented/submitted upon payments?', questionCategory: 'Documentation', originalHeader: 'Are documents presented/submitted upon payments?' },
+      { kind: 'text', col: 15, questionId: 'Q-SUP-10', questionNumber: 7, question: 'Documentation Remarks', questionCategory: 'Documentation', originalHeader: 'Documentation Remarks' },
+      { kind: 'rating', col: 16, questionId: 'Q-SUP-11', questionNumber: 8, question: 'Does the supplier deliver the product on time based on the agreed schedule?', questionCategory: 'Delivery', originalHeader: 'Does the supplier deliver the product on time based on the agreed schedule?' },
+      { kind: 'rating', col: 17, questionId: 'Q-SUP-12', questionNumber: 9, question: 'Does the supplier deliver the product in proper packaging and in good condition?', questionCategory: 'Delivery', originalHeader: 'Does the supplier deliver the product in proper packaging and in good condition?' },
+      { kind: 'rating', col: 18, questionId: 'Q-SUP-13', questionNumber: 10, question: 'Does the supplier deliver the products sealed and safe and free for possible contamination?', questionCategory: 'Delivery', originalHeader: 'Does the supplier deliver the products sealed and safe and free for possible contamination?' },
+      { kind: 'text', col: 19, questionId: 'Q-SUP-14', questionNumber: 11, question: 'Delivery Remarks', questionCategory: 'Delivery', originalHeader: 'Delivery Remarks' },
+      { kind: 'rating', col: 20, questionId: 'Q-SUP-15', questionNumber: 12, question: 'Does the supplier change the price without any notice to MBS Procurement/BSM?', questionCategory: 'Price', originalHeader: 'Does the supplier change the price without any notice to MBS Procurement/BSM?' },
+      { kind: 'rating', col: 21, questionId: 'Q-SUP-16', questionNumber: 13, question: 'Is the supplier open for negotiation in terms of price?', questionCategory: 'Price', originalHeader: 'Is the supplier open for negotiation in terms of price?' },
+      { kind: 'rating', col: 22, questionId: 'Q-SUP-17', questionNumber: 14, question: 'Is the supplier pricing competitive with other suppliers?', questionCategory: 'Price', originalHeader: 'Is the supplier pricing competitive with other suppliers?' },
+      { kind: 'text', col: 23, questionId: 'Q-SUP-18', questionNumber: 15, question: 'Price/Cost Effectiveness Remarks', questionCategory: 'Price', originalHeader: 'Price/Cost Effectiveness Remarks' },
+      { kind: 'rating', col: 24, questionId: 'Q-SUP-19', questionNumber: 16, question: 'Does the supplier deliver the product with good quality?', questionCategory: 'Quality', originalHeader: 'Does the supplier deliver the product with good quality?' },
+      { kind: 'rating', col: 25, questionId: 'Q-SUP-20', questionNumber: 17, question: 'Does the supplier take immediate action for defective product upon delivery/RMA?', questionCategory: 'Quality', originalHeader: 'Does the supplier take immediate action for defective product upon delivery/RMA?' },
+      { kind: 'rating', col: 26, questionId: 'Q-SUP-21', questionNumber: 18, question: 'Does the supplier replace the defective product immediately?', questionCategory: 'Quality', originalHeader: 'Does the supplier replace the defective product immediately?' },
+      { kind: 'text', col: 27, questionId: 'Q-SUP-22', questionNumber: 19, question: 'Quality Remarks', questionCategory: 'Quality', originalHeader: 'Quality Remarks' },
+      { kind: 'rating', col: 28, questionId: 'Q-SUP-23', questionNumber: 20, question: 'Do supplier responsive and easy to contact?', questionCategory: 'Communication', originalHeader: 'Do supplier responsive and easy to contact?' },
+      { kind: 'rating', col: 29, questionId: 'Q-SUP-24', questionNumber: 21, question: 'Does the supplier proactively communicate to MBS Representatives in terms of any discrepancy or changes in transaction?', questionCategory: 'Communication', originalHeader: 'Does the supplier proactively communicate to MBS Representatives in terms of any discrepancy or changes in transaction?' },
+      { kind: 'rating', col: 30, questionId: 'Q-SUP-25', questionNumber: 22, question: 'Does the supplier proactively communicate to MBS Representatives fact-based concern on product/technology?', questionCategory: 'Communication', originalHeader: 'Does the supplier proactively communicate to MBS Representatives fact-based concern on product/ technology?' },
+      { kind: 'text', col: 31, questionId: 'Q-SUP-26', questionNumber: 23, question: 'Communication Remarks', questionCategory: 'Communication', originalHeader: 'Communication Remarks' },
     ],
   },
   Courier: {
@@ -99,25 +123,27 @@ const FORM_SPECS: Record<SurveyType, FormSpec> = {
     nameCol: 6,
     addressCol: 7,
     headerAnchor: { col: 6, text: 'Courier Name' },
+    metaHeaders: ['ID', 'Start time', 'Completion time', 'Email', 'Name', 'Last modified time', 'Courier Name:', 'Courier Address:'],
+    metaFields: ['id', 'start', 'completion', 'email', 'name', 'lastModified', 'company', 'address'],
     columns: [
-      { kind: 'text', col: 8, questionId: 'Q-CON-03', questionNumber: 1, question: 'Period Covered', questionCategory: 'General' },
-      { kind: 'rating', col: 9, questionId: 'Q-CON-04', questionNumber: 2, question: 'Does the courier consistently deliver our goods to our customers on the agreed date or period?', questionCategory: 'Delivery' },
-      { kind: 'rating', col: 10, questionId: 'Q-CON-05', questionNumber: 5, question: 'Does the courier service maintain a consistent level of acceptable service over time?', questionCategory: 'Delivery' },
-      { kind: 'text', col: 11, questionId: 'Q-CON-06', questionNumber: 6, question: 'Please provide any additional comments on Reliability and Delivery performance.', questionCategory: 'Delivery' },
-      { kind: 'rating', col: 12, questionId: 'Q-CON-07', questionNumber: 7, question: "Are the courier's rates competitive and transparent?", questionCategory: 'Commercial' },
-      { kind: 'rating', col: 13, questionId: 'Q-CON-08', questionNumber: 8, question: 'Are there any hidden fees or surcharges?', questionCategory: 'Commercial' },
-      { kind: 'rating', col: 14, questionId: 'Q-CON-09', questionNumber: 9, question: 'Are they offering flexible payment options, e.g., credit cards or invoicing, and payment credit line?', questionCategory: 'Commercial' },
-      { kind: 'text', col: 15, questionId: 'Q-CON-10', questionNumber: 10, question: 'Please provide any additional comments on Cost and pricing.', questionCategory: 'Commercial' },
-      { kind: 'rating', col: 16, questionId: 'Q-CON-11', questionNumber: 11, question: 'Do they have advanced tracking systems allowing customers for real-time monitoring of the status and location of their packages?', questionCategory: 'Technology' },
-      { kind: 'rating', col: 17, questionId: 'Q-CON-12', questionNumber: 12, question: 'Do they have online platforms and mobile apps provided to customers to schedule pickups, make payments, and arrange deliveries?', questionCategory: 'Technology' },
-      { kind: 'text', col: 18, questionId: 'Q-CON-13', questionNumber: 13, question: 'Please provide any additional comments on Technology and online tools.', questionCategory: 'Technology' },
-      { kind: 'rating', col: 19, questionId: 'Q-CON-14', questionNumber: 14, question: 'Do they have a helpful and responsive customer support team?', questionCategory: 'Support' },
-      { kind: 'rating', col: 20, questionId: 'Q-CON-15', questionNumber: 15, question: "Do they effectively handle the customer's issues, and complaints, e.g., lost shipment, item, defective items?", questionCategory: 'Support' },
-      { kind: 'rating', col: 21, questionId: 'Q-CON-16', questionNumber: 16, question: 'Does the courier have a prompt payment process in case of mishandled goods, e.g., broken or missing goods?', questionCategory: 'Support' },
-      { kind: 'text', col: 22, questionId: 'Q-CON-17', questionNumber: 17, question: 'Please provide any additional comments on Customer Service and support.', questionCategory: 'Support' },
-      { kind: 'rating', col: 23, questionId: 'Q-CON-18', questionNumber: 18, question: "Do they ensure the safety and security of our packages/parcels during transit and delivery to the client's site?", questionCategory: 'Security' },
-      { kind: 'rating', col: 24, questionId: 'Q-CON-19', questionNumber: 19, question: 'Do they include insurance options to cover potential loss or damage to our items?', questionCategory: 'Security' },
-      { kind: 'text', col: 25, questionId: 'Q-CON-20', questionNumber: 20, question: 'Please provide any additional comments on Security and safety.', questionCategory: 'Security' },
+      { kind: 'text', col: 8, questionId: 'Q-CON-03', questionNumber: 1, question: 'Period Covered', questionCategory: 'General', originalHeader: 'Period Covered:' },
+      { kind: 'rating', col: 9, questionId: 'Q-CON-04', questionNumber: 2, question: 'Does the courier consistently deliver our goods to our customers on the agreed date or period?', questionCategory: 'Delivery', originalHeader: 'Does the courier consistently deliver our goods to our customers on the agreed date or period?' },
+      { kind: 'rating', col: 10, questionId: 'Q-CON-05', questionNumber: 5, question: 'Does the courier service maintain a consistent level of acceptable service over time?', questionCategory: 'Delivery', originalHeader: 'Does the courier service maintain a consistent level of acceptable (define) service over time?' },
+      { kind: 'text', col: 11, questionId: 'Q-CON-06', questionNumber: 6, question: 'Please provide any additional comments on Reliability and Delivery performance.', questionCategory: 'Delivery', originalHeader: 'Reliablity/Delivery Remarks' },
+      { kind: 'rating', col: 12, questionId: 'Q-CON-07', questionNumber: 7, question: "Are the courier's rates competitive and transparent?", questionCategory: 'Commercial', originalHeader: "Are the courier's rates competitive and transparent?" },
+      { kind: 'rating', col: 13, questionId: 'Q-CON-08', questionNumber: 8, question: 'Are there any hidden fees or surcharges?', questionCategory: 'Commercial', originalHeader: 'Are there any hidden fees or surcharges?' },
+      { kind: 'rating', col: 14, questionId: 'Q-CON-09', questionNumber: 9, question: 'Are they offering flexible payment options, e.g., credit cards or invoicing, and payment credit line?', questionCategory: 'Commercial', originalHeader: 'Are they offering flexible payment options, e.g., credit cards or invoicing, and payment credit line?' },
+      { kind: 'text', col: 15, questionId: 'Q-CON-10', questionNumber: 10, question: 'Please provide any additional comments on Cost and pricing.', questionCategory: 'Commercial', originalHeader: 'Cost Remarks:' },
+      { kind: 'rating', col: 16, questionId: 'Q-CON-11', questionNumber: 11, question: 'Do they have advanced tracking systems allowing customers for real-time monitoring of the status and location of their packages?', questionCategory: 'Technology', originalHeader: 'Do they have advanced tracking systems allowing customers for real-time monitoring of the status and location of their packages?' },
+      { kind: 'rating', col: 17, questionId: 'Q-CON-12', questionNumber: 12, question: 'Do they have online platforms and mobile apps provided to customers to schedule pickups, make payments, and arrange deliveries?', questionCategory: 'Technology', originalHeader: 'Do they have online platforms and mobile apps provided to customers to schedule pickups, make payments, and arrange deliveries?' },
+      { kind: 'text', col: 18, questionId: 'Q-CON-13', questionNumber: 13, question: 'Please provide any additional comments on Technology and online tools.', questionCategory: 'Technology', originalHeader: 'Technology Remarks' },
+      { kind: 'rating', col: 19, questionId: 'Q-CON-14', questionNumber: 14, question: 'Do they have a helpful and responsive customer support team?', questionCategory: 'Support', originalHeader: 'Do they have a helpful and responsive customer support team?' },
+      { kind: 'rating', col: 20, questionId: 'Q-CON-15', questionNumber: 15, question: "Do they effectively handle the customer's issues, and complaints, e.g., lost shipment, item, defective items?", questionCategory: 'Support', originalHeader: "Do they effectively handle the customer's issues, and complaints, e.g., lost shipment, item, defective items?" },
+      { kind: 'rating', col: 21, questionId: 'Q-CON-16', questionNumber: 16, question: 'Does the courier have a prompt payment process in case of mishandled goods, e.g., broken or missing goods?', questionCategory: 'Support', originalHeader: 'Does the courier have a prompt payment process in case of mishandled goods, e.g., broken or missing goods?' },
+      { kind: 'text', col: 22, questionId: 'Q-CON-17', questionNumber: 17, question: 'Please provide any additional comments on Customer Service and support.', questionCategory: 'Support', originalHeader: 'Customer Service Remarks:' },
+      { kind: 'rating', col: 23, questionId: 'Q-CON-18', questionNumber: 18, question: "Do they ensure the safety and security of our packages/parcels during transit and delivery to the client's site?", questionCategory: 'Security', originalHeader: "Do they ensure the safety and security of our packages/parcels during transit and delivery to the client's site?" },
+      { kind: 'rating', col: 24, questionId: 'Q-CON-19', questionNumber: 19, question: 'Do they include insurance options to cover potential loss or damage to our items?', questionCategory: 'Security', originalHeader: 'Do they include insurance options to cover potential loss or damage to our items?' },
+      { kind: 'text', col: 25, questionId: 'Q-CON-20', questionNumber: 20, question: 'Please provide any additional comments on Security and safety.', questionCategory: 'Security', originalHeader: 'Security Remarks:' },
     ],
   },
   Subcontractor: {
@@ -130,36 +156,38 @@ const FORM_SPECS: Record<SurveyType, FormSpec> = {
     departmentCol: 7,
     nameCol: 8,
     headerAnchor: { col: 8, text: 'Subcontractor Name' },
+    metaHeaders: ['ID', 'Start time', 'Completion time', 'Email', 'Name', 'Last modified time', 'Designation:', 'Department:', 'Subcontractor Name:'],
+    metaFields: ['id', 'start', 'completion', 'email', 'name', 'lastModified', 'designation', 'department', 'company'],
     columns: [
-      { kind: 'text', col: 9, questionId: 'Q-SUB-01', questionNumber: 1, question: 'Project Name', questionCategory: 'General' },
-      { kind: 'text', col: 10, questionId: 'Q-SUB-02', questionNumber: 2, question: 'Products or Services', questionCategory: 'General' },
-      { kind: 'text', col: 11, questionId: 'Q-SUB-03', questionNumber: 3, question: 'Project Duration', questionCategory: 'General' },
+      { kind: 'text', col: 9, questionId: 'Q-SUB-01', questionNumber: 1, question: 'Project Name', questionCategory: 'General', originalHeader: 'Project Name:' },
+      { kind: 'text', col: 10, questionId: 'Q-SUB-02', questionNumber: 2, question: 'Products or Services', questionCategory: 'General', originalHeader: 'Products or Services:' },
+      { kind: 'text', col: 11, questionId: 'Q-SUB-03', questionNumber: 3, question: 'Project Duration', questionCategory: 'General', originalHeader: 'Project Duration (From To)' },
 
-      { kind: 'rating', col: 12, questionId: 'Q-SUB-04-a', questionNumber: 4, question: "Delivery / Project Timeliness - Except for circumstances beyond the subcontractor's control, tasks and deliverables were completed on time or ahead of the schedule in the contact.", questionCategory: 'Delivery' },
-      { kind: 'rating', col: 13, questionId: 'Q-SUB-04-b', questionNumber: 4.1, question: 'Delivery / Project Timeliness - Delivers and use all resources required to the project and turnover all excess materials to MBS Project Manager.', questionCategory: 'Delivery' },
-      { kind: 'matrix-remark', col: 14, appliesTo: ['Q-SUB-04-a', 'Q-SUB-04-b'] },
+      { kind: 'rating', col: 12, questionId: 'Q-SUB-04-a', questionNumber: 4, question: "Delivery / Project Timeliness - Except for circumstances beyond the subcontractor's control, tasks and deliverables were completed on time or ahead of the schedule in the contact.", questionCategory: 'Delivery', originalHeader: "a. Except for circumstances beyond the contractor's control, tasks and deliverables were completed on time or ahead of the schedule in the contact. ..." },
+      { kind: 'rating', col: 13, questionId: 'Q-SUB-04-b', questionNumber: 4.1, question: 'Delivery / Project Timeliness - Delivers and use all resources required to the project and turnover all excess materials to MBS Project Manager.', questionCategory: 'Delivery', originalHeader: 'b. Delivers and use all resources required to the project and turnover all excess materials to MBS Project Manager Consist...' },
+      { kind: 'matrix-remark', col: 14, appliesTo: ['Q-SUB-04-a', 'Q-SUB-04-b'], originalHeader: 'Delivery / Project Timeliness Remarks:' },
 
-      { kind: 'rating', col: 15, questionId: 'Q-SUB-06-a', questionNumber: 6, question: "Documentation / Invoicing - The subcontractor's invoices/billing were correct, accurate and contained all information of references.", questionCategory: 'Documentation' },
-      { kind: 'rating', col: 16, questionId: 'Q-SUB-06-b', questionNumber: 6.1, question: 'Documentation / Invoicing - All required documents are submitted on time or within the time frames of agreement e.g. Service report, billing, COC, etc.', questionCategory: 'Documentation' },
-      { kind: 'rating', col: 17, questionId: 'Q-SUB-06-c', questionNumber: 6.2, question: 'Documentation / Invoicing - The proposal provides a clear breakdown matched with what MBS requires.', questionCategory: 'Documentation' },
-      { kind: 'matrix-remark', col: 18, appliesTo: ['Q-SUB-06-a', 'Q-SUB-06-b', 'Q-SUB-06-c'] },
+      { kind: 'rating', col: 15, questionId: 'Q-SUB-06-a', questionNumber: 6, question: "Documentation / Invoicing - The subcontractor's invoices/billing were correct, accurate and contained all information of references.", questionCategory: 'Documentation', originalHeader: "a. The subcontractor's invoices/billing were correct, accurate and contained all information of references. Always = 2, limited correction and tolerabl..." },
+      { kind: 'rating', col: 16, questionId: 'Q-SUB-06-b', questionNumber: 6.1, question: 'Documentation / Invoicing - All required documents are submitted on time or within the time frames of agreement e.g. Service report, billing, COC, etc.', questionCategory: 'Documentation', originalHeader: 'b. All required documents are submitted on time or within the time frames of agreement e.g. Service report, billing, COC, etc. ...' },
+      { kind: 'rating', col: 17, questionId: 'Q-SUB-06-c', questionNumber: 6.2, question: 'Documentation / Invoicing - The proposal provides a clear breakdown matched with what MBS requires.', questionCategory: 'Documentation', originalHeader: 'c. The proposal provides a clear breakdown matched with what MBS requires. Consistently = 2, the scope is inaccurate but does not lead to price increase...' },
+      { kind: 'matrix-remark', col: 18, appliesTo: ['Q-SUB-06-a', 'Q-SUB-06-b', 'Q-SUB-06-c'], originalHeader: 'Documentation / Invoicing Remarks:' },
 
-      { kind: 'rating', col: 19, questionId: 'Q-SUB-08-a', questionNumber: 8, question: 'Cost Control / Pricing - Give competitive prices, discount, and reasonable prices.', questionCategory: 'Cost' },
-      { kind: 'rating', col: 20, questionId: 'Q-SUB-08-b', questionNumber: 8.1, question: 'Cost Control / Pricing - Request for change of orders for additional works/cost ONLY outside the scope of contract.', questionCategory: 'Cost' },
-      { kind: 'rating', col: 21, questionId: 'Q-SUB-08-c', questionNumber: 8.2, question: 'Cost Control / Pricing - Indication that the subcontractor has financial problem which cannot meet the terms and conditions stated in contract.', questionCategory: 'Cost' },
-      { kind: 'matrix-remark', col: 22, appliesTo: ['Q-SUB-08-a', 'Q-SUB-08-b', 'Q-SUB-08-c'] },
+      { kind: 'rating', col: 19, questionId: 'Q-SUB-08-a', questionNumber: 8, question: 'Cost Control / Pricing - Give competitive prices, discount, and reasonable prices.', questionCategory: 'Cost', originalHeader: 'a. Give competitive prices, discount, and reasonable prices ...' },
+      { kind: 'rating', col: 20, questionId: 'Q-SUB-08-b', questionNumber: 8.1, question: 'Cost Control / Pricing - Request for change of orders for additional works/cost ONLY outside the scope of contract.', questionCategory: 'Cost', originalHeader: 'b. Request for change of orders for additional works/cost ONLY outside the scope of contract. Yes = 2, seldom request for cha...' },
+      { kind: 'rating', col: 21, questionId: 'Q-SUB-08-c', questionNumber: 8.2, question: 'Cost Control / Pricing - Indication that the subcontractor has financial problem which cannot meet the terms and conditions stated in contract.', questionCategory: 'Cost', originalHeader: 'c. Indication that the subcontractor has financial problem which cannot meet the terms and conditions stated in contract. ...' },
+      { kind: 'matrix-remark', col: 22, appliesTo: ['Q-SUB-08-a', 'Q-SUB-08-b', 'Q-SUB-08-c'], originalHeader: 'Cost Control / Pricing Remarks:' },
 
-      { kind: 'rating', col: 23, questionId: 'Q-SUB-10-a', questionNumber: 10, question: 'Quality and Technical Competence - The Subcontractor work products complied with the contract, PO scope of work, rules and applicable program guidance.', questionCategory: 'Quality' },
-      { kind: 'rating', col: 24, questionId: 'Q-SUB-10-b', questionNumber: 10.1, question: 'Quality and Technical Competence - The subcontractor performed site assessment tasks efficiently and effectively, proposed cost-effective changes in scope, provided an accurate summary and proposed cost-effective recommendations for future work and course of action.', questionCategory: 'Quality' },
-      { kind: 'rating', col: 25, questionId: 'Q-SUB-10-c', questionNumber: 10.2, question: 'Quality and Technical Competence - The subcontractor proposed appropriate changes to monitoring points, parameters, and or frequency based on changing site conditions.', questionCategory: 'Quality' },
-      { kind: 'rating', col: 26, questionId: 'Q-SUB-10-d', questionNumber: 10.3, question: 'Quality and Technical Competence - The remedial action plan adequately and cost-effectively addressed the site conditions.', questionCategory: 'Quality' },
-      { kind: 'rating', col: 27, questionId: 'Q-SUB-10-e', questionNumber: 10.4, question: 'Quality and Technical Competence - The subcontractor initiates Certificate of Completion when the project has been done.', questionCategory: 'Quality' },
-      { kind: 'matrix-remark', col: 28, appliesTo: ['Q-SUB-10-a', 'Q-SUB-10-b', 'Q-SUB-10-c', 'Q-SUB-10-d', 'Q-SUB-10-e'] },
+      { kind: 'rating', col: 23, questionId: 'Q-SUB-10-a', questionNumber: 10, question: 'Quality and Technical Competence - The Subcontractor work products complied with the contract, PO scope of work, rules and applicable program guidance.', questionCategory: 'Quality', originalHeader: 'a. The Subcontractor work products complied with the contract, PO scope of work, rules and applicable program guidance. Consistent...' },
+      { kind: 'rating', col: 24, questionId: 'Q-SUB-10-b', questionNumber: 10.1, question: 'Quality and Technical Competence - The subcontractor performed site assessment tasks efficiently and effectively, proposed cost-effective changes in scope, provided an accurate summary and proposed cost-effective recommendations for future work and course of action.', questionCategory: 'Quality', originalHeader: 'b. The subcontractor performed site assessment tasks efficiently and effectively, proposed cost-effective changes in scope, provided an accurate summary and proposed cost-effective recommendations...' },
+      { kind: 'rating', col: 25, questionId: 'Q-SUB-10-c', questionNumber: 10.2, question: 'Quality and Technical Competence - The subcontractor proposed appropriate changes to monitoring points, parameters, and or frequency based on changing site conditions.', questionCategory: 'Quality', originalHeader: 'c. The subcontractor proposed appropriate changes to monitoring points, parameters, and or frequency based on changing site conditions. ...' },
+      { kind: 'rating', col: 26, questionId: 'Q-SUB-10-d', questionNumber: 10.3, question: 'Quality and Technical Competence - The remedial action plan adequately and cost-effectively addressed the site conditions.', questionCategory: 'Quality', originalHeader: 'd. The remedial action plan adequately and cost-effectively addressed the site conditions. ...' },
+      { kind: 'rating', col: 27, questionId: 'Q-SUB-10-e', questionNumber: 10.4, question: 'Quality and Technical Competence - The subcontractor initiates Certificate of Completion when the project has been done.', questionCategory: 'Quality', originalHeader: 'e. The subcontractor initiates Certificate of Completion when the project has been done. Yes = 2, Only when...' },
+      { kind: 'matrix-remark', col: 28, appliesTo: ['Q-SUB-10-a', 'Q-SUB-10-b', 'Q-SUB-10-c', 'Q-SUB-10-d', 'Q-SUB-10-e'], originalHeader: 'Quality and Technical Competence Remarks:' },
 
-      { kind: 'rating', col: 29, questionId: 'Q-SUB-12-a', questionNumber: 12, question: 'Communication - The subcontractor communicated and proposed solutions of project changes, problems, delays and issues to MBS representative as they occurred and ahead of deadlines.', questionCategory: 'Communication' },
-      { kind: 'rating', col: 30, questionId: 'Q-SUB-12-b', questionNumber: 12.1, question: 'Communication - The subcontractor responded within a reasonable time frame to telephone messages and emails from MBS representative.', questionCategory: 'Communication' },
-      { kind: 'rating', col: 31, questionId: 'Q-SUB-12-c', questionNumber: 12.2, question: 'Communication - The subcontractor is professional in their approach, provide assistance whenever needed, courteous and polite.', questionCategory: 'Communication' },
-      { kind: 'matrix-remark', col: 32, appliesTo: ['Q-SUB-12-a', 'Q-SUB-12-b', 'Q-SUB-12-c'] },
+      { kind: 'rating', col: 29, questionId: 'Q-SUB-12-a', questionNumber: 12, question: 'Communication - The subcontractor communicated and proposed solutions of project changes, problems, delays and issues to MBS representative as they occurred and ahead of deadlines.', questionCategory: 'Communication', originalHeader: 'a. The subcontractor communicated and proposed solutions of project changes, problems, delays and issues to MBS representative as they occurred and ahead of deadlines. ...' },
+      { kind: 'rating', col: 30, questionId: 'Q-SUB-12-b', questionNumber: 12.1, question: 'Communication - The subcontractor responded within a reasonable time frame to telephone messages and emails from MBS representative.', questionCategory: 'Communication', originalHeader: 'b. The subcontractor responded within a reasonable time frame to telephone messages and emails from MBS representative. G...' },
+      { kind: 'rating', col: 31, questionId: 'Q-SUB-12-c', questionNumber: 12.2, question: 'Communication - The subcontractor is professional in their approach, provide assistance whenever needed, courteous and polite.', questionCategory: 'Communication', originalHeader: 'c. The subcontractor is professional in their approach, provide assistance whenever needed, courteous and polite. ...' },
+      { kind: 'matrix-remark', col: 32, appliesTo: ['Q-SUB-12-a', 'Q-SUB-12-b', 'Q-SUB-12-c'], originalHeader: 'Communication Remarks:' },
     ],
   },
 };
@@ -187,7 +215,7 @@ function toIso(raw: unknown): string | null {
 
 type ResponseBase = Pick<
   SurveyResponse,
-  'responseId' | 'surveyType' | 'respondentType' | 'submissionDate' | 'company' | 'department' | 'address' | 'respondentEmail'
+  'responseId' | 'surveyType' | 'respondentType' | 'startTime' | 'submissionDate' | 'company' | 'department' | 'address' | 'respondentEmail'
 >;
 
 function buildRowResponses(cells: unknown[], spec: FormSpec, base: ResponseBase): SurveyResponse[] {
@@ -284,6 +312,7 @@ interface ParsedRow {
   rawCompany: string;
   normalizedCompany: string;
   responseId: string;
+  startTime?: string;
   submissionDate: string;
   respondentType: string;
   department: string;
@@ -371,8 +400,8 @@ export async function previewRawEvaluationImport(
     const excelId = textCell(cells[spec.idCol]) || String(sourceRow);
     const responseId = `IMPORT-${surveyType.toUpperCase()}-${excelId}`;
 
-    const submissionDate =
-      toIso(cells[spec.completionTimeCol]) ?? toIso(cells[spec.startTimeCol]) ?? new Date().toISOString();
+    const startTime = toIso(cells[spec.startTimeCol]) ?? undefined;
+    const submissionDate = toIso(cells[spec.completionTimeCol]) ?? startTime ?? new Date().toISOString();
     if (!earliest || submissionDate < earliest) earliest = submissionDate;
     if (!latest || submissionDate > latest) latest = submissionDate;
 
@@ -409,6 +438,7 @@ export async function previewRawEvaluationImport(
       rawCompany,
       normalizedCompany,
       responseId,
+      startTime,
       submissionDate,
       respondentType,
       department,
@@ -481,6 +511,7 @@ export function commitRawEvaluationImport(preview: RawEvalPreview, decisions: Re
       responseId: row.responseId,
       surveyType: preview.surveyType,
       respondentType: row.respondentType,
+      startTime: row.startTime,
       submissionDate: row.submissionDate,
       company,
       department: row.department,

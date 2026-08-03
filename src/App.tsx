@@ -16,6 +16,7 @@ import { SurveyDetailsPage } from './pages/SurveyDetailsPage';
 import { SurveyFillerPage, SurveyFillerHandle } from './pages/SurveyFillerPage';
 import { PartnerCompaniesPage } from './pages/PartnerCompaniesPage';
 import { DocumentRegisterPage } from './pages/DocumentRegisterPage';
+import { SupplierRankingPage } from './pages/SupplierRankingPage';
 import { SurveyFormsPage } from './pages/SurveyFormsPage';
 import { PresentPage } from './pages/PresentPage';
 import { ArchivePage } from './pages/ArchivePage';
@@ -209,7 +210,7 @@ const DEFAULT_ACCOUNTS: AccountProfile[] = [
   }
 ];
 
-type PageKey = 'dashboard' | 'partner-companies' | 'document-register' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'import-evaluations' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings';
+type PageKey = 'dashboard' | 'partner-companies' | 'document-register' | 'supplier-ranking' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'import-evaluations' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings';
 
 // Admin sidebar: grouped by workflow stage (raw data -> insight -> output)
 // rather than flat/alphabetical, per the dashboard IA redesign.
@@ -226,6 +227,7 @@ const adminNavItems: NavItem<PageKey>[] = [
     children: [
       { key: 'partner-companies', label: 'Partner Companies' },
       { key: 'document-register', label: 'Document Tracker' },
+      { key: 'supplier-ranking', label: 'Supplier Ranking' },
       { key: 'partners-feedback-hub', label: 'Feedback Hub' },
     ],
   },
@@ -350,7 +352,7 @@ export default function App() {
       return {
         pages: [
           'dashboard', 'survey-forms', 'explorer', 'analytics', 'reports', 'present',
-          'partner-companies', 'document-register', 'renew-documents', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'simulator', 'import-evaluations'
+          'partner-companies', 'document-register', 'renew-documents', 'supplier-ranking', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'simulator', 'import-evaluations'
         ] as PageModuleKey[],
         surveyTypes: ['Courier', 'Supplier', 'Subcontractor'] as SurveyType[]
       };
@@ -392,6 +394,7 @@ export default function App() {
     partnerCompanies,
     addPartnerCompany,
     updatePartnerCompany,
+    updatePartnerCompaniesBulk,
     removePartnerCompany,
     previewMasterListImport,
     commitMasterListImport,
@@ -684,9 +687,10 @@ export default function App() {
     department: string,
     respondentType: string,
     address: string | undefined,
-    answers: any[]
+    answers: any[],
+    startTime?: string
   ) => {
-    submitResponse(surveyId, company, department, respondentType, address, answers, account || undefined);
+    submitResponse(surveyId, company, department, respondentType, address, answers, account || undefined, startTime);
   };
 
   // ----------------------------------------------------
@@ -736,6 +740,15 @@ export default function App() {
         simClock={simClock}
         canRenewDocuments={canRenewDocuments}
         onUpdateCompany={updatePartnerCompany}
+        currentUserEmail={account || ''}
+      />
+    ),
+    'supplier-ranking': (
+      <SupplierRankingPage
+        partnerCompanies={partnerCompanies}
+        onUpdateCompaniesBulk={updatePartnerCompaniesBulk}
+        surveys={surveys}
+        responses={responses}
         currentUserEmail={account || ''}
       />
     ),

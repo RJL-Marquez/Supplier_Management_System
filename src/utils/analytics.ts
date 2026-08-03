@@ -1,32 +1,37 @@
 import { ArchiveSeries, CustomForm, FilterState, KpiSummary, PartnerCompany, Rating, SurveyResponse, SurveyType } from '../types/survey';
 import { getEffectiveTodayStr } from './simClock';
 import { getQuestionMaxPoints, isScoredQuestion } from '../data/questionWeights';
-import { computeCompanyDocumentSummary } from './compliance';
 
 /**
  * Resolves the live list of companies a given survey should be evaluated
  * against. Always derived from the current `partnerCompanies` list, so
  * additions/removals in the Partner Registry are reflected automatically:
+ * - Document compliance status has no bearing on eligibility - a company
+ *   with incomplete/expired documents is still evaluable. Document status
+ *   is tracked independently (see computeCompanyDocumentSummary) and shown
+ *   in the Document Tracker, it just doesn't gate survey eligibility.
+ * - Supplier is the one type with a curated default pool: only the
+ *   admin-ranked Top 20 (`evaluationRank` 1-20, set via the Supplier
+ *   Ranking page) count by default. Courier/Subcontractor have no such
+ *   curation - every non-archived company of type counts.
  * - If the survey has no custom selection (`evaluationCompanyIds` unset/empty),
- *   every company of the survey's type counts (the default "select all").
- * - If the survey has a custom selection, only companies of the survey's type
- *   whose ID is still present in `evaluationCompanyIds` count. Companies that
- *   were removed from the registry drop out automatically.
+ *   every company in that default pool counts (the default "select all").
+ * - If the survey has a custom selection, only companies from that default
+ *   pool whose ID is still present in `evaluationCompanyIds` count. Companies
+ *   that were removed from the registry (or, for Supplier, dropped out of
+ *   the Top 20) drop out automatically.
  */
 export function getSurveyEvaluationCompanies(
   survey: Pick<CustomForm, 'surveyType' | 'evaluationCompanyIds'>,
   partnerCompanies: PartnerCompany[],
   currentDateStr: string = getEffectiveTodayStr(null)
 ): PartnerCompany[] {
-  const referenceDate = new Date(currentDateStr + 'T00:00:00');
   const companiesOfType = partnerCompanies.filter((c) => {
     if (c.type !== survey.surveyType) return false;
     if (c.isArchived) return false;
-    // Only an actually-expired document takes a company out of evaluation
-    // eligibility - a 'Missing' (never-submitted) document is an ordinary
-    // in-progress onboarding state for a freshly imported company, not
-    // grounds to make it un-evaluable indefinitely.
-    if (computeCompanyDocumentSummary(c, referenceDate).status === 'Expired') return false;
+    if (survey.surveyType === 'Supplier' && !(c.evaluationRank && c.evaluationRank >= 1 && c.evaluationRank <= 20)) {
+      return false;
+    }
     return true;
   });
   if (!survey.evaluationCompanyIds || survey.evaluationCompanyIds.length === 0) {

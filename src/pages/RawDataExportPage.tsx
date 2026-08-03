@@ -12,9 +12,9 @@ interface RawDataExportPageProps {
 type RawExportFormat = 'csv' | 'excel' | 'pdf';
 
 const CATEGORY_CONFIG: { type: SurveyType; icon: typeof Truck; description: string }[] = [
-  { type: 'Courier', icon: Truck, description: 'Raw evaluation submissions for courier partners, one sheet per company.' },
-  { type: 'Supplier', icon: Package, description: 'Raw evaluation submissions for suppliers, one sheet per company.' },
-  { type: 'Subcontractor', icon: HardHat, description: 'Raw evaluation submissions for subcontractors, one sheet per company.' },
+  { type: 'Courier', icon: Truck, description: 'Raw evaluation submissions for courier partners, one merged sheet sorted by submission date.' },
+  { type: 'Supplier', icon: Package, description: 'Raw evaluation submissions for suppliers, one merged sheet sorted by submission date.' },
+  { type: 'Subcontractor', icon: HardHat, description: 'Raw evaluation submissions for subcontractors, one merged sheet sorted by submission date.' },
 ];
 
 export function RawDataExportPage({ responses, canExport = false, onBack }: RawDataExportPageProps) {
@@ -27,7 +27,7 @@ export function RawDataExportPage({ responses, canExport = false, onBack }: RawD
         </button>
         <div className="text-right">
           <h2 className="text-base font-semibold">Raw Data Export</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">Export raw evaluation submissions in the original form layout, per company</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Export raw evaluation submissions in the original form layout - one sortable sheet per category, ordered by date and time answered</p>
         </div>
       </div>
 

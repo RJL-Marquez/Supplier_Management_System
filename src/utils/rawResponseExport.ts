@@ -3,30 +3,90 @@ import autoTable from 'jspdf-autotable';
 import { SurveyResponse, SurveyType } from '../types/survey';
 import { ExportTable, exportTablesAsCSV, exportTablesAsExcel } from './exporters';
 import { logExport } from './exportHistory';
+import { FORM_SPECS, MetaFieldKind } from './rawEvaluationImport';
+import { getCanonicalQuestionId } from '../data/questionWeights';
 
 // Reproduces the original MBS Partner Evaluation Forms export layout (one
-// row per submission, question text as column headers) from this app's
-// normalized, one-row-per-question SurveyResponse records - grouped into
-// one ExportTable (=> one Excel sheet, or one titled block in the CSV) per
-// company evaluated under the given survey type.
+// row per submission, per-company sheet, official header text/column order
+// taken verbatim from FORM_SPECS in rawEvaluationImport.ts - the same file
+// this app parses when an admin imports one of those forms) from this app's
+// normalized, one-row-per-question SurveyResponse records.
+//
+// A submission's questionId may be stored either in the official
+// Q-SUP-xx/Q-CON-xx/Q-SUB-xx-y scheme (imports, and live submissions built
+// from the official survey templates) or in the legacy Q01-Q45 scheme from
+// data/questions.ts - getCanonicalQuestionId bridges the two so both resolve
+// into the same official column. Anything that still doesn't match a known
+// official question (fully custom admin-authored surveys) isn't dropped -
+// it's appended as its own trailing column, same as this export always did.
 
-interface QuestionColumn {
-  questionId: string;
-  questionNumber: number;
-  question: string;
-  // True for text/select-type questions (remarks, "Period Covered", overall
-  // feedback, etc.), which always save rating = 'N/A' and put the real
-  // answer in `comment` (see SurveyFillerPage's submit handler) - so EVERY
-  // response to that questionId being 'N/A' reliably means "this question
-  // is inherently text/select, not a rating" (a real typed-rating question
-  // occasionally gets an 'N/A' rating too, but never on every single
-  // response across a whole dataset).
+interface ResolvedColumn {
+  header: string;
   isText: boolean;
+  getValue: (byQuestionId: Map<string, SurveyResponse>) => string | number;
 }
 
-function collectQuestionColumns(responses: SurveyResponse[]): QuestionColumn[] {
+function lookupAnswer(byQuestionId: Map<string, SurveyResponse>, questionId: string): SurveyResponse | undefined {
+  return byQuestionId.get(questionId) ?? byQuestionId.get(getCanonicalQuestionId(questionId));
+}
+
+function ratingCellValue(answer: SurveyResponse | undefined): string | number {
+  if (!answer) return '';
+  return typeof answer.rating === 'number' ? answer.rating : 'N/A';
+}
+
+function textCellValue(answer: SurveyResponse | undefined): string {
+  if (!answer) return '';
+  return answer.comment && answer.comment.trim() !== '' ? answer.comment : 'N/A';
+}
+
+function officialColumns(surveyType: SurveyType): ResolvedColumn[] {
+  return FORM_SPECS[surveyType].columns.map((col): ResolvedColumn => {
+    if (col.kind === 'matrix-remark') {
+      return {
+        header: col.originalHeader,
+        isText: true,
+        getValue: (byQuestionId) => {
+          for (const qid of col.appliesTo) {
+            const remark = lookupAnswer(byQuestionId, qid)?.comment;
+            if (remark && remark.trim() !== '') return remark;
+          }
+          return '';
+        },
+      };
+    }
+    if (col.kind === 'rating') {
+      return {
+        header: col.originalHeader,
+        isText: false,
+        getValue: (byQuestionId) => ratingCellValue(lookupAnswer(byQuestionId, col.questionId)),
+      };
+    }
+    return {
+      header: col.originalHeader,
+      isText: true,
+      getValue: (byQuestionId) => textCellValue(lookupAnswer(byQuestionId, col.questionId)),
+    };
+  });
+}
+
+// Every questionId (raw + canonical) already covered by an official column -
+// anything else found in the actual response data is a genuinely custom
+// question and gets appended past the official columns instead of dropped.
+function claimedQuestionIds(surveyType: SurveyType): Set<string> {
+  const claimed = new Set<string>();
+  FORM_SPECS[surveyType].columns.forEach((col) => {
+    if (col.kind === 'matrix-remark') return;
+    claimed.add(col.questionId);
+    claimed.add(getCanonicalQuestionId(col.questionId));
+  });
+  return claimed;
+}
+
+function extraColumns(typeResponses: SurveyResponse[], claimed: Set<string>): ResolvedColumn[] {
   const byId = new Map<string, { questionNumber: number; question: string; allNa: boolean }>();
-  responses.forEach((r) => {
+  typeResponses.forEach((r) => {
+    if (claimed.has(r.questionId)) return;
     const isNa = typeof r.rating !== 'number';
     const existing = byId.get(r.questionId);
     if (!existing) {
@@ -36,32 +96,66 @@ function collectQuestionColumns(responses: SurveyResponse[]): QuestionColumn[] {
     }
   });
   return [...byId.entries()]
-    .map(([questionId, v]) => ({ questionId, questionNumber: v.questionNumber, question: v.question, isText: v.allNa }))
-    .sort((a, b) => a.questionNumber - b.questionNumber);
+    .sort((a, b) => a[1].questionNumber - b[1].questionNumber)
+    .map(([questionId, v]): ResolvedColumn => ({
+      header: v.question,
+      isText: v.allNa,
+      getValue: (byQuestionId) => {
+        const answer = byQuestionId.get(questionId);
+        return v.allNa ? textCellValue(answer) : ratingCellValue(answer);
+      },
+    }));
 }
 
-// A rating-type question's `comment` is just an optional annotation (e.g. an
-// explanation for why this one respondent rated it "N/A") - the cell value
-// is still the rating itself, or the literal "N/A", never that annotation.
-// Only genuine text/select-type questions (isText) show their `comment`.
-function cellValue(column: QuestionColumn, answer: SurveyResponse | undefined): string | number {
-  if (!answer) return '';
-  if (!column.isText) return typeof answer.rating === 'number' ? answer.rating : 'N/A';
-  return answer.comment && answer.comment.trim() !== '' ? answer.comment : 'N/A';
+function getResolvedColumns(surveyType: SurveyType, typeResponses: SurveyResponse[]): ResolvedColumn[] {
+  return [...officialColumns(surveyType), ...extraColumns(typeResponses, claimedQuestionIds(surveyType))];
 }
-
-const METADATA_HEADERS = ['ID', 'Submission Date', 'Email', 'Designation', 'Department', 'Company Name'];
 
 function formatSubmissionDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function buildRawResponseExportTables(responses: SurveyResponse[], surveyType: SurveyType): ExportTable[] {
-  const typeResponses = responses.filter((r) => r.surveyType === surveyType);
-  const questionColumns = collectQuestionColumns(typeResponses);
-  const columns = [...METADATA_HEADERS, ...questionColumns.map((q) => q.question)];
+function formatOptionalDate(value: string | undefined): string {
+  return value ? formatSubmissionDate(value) : '';
+}
 
+// 'name'/'lastModified' still have no backing data in this app's
+// SurveyResponse model (Microsoft Forms captures the respondent's typed
+// display name and a "last edited" timestamp; this app has neither) - those
+// two stay blank. 'start' is populated when available - recorded live from
+// the moment the respondent opens the Questions Form, or read straight from
+// the source file's own Start time column on import - and blank only for
+// responses recorded before this field existed (see SurveyResponse.startTime).
+function metaCellValue(kind: MetaFieldKind, index: number, first: SurveyResponse, company: string): string | number {
+  switch (kind) {
+    case 'id': return index + 1;
+    case 'start': return formatOptionalDate(first.startTime);
+    case 'completion': return formatSubmissionDate(first.submissionDate);
+    case 'email': return first.respondentEmail ?? '';
+    case 'designation': return first.respondentType ?? '';
+    case 'department': return first.department ?? '';
+    case 'address': return first.address ?? '';
+    case 'company': return company;
+    case 'name':
+    case 'lastModified':
+    default:
+      return '';
+  }
+}
+
+interface GroupedRow {
+  index: number;
+  first: SurveyResponse;
+  byQuestionId: Map<string, SurveyResponse>;
+}
+
+interface CompanyGroup {
+  company: string;
+  rows: GroupedRow[];
+}
+
+function groupResponsesByCompany(typeResponses: SurveyResponse[]): CompanyGroup[] {
   const companies = [...new Set(typeResponses.map((r) => r.company))].sort();
 
   return companies.map((company) => {
@@ -78,21 +172,66 @@ export function buildRawResponseExportTables(responses: SurveyResponse[], survey
     const rows = responseIds.map((responseId, index) => {
       const first = firstByResponseId.get(responseId)!;
       const byQuestionId = new Map(
-        companyResponses.filter((r) => r.responseId === responseId).map((a) => [a.questionId, a])
+        companyResponses.filter((r) => r.responseId === responseId).map((a) => [a.questionId, a] as const)
       );
-      return [
-        index + 1,
-        formatSubmissionDate(first.submissionDate),
-        first.respondentEmail ?? '',
-        first.respondentType ?? '',
-        first.department ?? '',
-        company,
-        ...questionColumns.map((q) => cellValue(q, byQuestionId.get(q.questionId))),
-      ];
+      return { index, first, byQuestionId };
     });
 
-    return { title: company, columns, rows };
+    return { company, rows };
   });
+}
+
+interface SubmissionRow extends GroupedRow {
+  company: string;
+}
+
+// Unlike groupResponsesByCompany (still used by the PDF export, one page
+// block per company for print readability), this mirrors the official
+// Microsoft Forms export's actual shape: a single flat table across the
+// whole survey type, in submission order - Forms just appends each new
+// response as the next row, regardless of which company it's for. `index`
+// is therefore one running sequence over the whole sheet (matching the
+// original file's own "ID" column), not reset per company.
+function groupResponsesBySubmission(typeResponses: SurveyResponse[]): SubmissionRow[] {
+  const firstByResponseId = new Map<string, SurveyResponse>();
+  typeResponses.forEach((r) => {
+    if (!firstByResponseId.has(r.responseId)) firstByResponseId.set(r.responseId, r);
+  });
+
+  const responseIds = [...firstByResponseId.keys()].sort((a, b) =>
+    (firstByResponseId.get(a)!.submissionDate ?? '').localeCompare(firstByResponseId.get(b)!.submissionDate ?? '')
+  );
+
+  return responseIds.map((responseId, index) => {
+    const first = firstByResponseId.get(responseId)!;
+    const byQuestionId = new Map(
+      typeResponses.filter((r) => r.responseId === responseId).map((a) => [a.questionId, a] as const)
+    );
+    return { index, first, byQuestionId, company: first.company };
+  });
+}
+
+// One merged, sortable sheet per survey type - not one sheet per company -
+// so it matches the official form exports the admin already imports (every
+// company's submissions mixed together in one flat table, ordered by when
+// the form was answered).
+export function buildRawResponseExportTables(responses: SurveyResponse[], surveyType: SurveyType): ExportTable[] {
+  const typeResponses = responses.filter((r) => r.surveyType === surveyType);
+  const spec = FORM_SPECS[surveyType];
+  const resolvedColumns = getResolvedColumns(surveyType, typeResponses);
+  const columns = [...spec.metaHeaders, ...resolvedColumns.map((c) => c.header)];
+  const rows = groupResponsesBySubmission(typeResponses);
+
+  if (rows.length === 0) return [];
+
+  return [{
+    title: `${surveyType} Raw Evaluations`,
+    columns,
+    rows: rows.map(({ index, first, byQuestionId, company }) => [
+      ...spec.metaFields.map((kind) => metaCellValue(kind, index, first, company)),
+      ...resolvedColumns.map((c) => c.getValue(byQuestionId)),
+    ]),
+  }];
 }
 
 export function exportRawResponsesAsExcel(responses: SurveyResponse[], surveyType: SurveyType, filenameBase: string) {
@@ -120,6 +259,20 @@ function truncateForPrint(value: string, limit: number): string {
   return value.length > limit ? value.slice(0, limit) : value;
 }
 
+// Which metadata columns are worth printing on the PDF (unlike Excel/CSV,
+// which shows every official column for layout fidelity, the PDF stays
+// space-constrained) - and their short labels/widths. 'start'/'name'/
+// 'lastModified' are always blank (see metaCellValue) so they're skipped
+// here entirely, and 'company' is dropped because the page heading already
+// names the company for every row on that sheet.
+const PDF_META_KINDS: MetaFieldKind[] = ['id', 'completion', 'email', 'designation', 'department', 'address'];
+const META_LABELS: Partial<Record<MetaFieldKind, string>> = {
+  id: 'ID', completion: 'Date', email: 'Email', designation: 'Designation', department: 'Department', address: 'Address',
+};
+const META_WIDTHS: Partial<Record<MetaFieldKind, number>> = {
+  id: 16, completion: 42, email: 78, designation: 48, department: 46, address: 70,
+};
+
 /**
  * One 8.5x13in (Folio) landscape PDF, one dedicated page block per company (autoTable
  * spills a company onto a 2nd+ page on its own if it has enough respondents
@@ -144,8 +297,9 @@ const REMARKS_LIKE_PATTERN = /remarks|comment/i;
 
 export function exportRawResponsesAsPDF(responses: SurveyResponse[], surveyType: SurveyType, filenameBase: string) {
   const typeResponses = responses.filter((r) => r.surveyType === surveyType);
-  const allQuestionColumns = collectQuestionColumns(typeResponses);
-  const tables = buildRawResponseExportTables(responses, surveyType);
+  const spec = FORM_SPECS[surveyType];
+  const allColumns = getResolvedColumns(surveyType, typeResponses);
+  const groups = groupResponsesByCompany(typeResponses);
 
   // Per-section remarks/comment fields (e.g. "Delivery Remarks", "Please
   // provide any additional comments on Security and safety.") repeat the
@@ -155,11 +309,11 @@ export function exportRawResponsesAsPDF(responses: SurveyResponse[], surveyType:
   // only the form's closing overall-comment field and drops the rest;
   // informational text fields ("Period Covered", "Project Name", etc.)
   // don't match the remarks/comment wording and are always kept.
-  const lastTextIndex = allQuestionColumns.reduce((lastIdx, q, i) => (q.isText ? i : lastIdx), -1);
-  const keepFlags = allQuestionColumns.map(
-    (q, i) => !(q.isText && i !== lastTextIndex && REMARKS_LIKE_PATTERN.test(q.question))
+  const lastTextIndex = allColumns.reduce((lastIdx, q, i) => (q.isText ? i : lastIdx), -1);
+  const keepFlags = allColumns.map(
+    (q, i) => !(q.isText && i !== lastTextIndex && REMARKS_LIKE_PATTERN.test(q.header))
   );
-  const questionColumns = allQuestionColumns.filter((_, i) => keepFlags[i]);
+  const questionColumns = allColumns.filter((_, i) => keepFlags[i]);
   // Among the (few) text columns still kept, only the very last one is the
   // form's closing free-form comment - that's the one column worth real
   // width. Short informational fields like "Period Covered" only ever hold
@@ -197,7 +351,7 @@ export function exportRawResponsesAsPDF(responses: SurveyResponse[], surveyType:
   const legendLineHeight = 10;
   doc.setFontSize(8);
   questionColumns.forEach((q, i) => {
-    const lines = doc.splitTextToSize(`Q${i + 1}. ${q.question}`, usableWidth);
+    const lines = doc.splitTextToSize(`Q${i + 1}. ${q.header}`, usableWidth);
     if (legendY + lines.length * legendLineHeight > pageHeight - 30) {
       doc.addPage();
       legendY = 34;
@@ -207,13 +361,11 @@ export function exportRawResponsesAsPDF(responses: SurveyResponse[], surveyType:
     legendY += lines.length * legendLineHeight + 4;
   });
 
-  // Metadata columns (ID, Date, Email, Designation, Department) get fixed
-  // widths; Company Name is dropped here since the page heading already
-  // names the company for every row on the sheet. Rating columns and short
-  // informational text columns both stay pencil-thin; every bit of width
-  // left over goes to the single overall-comment column.
-  const metaHeaders = ['ID', 'Date', 'Email', 'Designation', 'Department'];
-  const metaWidths = [16, 42, 78, 48, 46];
+  // Metadata columns vary by survey type (Courier has no Designation/
+  // Department; Supplier/Subcontractor have no Address) - see PDF_META_KINDS.
+  const printedMetaFields = spec.metaFields.filter((k) => PDF_META_KINDS.includes(k));
+  const metaHeaders = printedMetaFields.map((k) => META_LABELS[k]!);
+  const metaWidths = printedMetaFields.map((k) => META_WIDTHS[k]!);
   // Wide enough that a 3-char header ("Q10"+, once there are 10+ kept
   // columns) still fits on one line instead of wrapping to "Q1" / "0".
   const ratingColWidth = 18;
@@ -233,21 +385,18 @@ export function exportRawResponsesAsPDF(responses: SurveyResponse[], surveyType:
 
   const shortHeaders = [...metaHeaders, ...questionMeta.map((q) => q.label)];
 
-  tables.forEach((table) => {
+  groups.forEach(({ company, rows }) => {
     doc.addPage();
 
-    const bodyRows = table.rows.map((row) => {
-      // row = [ID, Submission Date, Email, Designation, Department, Company Name, ...answers]
-      const [id, submissionDate, email, designation, department, , ...answers] = row;
-      const dateOnly = String(submissionDate).split(',')[0];
-      const keptAnswers = answers.filter((_, i) => keepFlags[i]);
+    const bodyRows = rows.map(({ index, first, byQuestionId }) => {
+      const metaValues = printedMetaFields.map((kind) => {
+        const value = metaCellValue(kind, index, first, company);
+        return kind === 'completion' ? String(value).split(',')[0] : value;
+      });
+      const answers = questionColumns.map((c) => c.getValue(byQuestionId));
       return [
-        id,
-        dateOnly,
-        email,
-        designation,
-        department,
-        ...keptAnswers.map((value, i) => {
+        ...metaValues,
+        ...answers.map((value, i) => {
           const str = String(value);
           if (!questionMeta[i].isText) return str;
           return truncateForPrint(str, questionMeta[i].isOverallComment ? COMMENT_CHAR_LIMIT : INFO_TEXT_CHAR_LIMIT);
@@ -271,13 +420,13 @@ export function exportRawResponsesAsPDF(responses: SurveyResponse[], surveyType:
         doc.setFontSize(14);
         doc.setTextColor(0, 99, 169);
         doc.setFont('helvetica', 'bold');
-        doc.text(table.title, marginLeft, 26);
+        doc.text(company, marginLeft, 26);
 
         doc.setFontSize(8);
         doc.setTextColor(100);
         doc.setFont('helvetica', 'normal');
         doc.text(
-          `${surveyType} - Raw Evaluation Submissions - ${table.rows.length} respondent(s) - Generated ${new Date().toLocaleString()} - see Question Key on page 1`,
+          `${surveyType} - Raw Evaluation Submissions - ${rows.length} respondent(s) - Generated ${new Date().toLocaleString()} - see Question Key on page 1`,
           marginLeft,
           40
         );

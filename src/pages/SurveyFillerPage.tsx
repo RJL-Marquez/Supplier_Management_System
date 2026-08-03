@@ -35,7 +35,8 @@ interface SurveyFillerPageProps {
     department: string,
     respondentType: string,
     address: string | undefined,
-    answers: { questionId: string; questionNumber: number; question: string; questionCategory: string; rating: Rating; comment: string }[]
+    answers: { questionId: string; questionNumber: number; question: string; questionCategory: string; rating: Rating; comment: string }[],
+    startTime?: string
   ) => void;
   onCancel?: () => void;
 }
@@ -74,6 +75,11 @@ export const SurveyFillerPage = forwardRef<SurveyFillerHandle, SurveyFillerPageP
   // "Save Progress Draft?" warning, when that warning was triggered by
   // navigation initiated OUTSIDE this component (e.g. sidebar Home click).
   const pendingExitRef = useRef<(() => void) | null>(null);
+  // Timestamp captured the moment the respondent first enters the Questions
+  // Form for this submission (see setHasStartedForm(true) below) - a ref,
+  // not state, since it's read-only until submit and shouldn't trigger
+  // re-renders. Cleared on handleReset so the next submission gets its own.
+  const startTimeRef = useRef<string | null>(null);
 
   // Respondent metadata
   const [company, setCompany] = useState('');
@@ -300,6 +306,7 @@ export const SurveyFillerPage = forwardRef<SurveyFillerHandle, SurveyFillerPageP
     setComments(initialComments);
     setValidationErrors({});
     setHasStartedForm(true);
+    startTimeRef.current = new Date().toISOString();
 
     setStep(2);
   };
@@ -620,7 +627,8 @@ export const SurveyFillerPage = forwardRef<SurveyFillerHandle, SurveyFillerPageP
       department,
       respondentType,
       address.trim(),
-      formattedAnswers
+      formattedAnswers,
+      startTimeRef.current ?? undefined
     );
 
     if (selectedSurveyId && company) {
@@ -642,6 +650,7 @@ export const SurveyFillerPage = forwardRef<SurveyFillerHandle, SurveyFillerPageP
     setValidationErrors({});
     setError('');
     setHasStartedForm(false);
+    startTimeRef.current = null;
     setStep(1);
   };
 
