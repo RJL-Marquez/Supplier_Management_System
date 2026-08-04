@@ -1,0 +1,270 @@
+# Supplier Management System — Turnover Documentation
+
+*Prepared: August 4, 2026*
+*Internal project name: `ms-form-analytics-dashboard` (v0.1.0)*
+
+## Read This First: System Status
+
+This system is in active pre-production development, not a fully deployed production system.
+
+- The project's first commit was on July 18, 2026 — roughly three weeks of history as of this document.
+- The app currently runs against each browser's local storage. There is no shared, organization-wide backend live yet.
+- A Supabase (PostgreSQL) backend schema has been drafted (`supabase/schema.sql`) but has not been applied or fully wired up.
+- Real "Sign in with Microsoft" (Azure AD / Entra ID) login is built into the code but requires an Azure app registration to be completed before it is usable.
+
+Every section below reflects the system's actual current state, verified directly against the source code as of this handoff — not aspirational or planned behavior. Where something is not yet in place, that is stated explicitly rather than assumed.
+
+## Table of Contents
+
+1. [Access & Administration](#1-access--administration)
+   - [1.1 List of Assigned Roles & Departments](#11-list-of-assigned-roles--departments)
+   - [1.2 Admin Account Details](#12-admin-account-details)
+   - [1.3 Procedure for Requesting New User Access](#13-procedure-for-requesting-new-user-access)
+   - [1.4 Password Reset Process](#14-password-reset-process)
+2. [Documentation](#2-documentation)
+   - [2.1 User Manual](#21-user-manual)
+   - [2.2 Quick Reference Guide](#22-quick-reference-guide)
+   - [2.3 Process Flow / Workflow Diagrams](#23-process-flow--workflow-diagrams)
+   - [2.4 Known Issues & Workarounds](#24-known-issues--workarounds)
+   - [2.5 Release Notes](#25-release-notes)
+
+---
+
+## 1. Access & Administration
+
+### 1.1 List of Assigned Roles & Departments
+
+The system recognizes two system roles:
+
+- **Admin** – unrestricted access to every module.
+- **Employee** – access is computed from two additional attributes on their account:
+  - **Designation** (organizational rank): Rank & File, Supervisory, Managerial, Director, or Executive.
+  - **Department**: Accounts Payable - Trade, Business Solutions Manager, Executive Office, Logistics, Procurement Group, or TASS.
+
+Every account's default module access and visible survey data types are computed automatically from its Designation × Department combination (`src/utils/rbac.ts`). An Admin can override this per individual account, or set a bulk ceiling for an entire department, from the Account Management page.
+
+**Default module access by designation**
+
+| Designation | Default modules granted |
+|---|---|
+| Rank & File | Dashboard, Analytics, Survey Forms, Partner Companies, Document Tracker, Notification Logs |
+| Supervisory | All Rank & File modules, plus Partners Feedback Hub and Reports |
+| Managerial | All Supervisory modules, plus Survey Explorer, Present, and Archive Center |
+| Director | Same default module set as Managerial |
+| Executive | Dashboard, Analytics, Reports, Present, Notification Logs (a reduced, summary-focused set) |
+| Admin (role) | Every module, regardless of designation, including Account Management, Renew Compliance Documents, and Import Evaluation Responses |
+
+*Data-scoping for survey responses (defined in the draft Supabase schema — see [Known Issue #3](#24-known-issues--workarounds)): Admin, Executive, and Director see every response; Supervisory sees their own department's responses; Rank & File sees only their own submissions. Analytics remains company-wide and aggregate-only for every rank.*
+
+### 1.2 Admin Account Details
+
+An Admin account has unrestricted access to every module in the system:
+
+| Module | What it does |
+|---|---|
+| Dashboard | Personalized performance indicators and KPIs |
+| Survey Forms | View, fill, and publish feedback forms |
+| Survey Explorer | Analyze complete survey response records |
+| Analytics | Company-wide statistical charts and trends |
+| Reports | Generate custom report cards and raw exports |
+| Present | Staggered slide-deck presentation builder |
+| Partner Companies | Manage external courier, supplier, and subcontractor rosters |
+| Document Tracker | Categorized compliance-document table across all partner companies |
+| Renew Compliance Documents | Action permission: update document expiry/status in Partner Companies and the Document Tracker without needing full Account Management access |
+| Supplier Ranking | Curate and reorder the Top 20 suppliers evaluable by default in Supplier surveys |
+| Account Management | Configure system roles, ranks, departments, and user permissions |
+| Notification Logs | Audit trail of incoming survey responses and document-expiry alerts |
+| Archive Center | Browse and restore archived feedback submissions |
+| Import Evaluation Responses | Bulk-import external evaluation data (e.g. Excel/CSV) into the system |
+
+One built-in Admin identity, `admin@mgenesis.com`, ships as the seed account for a fresh deployment — it exists specifically so there is a way to sign in for the first time and start adding real employees through Account Management. From there, Admin rights can be granted to any other real mgenesis.com employee the same way any account is granted access (Section 1.1), simply by setting their System Role to Admin.
+
+| Email | Role | Designation | Department |
+|---|---|---|---|
+| admin@mgenesis.com | Admin | Executive | Business Solutions Manager |
+
+An Admin account has no separate password to hand over: access is authenticated the same way as every other account, through the employee's own mgenesis.com Microsoft 365 / Entra ID sign-in (Section 1.4). Being an Admin is an authorization record in Account Management, not a separate credential.
+
+### 1.3 Procedure for Requesting New User Access
+
+New access should be requested and granted end-to-end as follows:
+
+| Step | Who | Action |
+|---|---|---|
+| 1 | Requester (manager/supervisor) | Submits a request for the new employee's system access to the System Administrator, stating the employee's name, department, and designation/rank. |
+| 2 | mgenesis IT (Entra ID) | Confirms the employee has an active @mgenesis.com Microsoft 365 / Entra ID account (provisions one first if this is a new hire). |
+| 3 | System Administrator | Opens Account Management → Add Account, and enters the employee's @mgenesis.com email, System Role, Designation, and Department. |
+| 4 | System | Automatically computes the employee's default module and survey-data access from their Designation and Department. |
+| 5 | System Administrator | Optionally customizes individual module access ("Custom Overrides") if the employee needs something outside their role default, then saves. |
+| 6 | Employee | Signs in at the system's login page with "Sign in with Microsoft," using their existing mgenesis.com credentials — no separate password is created. |
+
+Once an account exists in Account Management, an Admin can further customize its individual module or survey-type access ("Custom Overrides"), or reset it back to role/department defaults at any time. A department's overall access ceiling can also be set in bulk via "Department Access," which then applies to every member of that department.
+
+Built-in safeguards: an Admin cannot delete their own account, or delete another account that shares their same role.
+
+### 1.4 Password Reset Process
+
+Every mgenesis.com user — including Admins — signs in with "Sign in with Microsoft," authenticating against the organization's own Microsoft Entra ID (Microsoft 365) directory. Because of this, password reset and account recovery is handled entirely by Entra ID, exactly as it is for the employee's email or any other Microsoft 365 app — not by this system.
+
+- **To reset a forgotten password**: the employee uses mgenesis' standard Microsoft 365 self-service password reset (SSPR), or contacts the mgenesis IT helpdesk, the same as for any other Microsoft 365 sign-in issue.
+- **No action is required in this system**: resetting a Microsoft 365 password automatically restores the employee's system access, since the system holds no separate password of its own.
+
+> **Implementation note:** this requires the Azure AD app registration for this system to be completed so "Sign in with Microsoft" is the active, sole login path — see [Known Issues #1, #2, and #9](#24-known-issues--workarounds) for the current gap and its risks.
+
+---
+
+## 2. Documentation
+
+### 2.1 User Manual
+
+The system is organized into modules, each shown or hidden in the navigation according to the permission model in Section 1.1. Survey data itself is further divided into three types:
+
+| Type | Label | Covers |
+|---|---|---|
+| Courier | Courier Satisfaction | Courier and logistics satisfaction reporting |
+| Supplier | Supplier Quality | Inventory supplier assessment and commercials |
+| Subcontractor | Subcontractor Performance | On-site subcontractor compliance and execution |
+
+**Modules**
+
+| Module | What it does |
+|---|---|
+| Dashboard | Personalized performance indicators and KPIs |
+| Survey Forms | View, fill, and publish feedback forms |
+| Survey Explorer | Analyze complete survey response records |
+| Analytics | Company-wide statistical charts and trends |
+| Reports | Generate custom report cards and raw exports |
+| Present | Staggered slide-deck presentation builder |
+| Partner Companies | Manage external courier, supplier, and subcontractor rosters |
+| Document Tracker | Categorized compliance-document table across all partner companies |
+| Renew Compliance Documents | Action permission: update document expiry/status in Partner Companies and the Document Tracker without needing full Account Management access |
+| Supplier Ranking | Curate and reorder the Top 20 suppliers evaluable by default in Supplier surveys |
+| Account Management | Configure system roles, ranks, departments, and user permissions |
+| Notification Logs | Audit trail of incoming survey responses and document-expiry alerts |
+| Archive Center | Browse and restore archived feedback submissions |
+| Import Evaluation Responses | Bulk-import external evaluation data (e.g. Excel/CSV) into the system |
+
+**Settings**
+
+Every signed-in user has a Settings page for light/dark mode and signing out; Admins additionally see the admin activity log, export history, and Import Evaluation Responses.
+
+**Frequently Asked Questions**
+
+**How do I generate a report?**
+Go to Reports and choose a builder — Summary, Company, Question, or Executive Summary — then export it as PDF, Excel, or CSV.
+
+**How do I send a report to a partner company?**
+Open Partners Feedback Hub, select a completed survey, and use "Send Report to Partner" for one company, or "Bulk Sending" to queue reports for every completed company at once. The email (with a PDF report attached) is sent through Microsoft Graph as the signed-in Admin's own Microsoft account, so "Sign in with Microsoft" is required to use it.
+
+**How do I create and publish a new survey?**
+Go to Survey Forms → Create, fill in the type, questions, deadline, and which departments/ranks/companies should see it, then Publish.
+
+**How do I check which compliance documents are expiring soon?**
+Open the Document Tracker for the full list, or check the Notification Bell / Notification Logs for active expiring/expired alerts.
+
+**How do I request access for a new employee?**
+Follow the procedure in [Section 1.3](#13-procedure-for-requesting-new-user-access) of this document — it starts with your mgenesis IT/Entra ID request, then an Admin adds the account in Account Management.
+
+**How do I reset my password?**
+Password reset is handled by mgenesis' Microsoft Entra ID / Microsoft 365, the same as for email — see [Section 1.4](#14-password-reset-process). This system does not manage passwords itself.
+
+**How do I give someone extra access beyond their role's default?**
+In Account Management, edit their account and toggle the specific modules or survey types they need; saving marks their account "Custom Overrides." Use "Reset Access" to remove the override and return to role defaults.
+
+**How do I recover an archived survey response?**
+Go to Archive Center to browse and restore previously archived submissions.
+
+**How do I present results to leadership?**
+Use Present to build a staggered slide-deck from the current analytics/report data.
+
+**Why can't I see a module I need?**
+It is not part of your role/department's default access. Ask an Admin to grant it to your account individually, or check whether your department's overall access ceiling (Department Access) allows it.
+
+### 2.2 Quick Reference Guide
+
+A condensed cheat-sheet of who gets what, by default:
+
+| Designation | Default modules granted |
+|---|---|
+| Rank & File | Dashboard, Analytics, Survey Forms, Partner Companies, Document Tracker, Notification Logs |
+| Supervisory | All Rank & File modules, plus Partners Feedback Hub and Reports |
+| Managerial | All Supervisory modules, plus Survey Explorer, Present, and Archive Center |
+| Director | Same default module set as Managerial |
+| Executive | Dashboard, Analytics, Reports, Present, Notification Logs (a reduced, summary-focused set) |
+| Admin (role) | Every module, regardless of designation, including Account Management, Renew Compliance Documents, and Import Evaluation Responses |
+
+- To add a user: Account Management → Add Account (Admin only).
+- To change what a whole department can see: Account Management → Department Access.
+- To create a survey: Survey Forms → Create (Admin only by default).
+- To check compliance-document expiries: Document Tracker, or the Notification Bell for active alerts.
+- To recover archived responses: Archive Center.
+- To send a report to a partner company: Partners Feedback Hub → Send Report to Partner, or Bulk Sending for multiple companies at once.
+
+### 2.3 Process Flow / Workflow Diagrams
+
+**A. Sign-in & access resolution**
+
+| Step | Actor | Action |
+|---|---|---|
+| 1 | User | Opens the login page and either enters an @mgenesis.com email + password, or clicks "Sign in with Microsoft" (if configured). |
+| 2 | System | Rejects any email that does not end in @mgenesis.com. |
+| 3 | System | Checks the entered password against the local fallback values, or — for Microsoft sign-in — authenticates the identity with Microsoft Entra ID. |
+| 4 | System | Looks up the signed-in email in the Accounts list to resolve Role, Designation, and Department. |
+| 5 | System | Computes the account's permitted pages and survey types (role/designation/department defaults, or a saved per-account override). |
+| 6 | User | Lands on the Dashboard with only the permitted modules visible in the navigation. |
+
+**B. Survey lifecycle**
+
+| Step | Actor | Action |
+|---|---|---|
+| 1 | Admin | Creates a Survey Form: title, type (Courier / Supplier / Subcontractor), questions, deadline, and which departments/ranks/companies can see it. |
+| 2 | Admin | Publishes the form (status: Running). |
+| 3 | Employee / Partner | Fills out the form if their department/rank/company is in scope. |
+| 4 | System | Records one response row per answered question and updates the Notification Bell and Notification Logs. |
+| 5 | All eligible users | See the new data reflected in Dashboard, Analytics (company-wide for everyone), and — for their own scope — Survey Explorer and Reports. |
+| 6 | Admin | Archives a completed survey's responses into an Archive Series once it is no longer active. |
+| 7 | Authorized users | Browse or restore archived submissions from the Archive Center. |
+
+**C. Partner company & compliance-document tracking**
+
+| Step | Actor | Action |
+|---|---|---|
+| 1 | Admin | Adds or edits a Partner Company (Courier, Supplier, or Subcontractor), including branches and compliance documents. |
+| 2 | System | Aggregates compliance documents across all partner companies into the Document Tracker, applying each document type's configured expiry milestones. |
+| 3 | System | Raises "expiring soon" / "expired" alerts based on Document Notification Settings, surfaced via the Notification Bell and Notification Logs. |
+| 4 | User with Renew Compliance Documents permission | Updates the document's expiry date/status in Partner Companies or the Document Tracker. |
+
+### 2.4 Known Issues & Workarounds
+
+Every item below was verified directly against the current source code, not inferred.
+
+| # | Issue | Impact | Workaround / Recommendation |
+|---|---|---|---|
+| 1 | Sign-in does not yet authenticate against Microsoft Entra ID by default — a fallback local check currently accepts a shared placeholder password for any @mgenesis.com address until the Azure AD app registration is completed. | Until that registration is finished, sign-in does not yet verify a person's real mgenesis.com identity. | Complete the Azure AD (Entra ID) app registration in `.env` so "Sign in with Microsoft" becomes the only active login path (see Section 1.4). |
+| 2 | The "Forgot password?" link on the login page is not wired to any action. | Not an issue once Microsoft sign-in is the only login path (Entra ID handles password reset externally), but it is currently a dead link. | Remove the link once "Sign in with Microsoft" is finalized as the sole login path (see Section 1.4). |
+| 3 | Accounts, department permissions, surveys, responses, and partner companies are currently stored in each browser's localStorage, not a shared backend. | Data added on one device/browser is invisible to everyone else; clearing browser storage deletes it permanently. | A Supabase schema is drafted (`supabase/schema.sql`) but not yet applied, and the app has not been switched over to read/write it (only a partial, one-way write for survey responses exists). Completing this migration is required before real multi-user use. |
+| 4 | The draft Supabase schema includes temporary, fully-open Row Level Security policies used only for pre-launch testing (`TEMP_responses_select_anon` / `TEMP_responses_insert_anon`). | If applied as-is, survey response rows would be readable/writable by anyone, even unauthenticated. | Drop these two policies once Microsoft Entra ID sign-in is finalized as the login path (already flagged in the schema file's own comments). |
+| 5 | The draft schema assumes the Azure ID token exposes the user's email as `auth.jwt()->>'email'`. | Role/permission lookups in the database could silently return nothing once wired up, if the claim name differs. | Confirm the actual claim name against a real Azure ID token before relying on it in production; check `preferred_username` as a fallback. |
+| 6 | A live-chat feature (Admin Chat Widget, Live Chat page, Employee Notifications Hub, chat service) was built across several commits and is now deleted in the working tree, but the deletion is not yet committed. | Whoever continues this project should confirm the removal is intentional before it is committed, since it removes real functionality. | Confirm with the project owner, then commit the removal explicitly (or restore the feature) rather than leaving it as an uncommitted change. |
+| 7 | `EFAS_Project_Charter.docx` (in the project root, tracked since the initial commit) is a corrupted Word file — its ZIP central directory offset is invalid. | It cannot be opened by Word, pandoc, or standard ZIP tooling; whatever project-charter content it held is currently inaccessible. | Locate a valid backup copy if one exists, or treat the content as lost and re-document the project charter separately. |
+| 8 | No User Manual, Quick Reference Guide, Known Issues log, or Release Notes existed in the repository before this handoff. | New team members previously had no onboarding documentation. | This document is the first pass at all four — keep it updated as the system changes. |
+| 9 | If the local fallback login is disabled before the Azure AD app registration is completed, there is no working login path. | Could lock every user, including Admins, out of the system entirely. | Only remove the fallback login after confirming Microsoft sign-in works end-to-end for at least one real Admin account. |
+
+### 2.5 Release Notes
+
+Summarized from the project's git commit history (first commit July 18, 2026 through the present).
+
+| Date | Milestone | Summary |
+|---|---|---|
+| 2026-07-18 | Initial commit | First working version of the system committed; initial pass and same-day fixes to Notification Logs for Employees. |
+| 2026-07-20 | Settings & evaluation picker | Reworked the Modify Settings modal and added a company evaluation picker. |
+| 2026-07-21 | Notification Logs fixes | Additional fixes to Notification Logs behavior for Employee accounts. |
+| 2026-07-22 | Bulk sending | "Send To Companies" and Bulk Sending features introduced and iterated on. |
+| 2026-07-23 | Masterlist & stability | Partner company masterlist incorporated; simulated system clock added for testing time-dependent features; general bug fixes, a scaling fix, and Excel export formatting. |
+| 2026-07-24 | Deployment fix | Fix for the Vercel deployment. |
+| 2026-07-26 – 27 | Rating system & imports | Improved rating system; CSV file import acceptance added; several masterlist updates. |
+| 2026-07-27 – 29 | Document tracking | Multiple Document Masterlist updates refining compliance-document tracking. |
+| 2026-07-30 | Analytics & UI cleanup | Analytics updated for the revised rating system; decimal rating logic revised; general UI decluttering. |
+| 2026-07-31 | Dashboards | Documents Tracker Dashboard update; Employee Evaluation Tracker Dashboard update. |
+| 2026-08-03 | Latest updates | Final committed round of updates ("Last few updates") ahead of this handoff. |
+| 2026-08-04 (uncommitted) | Pre-handoff cleanup | Live-chat feature removed from the working tree; Supabase backend groundwork added (draft schema plus partial client wiring); environment-flag and `.env.example` setup notes added ahead of go-live. See Known Issues #3–6. |
