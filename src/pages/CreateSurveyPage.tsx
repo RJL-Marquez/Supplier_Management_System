@@ -1,24 +1,15 @@
 import { useState } from 'react';
-import { Plus, Trash, ArrowLeft, Save, AlertCircle, FileText, Sparkles, CalendarClock } from 'lucide-react';
+import { Plus, Trash, ArrowLeft, Save, AlertCircle, FileText, CalendarClock } from 'lucide-react';
 import { SurveyType, CustomForm } from '../types/survey';
 import { isValidDDMMYYYY } from '../utils/time';
+import { DEFAULT_CATEGORIES, OVERALL_CATEGORY } from '../data/questionCategories';
 
 interface CreateSurveyPageProps {
   onBack: () => void;
   onSave: (survey: Omit<CustomForm, 'id' | 'createdAt'>) => void;
   surveyToEdit?: CustomForm;
+  categoryLabels?: Record<SurveyType, string[]>;
 }
-
-const CATEGORIES = [
-  'Delivery',
-  'Commercial',
-  'Technology',
-  'Support',
-  'Communication',
-  'Operations',
-  'Compliance',
-  'Security',
-];
 
 interface QuestionInput {
   question: string;
@@ -26,10 +17,10 @@ interface QuestionInput {
   section?: string;
   inputType?: 'rating' | 'text' | 'select' | 'typed-rating';
   options?: string[];
-  validationRange?: { min: number; max: number };
+  validationRange?: { min: number; max: number; allowNa: boolean };
 }
 
-export function CreateSurveyPage({ onBack, onSave, surveyToEdit }: CreateSurveyPageProps) {
+export function CreateSurveyPage({ onBack, onSave, surveyToEdit, categoryLabels = DEFAULT_CATEGORIES }: CreateSurveyPageProps) {
   const [title, setTitle] = useState(surveyToEdit ? surveyToEdit.title : '');
   const [surveyType, setSurveyType] = useState<SurveyType>(surveyToEdit ? surveyToEdit.surveyType : 'Courier');
   const [description, setDescription] = useState(surveyToEdit ? surveyToEdit.description : '');
@@ -46,12 +37,17 @@ export function CreateSurveyPage({ onBack, onSave, surveyToEdit }: CreateSurveyP
           options: q.options,
           validationRange: q.validationRange as any,
         })) as any[])
-      : [{ question: '', questionCategory: 'Delivery' }]
+      : [{ question: '', questionCategory: OVERALL_CATEGORY }]
   );
   const [error, setError] = useState('');
 
+  // The 5 categories currently defined for this survey type (Categories
+  // Manager), plus the fixed "Overall" bucket for whole-company feedback -
+  // always last, always available, on every type.
+  const categoryOptions = [...categoryLabels[surveyType], OVERALL_CATEGORY];
+
   const handleAddQuestion = () => {
-    setQuestions([...questions, { question: '', questionCategory: 'Delivery' }]);
+    setQuestions([...questions, { question: '', questionCategory: OVERALL_CATEGORY }]);
   };
 
   const handleRemoveQuestion = (index: number) => {
@@ -75,34 +71,6 @@ export function CreateSurveyPage({ onBack, onSave, surveyToEdit }: CreateSurveyP
     const next = [...questions];
     next[index].questionCategory = value;
     setQuestions(next);
-  };
-
-  const handlePrefillTemplate = () => {
-    let template: QuestionInput[] = [];
-    if (surveyType === 'Courier') {
-      template = [
-        { question: 'Does the courier deliver goods on the agreed date?', questionCategory: 'Delivery' },
-        { question: 'Are the logistics rates competitive and transparent?', questionCategory: 'Commercial' },
-        { question: 'Is real-time tracking of packages responsive?', questionCategory: 'Technology' },
-        { question: 'Is customer support helpful when resolving package delays?', questionCategory: 'Support' },
-      ];
-    } else if (surveyType === 'Supplier') {
-      template = [
-        { question: 'Does the supplier deliver the product based on agreed schedule?', questionCategory: 'Delivery' },
-        { question: 'Is the pricing competitive compared to other suppliers?', questionCategory: 'Commercial' },
-        { question: 'Is the supplier open and responsive to negotiate terms?', questionCategory: 'Communication' },
-        { question: 'Are the products delivered in excellent condition with no defects?', questionCategory: 'Operations' },
-      ];
-    } else {
-      template = [
-        { question: 'Tasks and deliverables were completed on schedule.', questionCategory: 'Delivery' },
-        { question: 'Offers competitive prices and discounts for additional work requests.', questionCategory: 'Commercial' },
-        { question: 'The subcontractor communicated delays and project changes promptly.', questionCategory: 'Communication' },
-        { question: 'Site work strictly complied with safety and quality regulations.', questionCategory: 'Operations' },
-      ];
-    }
-    setQuestions(template);
-    setError('');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -275,20 +243,6 @@ export function CreateSurveyPage({ onBack, onSave, surveyToEdit }: CreateSurveyP
                 Respondents will answer from: N/A, 0, up to {maxRating}.
               </p>
             </div>
-
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={handlePrefillTemplate}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-blue-50 hover:bg-blue-100 text-[#0063a9] px-3 py-2 text-xs font-semibold dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50 transition"
-              >
-                <Sparkles size={13} />
-                <span>Pre-fill Standard Questions</span>
-              </button>
-              <p className="text-[10px] text-slate-400 mt-1.5 text-center">
-                Quickly populate standard benchmark questions for this audience.
-              </p>
-            </div>
           </div>
         </div>
 
@@ -353,7 +307,7 @@ export function CreateSurveyPage({ onBack, onSave, surveyToEdit }: CreateSurveyP
                         value={q.questionCategory}
                         onChange={(e) => handleCategoryChange(idx, e.target.value)}
                       >
-                        {CATEGORIES.map((cat) => (
+                        {categoryOptions.map((cat) => (
                           <option key={cat} value={cat}>
                             {cat}
                           </option>
@@ -391,7 +345,7 @@ export function CreateSurveyPage({ onBack, onSave, surveyToEdit }: CreateSurveyP
                             next[idx].options = ['Option 1', 'Option 2'];
                           }
                           if (type === 'typed-rating' && !next[idx].validationRange) {
-                            next[idx].validationRange = { min: 0, max: 15 };
+                            next[idx].validationRange = { min: 0, max: 15, allowNa: true };
                           }
                           setQuestions(next);
                         }}
@@ -421,39 +375,60 @@ export function CreateSurveyPage({ onBack, onSave, surveyToEdit }: CreateSurveyP
                     )}
 
                     {q.inputType === 'typed-rating' && (
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <label className="text-[10px] font-bold text-[#0063a9] uppercase dark:text-blue-400">Min Score</label>
-                          <input
-                            type="number"
-                            className="field mt-1 py-1 px-2.5 text-xs"
-                            value={q.validationRange?.min ?? 0}
-                            onChange={(e) => {
-                              const next = [...questions];
-                              next[idx].validationRange = {
-                                min: parseInt(e.target.value, 10) || 0,
-                                max: next[idx].validationRange?.max ?? 15,
-                              };
-                              setQuestions(next);
-                            }}
-                          />
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <label className="text-[10px] font-bold text-[#0063a9] uppercase dark:text-blue-400">Min Score</label>
+                            <input
+                              type="number"
+                              className="field mt-1 py-1 px-2.5 text-xs"
+                              value={q.validationRange?.min ?? 0}
+                              onChange={(e) => {
+                                const next = [...questions];
+                                next[idx].validationRange = {
+                                  min: parseInt(e.target.value, 10) || 0,
+                                  max: next[idx].validationRange?.max ?? 15,
+                                  allowNa: next[idx].validationRange?.allowNa ?? true,
+                                };
+                                setQuestions(next);
+                              }}
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] font-bold text-[#0063a9] uppercase dark:text-blue-400">Max Score</label>
+                            <input
+                              type="number"
+                              className="field mt-1 py-1 px-2.5 text-xs"
+                              value={q.validationRange?.max ?? 15}
+                              onChange={(e) => {
+                                const next = [...questions];
+                                next[idx].validationRange = {
+                                  min: next[idx].validationRange?.min ?? 0,
+                                  max: parseInt(e.target.value, 10) || 15,
+                                  allowNa: next[idx].validationRange?.allowNa ?? true,
+                                };
+                                setQuestions(next);
+                              }}
+                            />
+                          </div>
                         </div>
-                        <div className="flex-1">
-                          <label className="text-[10px] font-bold text-[#0063a9] uppercase dark:text-blue-400">Max Score</label>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
                           <input
-                            type="number"
-                            className="field mt-1 py-1 px-2.5 text-xs"
-                            value={q.validationRange?.max ?? 15}
+                            type="checkbox"
+                            className="h-3.5 w-3.5 rounded border-slate-300 text-[#0063a9] focus:ring-[#0063a9]"
+                            checked={q.validationRange?.allowNa ?? true}
                             onChange={(e) => {
                               const next = [...questions];
                               next[idx].validationRange = {
                                 min: next[idx].validationRange?.min ?? 0,
-                                max: parseInt(e.target.value, 10) || 15,
+                                max: next[idx].validationRange?.max ?? 15,
+                                allowNa: e.target.checked,
                               };
                               setQuestions(next);
                             }}
                           />
-                        </div>
+                          <span>Allow respondents to answer "N/A"</span>
+                        </label>
                       </div>
                     )}
                   </div>

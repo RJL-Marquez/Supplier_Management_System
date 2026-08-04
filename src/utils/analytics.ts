@@ -41,6 +41,21 @@ export function getSurveyEvaluationCompanies(
   return companiesOfType.filter((c) => selectedIds.has(c.id));
 }
 
+/**
+ * Every non-archived company of a given type, ignoring Supplier's Top 20
+ * curation entirely. Used only by the "Modify Companies to Evaluate" picker
+ * so the admin can see (and, if they choose, opt into evaluating) the full
+ * Supplier universe rather than just the current Top 20 - unlike
+ * getSurveyEvaluationCompanies, which is what actually gates evaluation
+ * eligibility everywhere else.
+ */
+export function getAllCompaniesOfType(
+  surveyType: SurveyType,
+  partnerCompanies: PartnerCompany[]
+): PartnerCompany[] {
+  return partnerCompanies.filter((c) => c.type === surveyType && !c.isArchived);
+}
+
 export const initialFilters: FilterState = {
   surveyType: [],
   questionId: '',

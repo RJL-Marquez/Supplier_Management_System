@@ -1,6 +1,7 @@
 import { ArchiveSeries, SurveyResponse, SurveyType } from '../types/survey';
 import { numericRating, submissionScores, submissionCount, computeRankScore } from './analytics';
 import { ScoreBand, getBand, questionWeights, getCanonicalQuestionId, formatCompositeScore } from '../data/questionWeights';
+import { getLiveCategoryLabel } from '../data/questionCategories';
 
 // Returned instead of a real band when a company has zero submissions with
 // at least one non-N/A answer - e.g. a single respondent who marked every
@@ -128,12 +129,17 @@ export function computeCompanyComposite(
   });
 
   const sections: SectionScore[] = canonicalSections.map((section) => {
+    // Grouping/math above stays keyed by questionWeights.ts's own section
+    // label (validated against the paper rubric) - only the label shown to
+    // the user is translated to whatever the Categories Manager currently
+    // calls it, so a rename can't affect scoring, only display.
+    const liveSection = getLiveCategoryLabel(surveyType, section);
     const v = sectionMap.get(section);
     if (!v) {
-      return { section, earned: 0, possible: 0, percent: 0, responses: 0 };
+      return { section: liveSection, earned: 0, possible: 0, percent: 0, responses: 0 };
     }
     return {
-      section,
+      section: liveSection,
       earned: Number(v.earned.toFixed(1)),
       possible: v.possible,
       percent: v.possible ? Number(Math.min(100, Math.max(0, (v.earned / v.possible) * 100)).toFixed(1)) : 0,

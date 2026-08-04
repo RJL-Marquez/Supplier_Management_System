@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Eye, EyeOff, LockKeyhole, Mail, Users } from 'lucide-react';
 import { isMsalConfigured, loginWithMicrosoft } from '../services/msalAuth';
+import { isDemoModeEnabled } from '../utils/demoMode';
 
 interface LoginPageProps {
   onLogin: (email: string) => void;
@@ -162,6 +163,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const msalReady = isMsalConfigured();
+  const demoModeEnabled = isDemoModeEnabled();
   const [isMsSigningIn, setIsMsSigningIn] = useState(false);
   const [msError, setMsError] = useState('');
 
@@ -235,9 +237,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         />
       </div>
 
-      <div className="flex flex-col md:flex-row md:items-start justify-center gap-6 md:gap-8 w-full max-w-md md:max-w-4xl">
+      <div className={`flex flex-col md:flex-row md:items-start justify-center gap-6 md:gap-8 w-full max-w-md ${demoModeEnabled ? 'md:max-w-4xl' : ''}`}>
         {/* Login card */}
-        <div className="relative w-full md:w-1/2 flex flex-col rounded-2xl border border-white/10 bg-white/95 backdrop-blur-sm shadow-2xl p-6 sm:p-8 dark:bg-slate-900/95">
+        <div className={`relative w-full ${demoModeEnabled ? 'md:w-1/2' : ''} flex flex-col rounded-2xl border border-white/10 bg-white/95 backdrop-blur-sm shadow-2xl p-6 sm:p-8 dark:bg-slate-900/95`}>
           <div className="mb-6">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-[#0063a9] dark:text-blue-300">Microsoft Forms</p>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">Supplier Management System</h1>
@@ -348,41 +350,43 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         </div>
 
         {/* Quick Select Panel */}
-        <div className="relative w-full md:w-1/2 flex flex-col rounded-2xl border border-white/10 bg-black/40 backdrop-blur-sm p-6 text-white h-fit">
-          <div className="flex items-center gap-2 mb-4">
-            <Users className="text-[#0063a9]" size={20} />
-            <h2 className="text-lg font-bold">Demo Simulation Accounts</h2>
-          </div>
-          <p className="text-xs text-slate-300 mb-4">
-            Click on any account below to pre-fill credentials. You can also sign in with any custom email ending with <strong className="text-blue-300">@mgenesis.com</strong> using password <strong className="text-blue-300">password123</strong>.
-          </p>
+        {demoModeEnabled && (
+          <div className="relative w-full md:w-1/2 flex flex-col rounded-2xl border border-white/10 bg-black/40 backdrop-blur-sm p-6 text-white h-fit">
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="text-[#0063a9]" size={20} />
+              <h2 className="text-lg font-bold">Demo Simulation Accounts</h2>
+            </div>
+            <p className="text-xs text-slate-300 mb-4">
+              Click on any account below to pre-fill credentials. You can also sign in with any custom email ending with <strong className="text-blue-300">@mgenesis.com</strong> using password <strong className="text-blue-300">password123</strong>.
+            </p>
 
-          <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
-            {DEMO_ACCOUNTS.map((acc) => (
-              <button
-                key={acc.email}
-                type="button"
-                onClick={() => handleQuickSelect(acc.email)}
-                className="w-full text-left p-3 rounded-lg border border-white/10 hover:border-blue-400 bg-white/5 hover:bg-white/10 transition flex flex-col gap-1 cursor-pointer"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-300">{acc.email}</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${acc.role === 'Admin' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}`}>
-                    {acc.role}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 text-[10px] text-slate-400 mt-0.5">
-                  <div>
-                    <span className="text-slate-500 font-semibold">Designation:</span> {acc.designation}
+            <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
+              {DEMO_ACCOUNTS.map((acc) => (
+                <button
+                  key={acc.email}
+                  type="button"
+                  onClick={() => handleQuickSelect(acc.email)}
+                  className="w-full text-left p-3 rounded-lg border border-white/10 hover:border-blue-400 bg-white/5 hover:bg-white/10 transition flex flex-col gap-1 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-300">{acc.email}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${acc.role === 'Admin' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}`}>
+                      {acc.role}
+                    </span>
                   </div>
-                  <div>
-                    <span className="text-slate-500 font-semibold">Department:</span> {acc.department}
+                  <div className="grid grid-cols-2 text-[10px] text-slate-400 mt-0.5">
+                    <div>
+                      <span className="text-slate-500 font-semibold">Designation:</span> {acc.designation}
+                    </div>
+                    <div>
+                      <span className="text-slate-500 font-semibold">Department:</span> {acc.department}
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

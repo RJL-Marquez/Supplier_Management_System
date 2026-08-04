@@ -18,6 +18,8 @@ import { logAdminActivity } from '../utils/adminActivityLog';
 import { computeCompanyDocumentSummary, computeDocumentStatus, EXPIRING_SOON_DAYS } from '../utils/compliance';
 import { getRequiredDocumentKeys } from '../utils/documentRequirements';
 import { getNotificationSettings, NOTIFICATION_SETTINGS_CHANGED_EVENT } from '../utils/documentNotificationSettings';
+import { insertSurveyResponses } from '../services/supabaseResponses';
+import { CATEGORIES_STORAGE_KEY, DEFAULT_CATEGORIES, LEGACY_OVERALL_CATEGORY, OVERALL_CATEGORY, getStoredCategoryLabels } from '../data/questionCategories';
 
 // Bumped from _v7: the Master List's format changed (columns shifted, one
 // more legend row added, Status dropdown expanded to 6 values) and
@@ -64,7 +66,7 @@ function ensureOverallFeedbackQuestion(form: CustomForm): CustomForm {
     questionId: expectedId,
     questionNumber: nextNum,
     question: 'Overall Comments and Feedback on the Company',
-    questionCategory: 'General',
+    questionCategory: OVERALL_CATEGORY,
     section: 'Overall Comments & Feedback',
     inputType: 'text' as const
   };
@@ -75,6 +77,21 @@ function ensureOverallFeedbackQuestion(form: CustomForm): CustomForm {
   };
 }
 
+// One-time self-healing migration: questions saved before the "Overall"
+// category existed carry the old 'General' label - rewrite them in place so
+// the survey editor's dropdown (which only offers Overall, not General) and
+// every chart/report grouping by questionCategory show one consistent name.
+function migrateGeneralCategory(form: CustomForm): CustomForm {
+  const hasLegacy = form.questions.some((q) => q.questionCategory === LEGACY_OVERALL_CATEGORY);
+  if (!hasLegacy) return form;
+  return {
+    ...form,
+    questions: form.questions.map((q) =>
+      q.questionCategory === LEGACY_OVERALL_CATEGORY ? { ...q, questionCategory: OVERALL_CATEGORY } : q
+    ),
+  };
+}
+
 function normalizeCustomForm(form: CustomForm): CustomForm {
   const normForm = {
     ...form,
@@ -82,7 +99,7 @@ function normalizeCustomForm(form: CustomForm): CustomForm {
     accessDepartments: form.accessDepartments?.length ? form.accessDepartments : ALL_DEPARTMENTS,
     accessRoles: form.accessRoles?.length ? form.accessRoles : [...ALL_SURVEY_ACCESS_ROLES],
   };
-  return ensureOverallFeedbackQuestion(normForm);
+  return migrateGeneralCategory(ensureOverallFeedbackQuestion(normForm));
 }
 
 function normalizePartnerCompanyType(value: unknown): PartnerCompanyType {
@@ -125,6 +142,7 @@ function normalizeSurveyResponse(response: SurveyResponse): SurveyResponse {
   return {
     ...response,
     surveyType: normalizeSurveyType(response.surveyType),
+    questionCategory: response.questionCategory === LEGACY_OVERALL_CATEGORY ? OVERALL_CATEGORY : response.questionCategory,
   };
 }
 
@@ -330,19 +348,11 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
   const [responses, setResponses] = useState<SurveyResponse[]>([]);
   const [surveys, setSurveys] = useState<CustomForm[]>([]);
   const [partnerCompanies, setPartnerCompanies] = useState<PartnerCompany[]>([]);
+  const [categoryLabels, setCategoryLabels] = useState<Record<SurveyType, string[]>>(() => getStoredCategoryLabels());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<ResponseNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-
-  const [chatNotifications, setChatNotifications] = useState<ResponseNotification[]>(() => {
-    try {
-      const data = localStorage.getItem('survey_notifications_v1');
-      return data ? JSON.parse(data) : [];
-    } catch (e) {
-      return [];
-    }
-  });
 
   const [archiveSeries, setArchiveSeries] = useState<ArchiveSeries[]>(() => {
     try {
@@ -380,24 +390,6 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     safeSetItem('survey_archive_series_v1', JSON.stringify(updated));
   };
 
-  useEffect(() => {
-    const handleNotificationsUpdated = () => {
-      try {
-        const data = localStorage.getItem('survey_notifications_v1');
-        if (data) {
-          setChatNotifications(JSON.parse(data));
-        }
-      } catch (e) {
-        // Ignore
-      }
-    };
-    window.addEventListener('notifications-updated', handleNotificationsUpdated);
-    window.addEventListener('chat-updated', handleNotificationsUpdated);
-    return () => {
-      window.removeEventListener('notifications-updated', handleNotificationsUpdated);
-      window.removeEventListener('chat-updated', handleNotificationsUpdated);
-    };
-  }, []);
   const [isFullDatasetActive, setIsFullDatasetActive] = useState(() => {
     return localStorage.getItem('survey_analytics_full_dataset_active') === 'true';
   });
@@ -1295,6 +1287,56 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     });
   };
 
+  // Renames one of a survey type's 5 categories (Categories Manager). Every
+  // question across every survey of that type - and every already-submitted
+  // response's stored questionCategory, active or archived - that carries
+  // the old label is rewritten to the new one in the same pass, so the
+  // rename is immediately visible everywhere that groups by questionCategory
+  // (bar charts, N/A frequency, reports) without leaving old-label data
+  // behind as an orphaned bucket. The radar chart (which groups by
+  // questionWeights.ts's own section labels, not questionCategory) picks up
+  // the rename separately via getLiveCategoryLabel, which reads the same
+  // categoryLabels storage this function writes to.
+  const renameCategory = (surveyType: SurveyType, slotIndex: number, newLabel: string) => {
+    const trimmed = newLabel.trim();
+    const oldLabel = categoryLabels[surveyType][slotIndex];
+    if (!trimmed || trimmed === oldLabel) return;
+
+    setCategoryLabels((current) => {
+      const updated = { ...current, [surveyType]: current[surveyType].map((label, i) => (i === slotIndex ? trimmed : label)) };
+      localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
+    setSurveys((currentSurveys) => {
+      const updated = currentSurveys.map((s) => {
+        if (s.surveyType !== surveyType) return s;
+        if (!s.questions.some((q) => q.questionCategory === oldLabel)) return s;
+        return { ...s, questions: s.questions.map((q) => (q.questionCategory === oldLabel ? { ...q, questionCategory: trimmed } : q)) };
+      });
+      localStorage.setItem('survey_analytics_surveys_v6', JSON.stringify(updated));
+      return updated;
+    });
+
+    setResponses((currentResponses) => {
+      const updated = currentResponses.map((r) =>
+        r.surveyType === surveyType && r.questionCategory === oldLabel ? { ...r, questionCategory: trimmed } : r
+      );
+      safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updated)));
+      return updated;
+    });
+  };
+
+  // Restores all 5 categories of one survey type to their factory defaults
+  // in one pass (Categories Manager's "Restore to Default").
+  const restoreDefaultCategories = (surveyType: SurveyType) => {
+    DEFAULT_CATEGORIES[surveyType].forEach((defaultLabel, slotIndex) => {
+      if (categoryLabels[surveyType][slotIndex] !== defaultLabel) {
+        renameCategory(surveyType, slotIndex, defaultLabel);
+      }
+    });
+  };
+
   // Delete a survey form
   const deleteSurvey = (surveyId: string) => {
     const updatedSurveys = surveys.filter((s) => s.id !== surveyId);
@@ -1345,6 +1387,11 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     const updatedResponses = [...responses, ...newResponses];
     setResponses(updatedResponses);
     safeSetItem('survey_analytics_responses_v6', JSON.stringify(compressResponses(updatedResponses)));
+
+    // Best-effort mirror to Supabase - localStorage above remains the source
+    // of truth the rest of the app reads from until the read side is
+    // migrated too (see supabase/schema.sql).
+    insertSurveyResponses(newResponses);
 
     // Add notification
     const notification = toNotification(newResponses);
@@ -1448,6 +1495,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     localStorage.removeItem('survey_analytics_partner_companies_v7');
     localStorage.removeItem(PARTNER_COMPANIES_STORAGE_KEY);
     localStorage.removeItem('survey_analytics_full_dataset_active');
+    localStorage.removeItem(CATEGORIES_STORAGE_KEY);
     window.location.reload();
   };
 
@@ -1540,17 +1588,6 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
 
   const markNotificationsRead = () => {
     setUnreadCount(0);
-    try {
-      const data = localStorage.getItem('survey_notifications_v1');
-      if (data) {
-        const parsed = JSON.parse(data);
-        const updated = parsed.map((item: any) => ({ ...item, read: true }));
-        localStorage.setItem('survey_notifications_v1', JSON.stringify(updated));
-        setChatNotifications(updated);
-      }
-    } catch (e) {
-      // Ignore
-    }
   };
 
   // Split active and archived responses so the active dashboard is unaffected
@@ -1854,29 +1891,14 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     return list;
   }, [partnerCompanies, simClock, notificationSettingsVersion]);
 
-  const filteredChatNotifications = useMemo(() => {
-    return chatNotifications.filter((notif: any) => {
-      if (isAdmin) {
-        // Admins see notifications sent by Employees
-        return notif.senderRole === 'Employee';
-      } else {
-        // Employees see notifications from Admins sent to them
-        const userEmailNormalized = (currentUserEmail || '').trim().toLowerCase();
-        const notifEmployeeEmailNormalized = (notif.employeeEmail || '').trim().toLowerCase();
-        return notif.senderRole === 'Admin' && userEmailNormalized === notifEmployeeEmailNormalized;
-      }
-    });
-  }, [chatNotifications, isAdmin, currentUserEmail]);
-
   const combinedNotifications = useMemo(() => {
-    const list = [...documentNotifications, ...earlyMilestoneNotifications, ...notifications, ...filteredChatNotifications];
+    const list = [...documentNotifications, ...earlyMilestoneNotifications, ...notifications];
     return list.sort((a, b) => b.submissionDate.localeCompare(a.submissionDate));
-  }, [documentNotifications, earlyMilestoneNotifications, notifications, filteredChatNotifications]);
+  }, [documentNotifications, earlyMilestoneNotifications, notifications]);
 
   const combinedUnreadCount = useMemo(() => {
-    const unreadChatCount = filteredChatNotifications.filter((c: any) => !c.read).length;
-    return unreadCount + documentNotifications.length + unreadChatCount;
-  }, [unreadCount, documentNotifications, filteredChatNotifications]);
+    return unreadCount + documentNotifications.length;
+  }, [unreadCount, documentNotifications]);
 
   return {
     responses: activeResponses,
@@ -1912,6 +1934,9 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     updateSurveysBulk,
     deleteSurvey,
     submitResponse,
+    categoryLabels,
+    renameCategory,
+    restoreDefaultCategories,
     resetAllData,
     isFullDatasetActive,
     clearResponses,

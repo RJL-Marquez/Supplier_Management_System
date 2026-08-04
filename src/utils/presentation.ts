@@ -1,5 +1,6 @@
 import { PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
 import { surveyTypeDisplayLabel } from '../data/questionWeights';
+import { isOverallCategory } from '../data/questionCategories';
 import { computeCompanyComposite, getLeaderboard, getOutliers, getSectionPeerAverages } from './scoring';
 import {
   averageBySurveyType,
@@ -397,7 +398,7 @@ export function buildSlides(options: BuildSlidesOptions): Slide[] {
       // Covered") - it has no rating data behind it, so it always renders as
       // an empty bar. Excluded here rather than in categoryPerformance()
       // itself since other consumers (Analytics page) may still want it.
-      slides.push({ kind: 'sections', data: categoryPerformance(responses).filter((c) => c.category !== 'General') });
+      slides.push({ kind: 'sections', data: categoryPerformance(responses).filter((c) => !isOverallCategory(c.category)) });
     }
 
     if (id === 'leaderboard') {

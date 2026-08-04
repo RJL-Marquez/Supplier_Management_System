@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { getAdminActivity } from '../utils/adminActivityLog';
 import { getExportHistory } from '../utils/exportHistory';
+import { isDemoModeEnabled } from '../utils/demoMode';
 
 interface SettingsPageProps {
   email: string;
@@ -205,19 +206,21 @@ export function SettingsPage({
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Advanced tools for testing and data management.</p>
 
         <div className="space-y-3">
-          <button
-            onClick={onOpenSimulator}
-            type="button"
-            className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-900 transition cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <Database size={18} className="text-[#0063a9] dark:text-blue-400 shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Database Simulator</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Simulate submissions and time-travel the system clock.</p>
+          {isDemoModeEnabled() && (
+            <button
+              onClick={onOpenSimulator}
+              type="button"
+              className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-900 transition cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <Database size={18} className="text-[#0063a9] dark:text-blue-400 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Database Simulator</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Simulate submissions and time-travel the system clock.</p>
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
+          )}
 
           <button
             onClick={onOpenImportEvaluations}

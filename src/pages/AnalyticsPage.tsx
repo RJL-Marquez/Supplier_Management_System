@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Award, Ban, ClipboardList, Download, Star, TrendingUp, Users } from 'lucide-react';
+import { Award, Ban, ClipboardList, Star, TrendingUp, Users } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
   Bar,
@@ -38,7 +38,6 @@ import {
   computeRankScore,
 } from '../utils/analytics';
 import { computeCompanyComposite, RankingMode } from '../utils/scoring';
-import { exportTablesAsCSV, exportTablesAsExcel, ExportTable } from '../utils/exporters';
 import { getBand, formatCompositeScore } from '../data/questionWeights';
 
 interface AnalyticsPageProps {
@@ -394,36 +393,6 @@ export function AnalyticsPage({
     onChangeSelectedSeriesIds(next);
   };
 
-  const handleExportSnapshot = (format: 'excel' | 'csv') => {
-    const tables: ExportTable[] = [
-      {
-        title: 'KPI Summary',
-        columns: ['Metric', 'Value'],
-        rows: [
-          ['Overall Satisfaction Score', formatNumber(summary.overallSatisfactionScore)],
-          ['Total Responses', summary.totalResponses],
-          ['Average Rating', formatNumber(summary.averageRating)],
-          ['N/A Percentage', `${formatNumber(summary.naPercentage)}%`],
-          ['Highest Rated Question', summary.highestRatedQuestion],
-          ['Lowest Rated Question', summary.lowestRatedQuestion],
-        ],
-      },
-      {
-        title: 'Company Performance',
-        columns: ['Company', 'Average Score', 'Evaluations'],
-        rows: getCompanyPerformance(responses).map((c) => [c.company, formatNumber(c.average), c.evaluations]),
-      },
-      {
-        title: `Trend (${trendGranularity === 'yearly' ? 'Yearly' : trendGranularity === 'series' ? 'By Series' : 'Monthly'})`,
-        columns: ['Period', 'Average Score', 'Responses'],
-        rows: trend.map((t) => [t.key, t.average, t.responses]),
-      },
-    ];
-    const filenameBase = `analytics_snapshot_${dataScope}`;
-    if (format === 'excel') exportTablesAsExcel(tables, filenameBase);
-    else exportTablesAsCSV(tables, filenameBase);
-  };
-
   const scopeToolbar = (onChangeDataScope || responses.length > 0) && (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-end gap-2">
@@ -468,26 +437,6 @@ export function AnalyticsPage({
             }`}
           >
             Pure Average
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => handleExportSnapshot('excel')}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
-            title="Export the current KPI summary, company performance, and trend data as an Excel workbook"
-          >
-            <Download size={14} />
-            <span>Export XLSX</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleExportSnapshot('csv')}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
-            title="Export the same snapshot as CSV"
-          >
-            <Download size={14} />
-            <span>CSV</span>
           </button>
         </div>
       </div>

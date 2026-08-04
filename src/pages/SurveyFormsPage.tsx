@@ -3,8 +3,8 @@ import { ClipboardList, Plus, Search, Eye, FormInput, X, Check, Award, Building2
 import { CustomForm, SurveyType, PartnerCompany, SurveyAccessRole } from '../types/survey';
 import { StateMessage } from '../components/StateMessage';
 import { CompletionStatusBar } from '../components/CompletionStatusBar';
-import { getSurveyEvaluationCompanies } from '../utils/analytics';
-import { SimClock, getEffectiveTodayStr } from '../utils/simClock';
+import { getAllCompaniesOfType, getSurveyEvaluationCompanies } from '../utils/analytics';
+import { SimClock } from '../utils/simClock';
 
 interface SurveyFormsPageProps {
   surveys: CustomForm[];
@@ -1279,11 +1279,15 @@ export function SurveyFormsPage({
           {/* Modify Companies to Evaluate - full-screen picker (single-survey modify only) */}
           {isCompanyPickerOpen && (() => {
             const targetSurvey = surveys.find((s) => selectedSurveyIds.has(s.id));
-            // evaluationCompanyIds is intentionally omitted here - this picker
-            // must show the full eligible pool to choose from, not just
-            // whatever was already selected in a prior customization.
+            // Shows every registered company of this survey's type, not just
+            // Supplier's curated Top 20 - so the admin can see (and opt into
+            // evaluating) the full pool. Checked state still defaults to the
+            // Top 20 via evaluationCompanyIds (seeded in openSingleModify from
+            // getSurveyEvaluationCompanies), so it stays in sync with the
+            // Supplier Ranking page automatically for any survey that hasn't
+            // been manually customized.
             const pickerCompanies = targetSurvey
-              ? getSurveyEvaluationCompanies({ surveyType: targetSurvey.surveyType, evaluationCompanyIds: undefined }, partnerCompanies, getEffectiveTodayStr(simClock))
+              ? getAllCompaniesOfType(targetSurvey.surveyType, partnerCompanies)
               : [];
             const allSelected = pickerCompanies.length > 0 && pickerCompanies.every((c) => evaluationCompanyIds.includes(c.id));
 
@@ -1366,7 +1370,12 @@ export function SurveyFormsPage({
                               className="h-4 w-4 rounded border-slate-300 text-[#0063a9] focus:ring-[#0063a9]"
                             />
                             <Building2 size={14} className="text-slate-400 shrink-0" />
-                            <span>{company.name}</span>
+                            <span className="flex-1">{company.name}</span>
+                            {targetSurvey?.surveyType === 'Supplier' && !(company.evaluationRank && company.evaluationRank >= 1 && company.evaluationRank <= 20) && (
+                              <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+                                Not in Top 20
+                              </span>
+                            )}
                           </label>
                         ))}
                       </div>

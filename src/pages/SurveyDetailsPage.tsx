@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
-import { ArrowLeft, ExternalLink, Trash, Calendar, CalendarClock, Users, ClipboardCheck, AlertTriangle, Eye, Pencil, Building2, Check } from 'lucide-react';
+import { ArrowLeft, Trash, Calendar, CalendarClock, Users, ClipboardCheck, AlertTriangle, Eye, Pencil, Building2, Check } from 'lucide-react';
 import { CustomForm, SurveyResponse, PartnerCompany } from '../types/survey';
 import { CompletionStatusBar } from '../components/CompletionStatusBar';
+import { SurveyPreviewModal } from '../components/SurveyPreviewModal';
 import { formatNumber, getSurveyEvaluationCompanies, scoredResponses, submissionScores } from '../utils/analytics';
 import { isScoredQuestion, getQuestionMaxPoints, formatCompositeScore } from '../data/questionWeights';
 
@@ -11,15 +12,15 @@ interface SurveyDetailsPageProps {
   partnerCompanies?: PartnerCompany[];
   userEmail?: string;
   onBack: () => void;
-  onFillForm: (surveyId: string) => void;
   onDelete: (surveyId: string) => void;
   onEdit?: (surveyId: string) => void;
   isAdmin?: boolean;
 }
 
-export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], userEmail = '', onBack, onFillForm, onDelete, onEdit, isAdmin }: SurveyDetailsPageProps) {
+export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], userEmail = '', onBack, onDelete, onEdit, isAdmin }: SurveyDetailsPageProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const { pendingCompanies, completedCount, totalCompanies } = useMemo(() => {
     const normalizedUserEmail = userEmail.trim().toLowerCase();
@@ -123,13 +124,13 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
           )}
           
           <button
-            onClick={() => onFillForm(survey.id)}
+            onClick={() => setShowPreview(true)}
             className="primary-button bg-[#0063a9] hover:bg-[#00528c] px-6 py-3 text-base h-12 flex items-center justify-center gap-2"
             type="button"
-            id="btn-fill-form-now"
+            id="btn-preview-survey"
           >
-            <ClipboardCheck size={20} />
-            <span>Answer Survey</span>
+            <Eye size={20} />
+            <span>Preview</span>
           </button>
           
           {isCustom && isAdmin && (
@@ -263,26 +264,6 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
               </div>
             </div>
           </div>
-
-          {/* Quick share links */}
-          <div className="panel space-y-3">
-            <h4 className="text-sm font-bold text-slate-800 dark:text-white">Form Integration</h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Share the live link with your {survey.surveyType.toLowerCase()}s to capture internal or external satisfaction feedback directly.
-            </p>
-            <button
-              onClick={() => {
-                const url = `${window.location.origin}/fill-survey?id=${survey.id}`;
-                navigator.clipboard.writeText(url);
-                alert('Form link copied to clipboard!');
-              }}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white hover:border-blue-200 hover:text-[#0063a9] px-3 py-2 text-xs font-semibold dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 transition"
-              type="button"
-            >
-              <ExternalLink size={13} />
-              <span>Copy Response Link</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -297,7 +278,6 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
           <div className="py-8 text-center text-slate-400 dark:text-slate-600">
             <ClipboardCheck size={32} className="mx-auto mb-2 opacity-50" />
             <p className="text-sm font-medium">No responses have been submitted to this form yet.</p>
-            <p className="text-xs mt-1">Use the "Answer Survey" button to submit your first feedback entry.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -481,6 +461,10 @@ export function SurveyDetailsPage({ survey, responses, partnerCompanies = [], us
             </div>
           </div>
         </div>
+      )}
+
+      {showPreview && (
+        <SurveyPreviewModal survey={survey} partnerCompanies={partnerCompanies} onClose={() => setShowPreview(false)} />
       )}
     </div>
   );

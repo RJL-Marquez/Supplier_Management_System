@@ -15,6 +15,7 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
 import { getQuestionMaxPoints, surveyTypeDisplayLabel } from '../data/questionWeights';
+import { isOverallCategory } from '../data/questionCategories';
 import { formatNumber, numericRating, averageRating } from '../utils/analytics';
 
 interface QuestionReportBuilderPageProps {
@@ -115,7 +116,7 @@ export function QuestionReportBuilderPage({ responses, partnerCompanies, canExpo
       typeResponses.forEach(r => {
         const key = r.questionId;
         // Ignore overall comments / general categories if any
-        if (r.questionCategory === 'General' || key.includes('OVERALL-FEEDBACK')) return;
+        if (isOverallCategory(r.questionCategory) || key.includes('OVERALL-FEEDBACK')) return;
         
         if (!questionGroups.has(key)) {
           questionGroups.set(key, { questionText: r.question, responses: [] });

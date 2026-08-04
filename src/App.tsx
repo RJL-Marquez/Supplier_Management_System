@@ -8,7 +8,7 @@ import { AnalyticsPage } from './pages/AnalyticsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotificationLogsPage } from './pages/NotificationLogsPage';
-import { EmployeeNotificationsHubPage } from './pages/EmployeeNotificationsHubPage';
+import { EmployeeNotificationLogsPage } from './pages/EmployeeNotificationLogsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SurveyExplorerPage } from './pages/SurveyExplorerPage';
 import { CreateSurveyPage } from './pages/CreateSurveyPage';
@@ -29,15 +29,15 @@ import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { OutstandingEvaluationsPage } from './pages/OutstandingEvaluationsPage';
 import { ExportHistoryPage } from './pages/ExportHistoryPage';
-import { AdminChatWidget } from './components/AdminChatWidget';
+import { CategoriesManagerPage } from './pages/CategoriesManagerPage';
 import { logAdminActivity } from './utils/adminActivityLog';
-import { initializeSystemChats, getChatUnreadCount } from './utils/chatService';
 import { useSurveyData } from './hooks/useSurveyData';
 import { applyFilters, initialFilters } from './utils/analytics';
 import { FilterState, SurveyType, CustomForm, SurveyResponse } from './types/survey';
 import { PageModuleKey, getDefaultPermissions, hasPageAccess, getDepartmentDefaultPermissions } from './utils/rbac';
 import { SimClock, loadSimClock, saveSimClock } from './utils/simClock';
 import { SimulatedClockIndicator } from './components/SimulatedClockIndicator';
+import { isDemoModeEnabled } from './utils/demoMode';
 
 // Shared by userAccessibleResponses/userAccessibleAllTimeResponses below - the
 // same role/department/survey-type scoping rule applied to either the
@@ -80,15 +80,19 @@ export interface AccountProfile {
   };
 }
 
-const DEFAULT_ACCOUNTS: AccountProfile[] = [
-  // System Administrator — unrestricted access to all modules and permissions.
-  {
-    email: 'admin@mgenesis.com',
-    role: 'Admin',
-    designation: 'Executive',
-    department: 'Business Solutions Manager'
-  },
+// Kept even with demo mode off - this is the one bootstrap account needed to
+// log in and start adding real employees via Account Management on a fresh
+// deployment, not placeholder demo data.
+const BOOTSTRAP_ADMIN_ACCOUNT: AccountProfile = {
+  email: 'admin@mgenesis.com',
+  role: 'Admin',
+  designation: 'Executive',
+  department: 'Business Solutions Manager'
+};
 
+// Placeholder roster simulating a multi-department org for demoing/testing
+// RBAC. Only seeded when demo mode is enabled - see isDemoModeEnabled().
+const DEMO_SEED_ACCOUNTS: AccountProfile[] = [
   // Procurement
   {
     email: 'maria.fernandez@mgenesis.com',
@@ -210,7 +214,11 @@ const DEFAULT_ACCOUNTS: AccountProfile[] = [
   }
 ];
 
-type PageKey = 'dashboard' | 'partner-companies' | 'document-register' | 'supplier-ranking' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'import-evaluations' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings';
+const DEFAULT_ACCOUNTS: AccountProfile[] = isDemoModeEnabled()
+  ? [BOOTSTRAP_ADMIN_ACCOUNT, ...DEMO_SEED_ACCOUNTS]
+  : [BOOTSTRAP_ADMIN_ACCOUNT];
+
+type PageKey = 'dashboard' | 'partner-companies' | 'document-register' | 'supplier-ranking' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'import-evaluations' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings' | 'categories-manager';
 
 // Admin sidebar: grouped by workflow stage (raw data -> insight -> output)
 // rather than flat/alphabetical, per the dashboard IA redesign.
@@ -241,6 +249,7 @@ const adminNavItems: NavItem<PageKey>[] = [
       { key: 'pending-review', label: 'Outstanding Evaluations' },
       { key: 'explorer', label: 'Raw Data Explorer' },
       { key: 'archive', label: 'Archive Center' },
+      { key: 'categories-manager', label: 'Categories Manager' },
     ],
   },
   // Single page already covers trends + company comparisons together, so
@@ -259,8 +268,8 @@ const adminNavItems: NavItem<PageKey>[] = [
   },
   { key: 'account-management', label: 'Employees / Users', icon: UserCog },
   // General admin notification log (document expiry alerts, survey
-  // submissions, chat) - already existed as a page, only reachable before
-  // now via the bell's "View all" link.
+  // submissions) - already existed as a page, only reachable before now
+  // via the bell's "View all" link.
   { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
@@ -352,7 +361,10 @@ export default function App() {
       return {
         pages: [
           'dashboard', 'survey-forms', 'explorer', 'analytics', 'reports', 'present',
-          'partner-companies', 'document-register', 'renew-documents', 'supplier-ranking', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'simulator', 'import-evaluations'
+          'partner-companies', 'document-register', 'renew-documents', 'supplier-ranking', 'partners-feedback-hub', 'account-management', 'notifications', 'archive', 'import-evaluations',
+          // Database Simulator is demo/testing tooling only - excluded once
+          // VITE_ENABLE_DEMO_MODE is turned off.
+          ...(isDemoModeEnabled() ? ['simulator' as PageModuleKey] : []),
         ] as PageModuleKey[],
         surveyTypes: ['Courier', 'Supplier', 'Subcontractor'] as SurveyType[]
       };
@@ -408,6 +420,9 @@ export default function App() {
     updateSurveysBulk,
     deleteSurvey,
     submitResponse,
+    categoryLabels,
+    renameCategory,
+    restoreDefaultCategories,
     resetAllData,
     isFullDatasetActive,
     clearResponses,
@@ -416,28 +431,6 @@ export default function App() {
   } = useSurveyData(accounts, account, isAdmin, simClock);
 
   const [activePage, setActivePage] = useState<PageKey>('dashboard');
-  const [chatUnread, setChatUnread] = useState(0);
-
-  // Initialize live system chats for all employees with admins
-  useEffect(() => {
-    if (accounts && accounts.length > 0) {
-      initializeSystemChats(accounts);
-    }
-  }, [accounts]);
-
-  // Keep chat unread counts in sync
-  useEffect(() => {
-    const handleUnreadUpdate = () => {
-      if (account) {
-        setChatUnread(getChatUnreadCount(account, isAdmin));
-      }
-    };
-    handleUnreadUpdate();
-    window.addEventListener('chat-updated', handleUnreadUpdate);
-    return () => {
-      window.removeEventListener('chat-updated', handleUnreadUpdate);
-    };
-  }, [account, isAdmin]);
 
   const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
   const surveyFillerRef = useRef<SurveyFillerHandle>(null);
@@ -609,10 +602,10 @@ export default function App() {
       { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { key: 'fill-form', label: 'New Evaluation', icon: FilePlus },
       { key: 'my-submissions', label: 'My Submissions', icon: ClipboardList },
-      { key: 'notifications', label: 'Notifications', icon: Bell, badgeCount: chatUnread },
+      { key: 'notifications', label: 'Notifications', icon: Bell },
       { key: 'profile-settings', label: 'Profile / Settings', icon: CircleUserRound },
     ],
-    [chatUnread]
+    []
   );
 
   const visiblePages = isAdmin ? adminNavItems : employeeNavItems;
@@ -875,7 +868,7 @@ export default function App() {
       <NotificationLogsPage notifications={notifications} unreadCount={unreadCount} />
     ) : (
       profile && (
-        <EmployeeNotificationsHubPage
+        <EmployeeNotificationLogsPage
           userEmail={account || ''}
           profile={profile}
           surveys={surveys}
@@ -885,9 +878,6 @@ export default function App() {
             setSelectedSurveyId(id);
             setActivePage('fill-form');
           }}
-          currentUser={profile}
-          accounts={accounts}
-          chatUnread={chatUnread}
         />
       )
     ),
@@ -936,10 +926,6 @@ export default function App() {
           partnerCompanies={userAccessiblePartnerCompanies}
           userEmail={account || ''}
           onBack={() => setActivePage('dashboard')}
-          onFillForm={(id) => {
-            setSelectedSurveyId(id);
-            setActivePage('fill-form');
-          }}
           onDelete={(id) => {
             deleteSurvey(id);
             setActivePage('dashboard');
@@ -1089,10 +1075,6 @@ export default function App() {
                 Reset System Database
               </button>
             </div>
-          )}
-
-          {isAdmin && profile && (
-            <AdminChatWidget currentUser={profile} accounts={accounts} />
           )}
         </div>
       </Shell>

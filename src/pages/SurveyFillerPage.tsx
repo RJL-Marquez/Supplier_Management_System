@@ -526,16 +526,23 @@ export const SurveyFillerPage = forwardRef<SurveyFillerHandle, SurveyFillerPageP
           errors[q.questionId] = 'This field is required. Please enter your answer.';
         }
       } else if (q.inputType === 'typed-rating') {
+        const allowNa = q.validationRange?.allowNa ?? true;
         if (!valStr) {
-          errors[q.questionId] = 'This field is required. Please type a rating score or "N/A".';
+          errors[q.questionId] = allowNa
+            ? 'This field is required. Please type a rating score or "N/A".'
+            : 'This field is required. Please type a rating score.';
         } else if (valStr.toUpperCase() === 'N/A') {
-          // valid
+          if (!allowNa) {
+            errors[q.questionId] = 'This question does not accept "N/A". Please enter a whole number instead.';
+          }
         } else {
           const num = Number(valStr);
           const min = q.validationRange?.min ?? 0;
           const max = q.validationRange?.max ?? 100;
           if (isNaN(num) || !Number.isInteger(num) || num < min || num > max) {
-            errors[q.questionId] = `Invalid input. Must be "N/A" or a whole number between ${min} and ${max}.`;
+            errors[q.questionId] = allowNa
+              ? `Invalid input. Must be "N/A" or a whole number between ${min} and ${max}.`
+              : `Invalid input. Must be a whole number between ${min} and ${max}.`;
           }
         }
       }
@@ -1149,11 +1156,15 @@ export const SurveyFillerPage = forwardRef<SurveyFillerHandle, SurveyFillerPageP
                       ) : q.inputType === 'typed-rating' ? (
                         <div>
                           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">
-                            Type Rating (Value: {q.validationRange ? `${q.validationRange.min}-${q.validationRange.max}` : '0-100'} or "N/A"): <span className="text-rose-500 font-bold">*</span>
+                            Type Rating (Value: {q.validationRange ? `${q.validationRange.min}-${q.validationRange.max}` : '0-100'}{(q.validationRange?.allowNa ?? true) ? ' or "N/A"' : ''}): <span className="text-rose-500 font-bold">*</span>
                           </span>
                           <input
                             type="text"
-                            placeholder={`Enter N/A or number from ${q.validationRange?.min || 0} to ${q.validationRange?.max || 100}`}
+                            placeholder={
+                              (q.validationRange?.allowNa ?? true)
+                                ? `Enter N/A or number from ${q.validationRange?.min || 0} to ${q.validationRange?.max || 100}`
+                                : `Enter a number from ${q.validationRange?.min || 0} to ${q.validationRange?.max || 100}`
+                            }
                             className={`field w-full max-w-sm ${validationErrors[q.questionId] ? 'border-rose-400 focus:ring-rose-200' : ''}`}
                             value={ratings[q.questionId] !== undefined ? ratings[q.questionId].toString() : ''}
                             onChange={(e) => {

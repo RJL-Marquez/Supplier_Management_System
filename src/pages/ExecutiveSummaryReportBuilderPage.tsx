@@ -39,6 +39,7 @@ import {
 } from 'recharts';
 import { PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
 import { getQuestionMaxPoints, surveyTypeDisplayLabel, formatCompositeScore } from '../data/questionWeights';
+import { isOverallCategory } from '../data/questionCategories';
 import {
   formatNumber,
   getKpiSummary,
@@ -151,7 +152,7 @@ export function ExecutiveSummaryReportBuilderPage({
     const groups = new Map<string, { questionText: string; surveyType: SurveyType; category: string; responses: SurveyResponse[] }>();
     
     filteredResponses.forEach((r) => {
-      if (r.questionCategory === 'General' || r.questionId.includes('OVERALL-FEEDBACK')) return;
+      if (isOverallCategory(r.questionCategory) || r.questionId.includes('OVERALL-FEEDBACK')) return;
       const key = `${r.surveyType}::${r.questionId}`;
       if (!groups.has(key)) {
         groups.set(key, {
@@ -260,7 +261,7 @@ export function ExecutiveSummaryReportBuilderPage({
       
       typeResponses.forEach(r => {
         const key = r.questionId;
-        if (r.questionCategory === 'General' || key.includes('OVERALL-FEEDBACK')) return;
+        if (isOverallCategory(r.questionCategory) || key.includes('OVERALL-FEEDBACK')) return;
         
         if (!questionGroups.has(key)) {
           questionGroups.set(key, { questionText: r.question, responses: [] });
