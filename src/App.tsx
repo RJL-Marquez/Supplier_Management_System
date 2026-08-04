@@ -888,6 +888,7 @@ export default function App() {
           setActivePage('dashboard');
         }}
         surveyToEdit={editingSurveyId ? surveys.find(s => s.id === editingSurveyId) : undefined}
+        categoryLabels={categoryLabels}
         onSave={(surveyData) => {
           if (editingSurveyId) {
             const currentSurvey = surveys.find(s => s.id === editingSurveyId);
@@ -980,6 +981,13 @@ export default function App() {
     ),
     'import-evaluations': (
       <ImportEvaluationsPage onPreview={previewRawEvaluations} onCommit={commitRawEvaluations} />
+    ),
+    'categories-manager': (
+      <CategoriesManagerPage
+        categoryLabels={categoryLabels}
+        onRenameCategory={renameCategory}
+        onRestoreDefaults={restoreDefaultCategories}
+      />
     ),
   }[activePage];
 
