@@ -38,7 +38,7 @@ import {
   Legend
 } from 'recharts';
 import { PartnerCompany, SurveyResponse, SurveyType } from '../types/survey';
-import { getQuestionMaxPoints, surveyTypeDisplayLabel, formatCompositeScore } from '../data/questionWeights';
+import { getQuestionMaxPoints, surveyTypeDisplayLabel, formatCompositeScore, getBand, getRemarkText } from '../data/questionWeights';
 import { isOverallCategory } from '../data/questionCategories';
 import {
   formatNumber,
@@ -500,14 +500,14 @@ export function ExecutiveSummaryReportBuilderPage({
       // 4. Partner Rankings
       if (showCompanyRankings) {
         tables.push({
-          title: 'Top Performing Rated Partners',
-          columns: ['Partner Company', 'Composite Rating', 'Submissions Count'],
-          rows: topCompanies.map((r) => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations]),
+          title: 'Highest Rated Partners',
+          columns: ['Partner Company', 'Composite Rating', 'Submissions Count', 'Remarks'],
+          rows: topCompanies.map((r) => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations, getRemarkText(getBand(r.surveyType, r.average))]),
         });
         tables.push({
           title: 'Lowest Rated Partners (Operational Alert)',
-          columns: ['Partner Company', 'Composite Rating', 'Submissions Count'],
-          rows: leastRatedCompanies.map((r) => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations]),
+          columns: ['Partner Company', 'Composite Rating', 'Submissions Count', 'Remarks'],
+          rows: leastRatedCompanies.map((r) => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations, getRemarkText(getBand(r.surveyType, r.average))]),
         });
       }
 
@@ -860,18 +860,20 @@ export function ExecutiveSummaryReportBuilderPage({
           cursorY += 20;
 
           if (topCompanies.length > 0) {
-            const tableHeaders = ['Performance Rank', 'Partner Company Name', 'Average Score'];
+            const tableHeaders = ['Rank', 'Partner Company Name', 'Average Score', 'Remarks'];
             const tableRows = topCompanies.map((row, idx) => [
               `#${idx + 1}`,
               row.company,
               formatCompositeScore(row.surveyType, row.average).text,
+              getRemarkText(getBand(row.surveyType, row.average)),
             ]);
 
-            const leastHeaders = ['Alert Rank', 'Partner Company Name', 'Average Score'];
+            const leastHeaders = ['Alert Rank', 'Partner Company Name', 'Average Score', 'Remarks'];
             const leastRows = leastRatedCompanies.map((row, idx) => [
               `ALERT #${idx + 1}`,
               row.company,
               formatCompositeScore(row.surveyType, row.average).text,
+              getRemarkText(getBand(row.surveyType, row.average)),
             ]);
 
             const startY = cursorY;
@@ -880,7 +882,7 @@ export function ExecutiveSummaryReportBuilderPage({
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(10.5);
             doc.setTextColor(16, 185, 129);
-            doc.text(`Highest Performing Partners (Top ${splitCount})`, marginLeft, startY);
+            doc.text(`Highest Rated Partners (Top ${splitCount})`, marginLeft, startY);
             doc.setTextColor(239, 68, 68);
             doc.text(`Lowest Rated Partners`, marginLeft + tableWidth + 10, startY);
 
@@ -1549,25 +1551,32 @@ export function ExecutiveSummaryReportBuilderPage({
                     <div className="space-y-2">
                       <h4 className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1">
                         <CheckCircle2 size={12} />
-                        <span>Highest Performing Partners (Top {splitCount})</span>
+                        <span>Highest Rated Partners (Top {splitCount})</span>
                       </h4>
                       <div className="rounded-lg border border-emerald-100 dark:border-emerald-950/30 overflow-hidden">
                         <table className="w-full text-left text-[10px] border-collapse">
                           <thead>
                             <tr className="bg-emerald-50/50 dark:bg-emerald-950/20 border-b border-emerald-100 dark:border-emerald-900/30">
-                              <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase">Performance Rank</th>
+                              <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase">Rank</th>
                               <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase">Partner Company Name</th>
                               <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase text-right">Average Score</th>
+                              <th className="p-2 font-bold text-emerald-700 text-[9px] uppercase text-right">Remarks</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-emerald-100/50 dark:divide-emerald-900/20 text-slate-700 dark:text-slate-300">
-                            {topCompanies.map((c, idx) => (
-                              <tr key={c.company} className="hover:bg-emerald-50/10">
-                                <td className="p-2 font-bold text-emerald-600">#{idx + 1}</td>
-                                <td className="p-2 font-medium">{c.company}</td>
-                                <td className="p-2 text-right font-black text-emerald-600">{formatCompositeScore(c.surveyType, c.average).text}</td>
-                              </tr>
-                            ))}
+                            {topCompanies.map((c, idx) => {
+                              const band = getBand(c.surveyType, c.average);
+                              return (
+                                <tr key={c.company} className="hover:bg-emerald-50/10">
+                                  <td className="p-2 font-bold text-emerald-600">#{idx + 1}</td>
+                                  <td className="p-2 font-medium">{c.company}</td>
+                                  <td className="p-2 text-right font-black text-emerald-600">{formatCompositeScore(c.surveyType, c.average).text}</td>
+                                  <td className="p-2 text-right">
+                                    <span className="badge" style={{ backgroundColor: `${band.hex}1a`, color: band.hex }}>{getRemarkText(band)}</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -1588,16 +1597,23 @@ export function ExecutiveSummaryReportBuilderPage({
                               <th className="p-2 font-bold text-rose-700 text-[9px] uppercase">Alert Rank</th>
                               <th className="p-2 font-bold text-rose-700 text-[9px] uppercase">Partner Company Name</th>
                               <th className="p-2 font-bold text-rose-700 text-[9px] uppercase text-right">Average Score</th>
+                              <th className="p-2 font-bold text-rose-700 text-[9px] uppercase text-right">Remarks</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-rose-100/50 dark:divide-rose-900/20 text-slate-700 dark:text-slate-300">
-                            {leastRatedCompanies.map((c, idx) => (
-                              <tr key={c.company} className="hover:bg-rose-50/10">
-                                <td className="p-2 font-bold text-rose-500">ALERT #{idx + 1}</td>
-                                <td className="p-2 font-medium">{c.company}</td>
-                                <td className="p-2 text-right font-black text-rose-500">{formatCompositeScore(c.surveyType, c.average).text}</td>
-                              </tr>
-                            ))}
+                            {leastRatedCompanies.map((c, idx) => {
+                              const band = getBand(c.surveyType, c.average);
+                              return (
+                                <tr key={c.company} className="hover:bg-rose-50/10">
+                                  <td className="p-2 font-bold text-rose-500">ALERT #{idx + 1}</td>
+                                  <td className="p-2 font-medium">{c.company}</td>
+                                  <td className="p-2 text-right font-black text-rose-500">{formatCompositeScore(c.surveyType, c.average).text}</td>
+                                  <td className="p-2 text-right">
+                                    <span className="badge" style={{ backgroundColor: `${band.hex}1a`, color: band.hex }}>{getRemarkText(band)}</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>

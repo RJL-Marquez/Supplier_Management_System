@@ -35,7 +35,7 @@ import {
   averageBySurveyType,
   questionPerformance
 } from '../utils/analytics';
-import { formatCompositeScore } from '../data/questionWeights';
+import { formatCompositeScore, getBand, getRemarkText } from '../data/questionWeights';
 
 interface SummaryReportBuilderPageProps {
   responses: SurveyResponse[];
@@ -225,21 +225,21 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
         });
       }
 
-      // Add Top Performing
+      // Add Highest Rated
       if (showTopCompanies && topCompanies.length > 0) {
         tables.push({
-          title: 'Top Performing Evaluated Companies',
-          columns: ['Company', 'Average Score', 'Evaluations Count'],
-          rows: topCompanies.map(r => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations]),
+          title: 'Highest Rated Evaluated Companies',
+          columns: ['Company', 'Average Score', 'Evaluations Count', 'Remarks'],
+          rows: topCompanies.map(r => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations, getRemarkText(getBand(r.surveyType, r.average))]),
         });
       }
 
-      // Add Bottom Performing
+      // Add Lowest Rated
       if (showBottomCompanies && leastRatedCompanies.length > 0) {
         tables.push({
           title: 'Lowest Rated Evaluated Companies',
-          columns: ['Company', 'Average Score', 'Evaluations Count'],
-          rows: leastRatedCompanies.map(r => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations]),
+          columns: ['Company', 'Average Score', 'Evaluations Count', 'Remarks'],
+          rows: leastRatedCompanies.map(r => [r.company, formatCompositeScore(r.surveyType, r.average).text, r.evaluations, getRemarkText(getBand(r.surveyType, r.average))]),
         });
       }
 
@@ -475,20 +475,21 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
           doc.text('Partner Performance & Question Highlights', marginLeft, cursorY);
           cursorY += 22;
 
-          // Top Performing Companies
+          // Highest Rated Companies
           if (showTopCompanies && topCompanies.length > 0) {
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(11);
             doc.setTextColor(30);
-            doc.text('Top Performing Evaluated Companies', marginLeft, cursorY);
+            doc.text('Highest Rated Evaluated Companies', marginLeft, cursorY);
             cursorY += 10;
 
-            const tableHeaders = ['Rank', 'Company Name', 'Average Score', 'Evaluations Count'];
+            const tableHeaders = ['Rank', 'Company Name', 'Average Score', 'Evaluations Count', 'Remarks'];
             const tableRows = topCompanies.map((row, idx) => [
               `#${idx + 1}`,
               row.company,
               formatCompositeScore(row.surveyType, row.average).text,
-              String(row.evaluations)
+              String(row.evaluations),
+              getRemarkText(getBand(row.surveyType, row.average))
             ]);
 
             autoTable(doc, {
@@ -517,12 +518,13 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
             doc.text('Lowest Rated Evaluated Companies', marginLeft, cursorY);
             cursorY += 10;
 
-            const tableHeaders = ['Rank', 'Company Name', 'Average Score', 'Evaluations Count'];
+            const tableHeaders = ['Rank', 'Company Name', 'Average Score', 'Evaluations Count', 'Remarks'];
             const tableRows = leastRatedCompanies.map((row, idx) => [
               `#${leastRatedCompanies.length - idx}`,
               row.company,
               formatCompositeScore(row.surveyType, row.average).text,
-              String(row.evaluations)
+              String(row.evaluations),
+              getRemarkText(getBand(row.surveyType, row.average))
             ]);
 
             autoTable(doc, {
@@ -972,7 +974,7 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
                   <div className="mt-5 space-y-2">
                     <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-800 dark:text-white">
                       <Award size={14} className="text-emerald-500" />
-                      <span>Top Performing Evaluated Companies</span>
+                      <span>Highest Rated Evaluated Companies</span>
                     </h3>
                     <div className="overflow-hidden border border-slate-100 dark:border-slate-800 rounded-lg text-[10px]">
                       <table className="w-full text-left">
@@ -982,17 +984,24 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
                             <th className="px-3 py-1.5">Company Name</th>
                             <th className="px-3 py-1.5 text-center">Average Score</th>
                             <th className="px-3 py-1.5 text-center">Evaluations Count</th>
+                            <th className="px-3 py-1.5 text-center">Remarks</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {topCompanies.map((row, idx) => (
-                            <tr key={row.company} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-900/20' : 'bg-white dark:bg-slate-950'}>
-                              <td className="px-3 py-1 font-bold text-emerald-600 dark:text-emerald-400">#{idx + 1}</td>
-                              <td className="px-3 py-1 font-semibold text-slate-800 dark:text-slate-200">{row.company}</td>
-                              <td className="px-3 py-1 text-center font-bold text-slate-700 dark:text-slate-300">{formatCompositeScore(row.surveyType, row.average).text}</td>
-                              <td className="px-3 py-1 text-center text-slate-500">{row.evaluations}</td>
-                            </tr>
-                          ))}
+                          {topCompanies.map((row, idx) => {
+                            const band = getBand(row.surveyType, row.average);
+                            return (
+                              <tr key={row.company} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-900/20' : 'bg-white dark:bg-slate-950'}>
+                                <td className="px-3 py-1 font-bold text-emerald-600 dark:text-emerald-400">#{idx + 1}</td>
+                                <td className="px-3 py-1 font-semibold text-slate-800 dark:text-slate-200">{row.company}</td>
+                                <td className="px-3 py-1 text-center font-bold text-slate-700 dark:text-slate-300">{formatCompositeScore(row.surveyType, row.average).text}</td>
+                                <td className="px-3 py-1 text-center text-slate-500">{row.evaluations}</td>
+                                <td className="px-3 py-1 text-center">
+                                  <span className="badge" style={{ backgroundColor: `${band.hex}1a`, color: band.hex }}>{getRemarkText(band)}</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1013,17 +1022,24 @@ export function SummaryReportBuilderPage({ responses, partnerCompanies = [], can
                             <th className="px-3 py-1.5">Company Name</th>
                             <th className="px-3 py-1.5 text-center">Average Score</th>
                             <th className="px-3 py-1.5 text-center">Evaluations Count</th>
+                            <th className="px-3 py-1.5 text-center">Remarks</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {leastRatedCompanies.map((row, idx) => (
-                            <tr key={row.company} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-900/20' : 'bg-white dark:bg-slate-950'}>
-                              <td className="px-3 py-1 font-bold text-rose-600 dark:text-rose-400">#{companyPerformance.length - idx}</td>
-                              <td className="px-3 py-1 font-semibold text-slate-800 dark:text-slate-200">{row.company}</td>
-                              <td className="px-3 py-1 text-center font-bold text-slate-700 dark:text-slate-300">{formatCompositeScore(row.surveyType, row.average).text}</td>
-                              <td className="px-3 py-1 text-center text-slate-500">{row.evaluations}</td>
-                            </tr>
-                          ))}
+                          {leastRatedCompanies.map((row, idx) => {
+                            const band = getBand(row.surveyType, row.average);
+                            return (
+                              <tr key={row.company} className={idx % 2 === 0 ? 'bg-slate-50 dark:bg-slate-900/20' : 'bg-white dark:bg-slate-950'}>
+                                <td className="px-3 py-1 font-bold text-rose-600 dark:text-rose-400">#{companyPerformance.length - idx}</td>
+                                <td className="px-3 py-1 font-semibold text-slate-800 dark:text-slate-200">{row.company}</td>
+                                <td className="px-3 py-1 text-center font-bold text-slate-700 dark:text-slate-300">{formatCompositeScore(row.surveyType, row.average).text}</td>
+                                <td className="px-3 py-1 text-center text-slate-500">{row.evaluations}</td>
+                                <td className="px-3 py-1 text-center">
+                                  <span className="badge" style={{ backgroundColor: `${band.hex}1a`, color: band.hex }}>{getRemarkText(band)}</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

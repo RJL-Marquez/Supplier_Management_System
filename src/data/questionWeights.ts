@@ -80,21 +80,29 @@ export interface ScoreBand {
   label: string;
   min: number;
   hex: string;
+  // True only for the Courier/Supplier Unsatisfactory tier - the paper form
+  // flags any 79-and-below rating as requiring a Supplier/Courier Corrective
+  // Action. Used by getRemarkText to fold that into the displayed remark.
+  correctiveAction?: boolean;
 }
 
-// 4-tier standing system taken from the paper Subcontractor Performance
-// Evaluation Report form (5 categories, 20% weight each, native 0-2.0
-// scale). Courier/Supplier use the same 4 tiers proportionally scaled onto
-// their 0-100 axis (min * 50) so every survey type shares one set of
-// labels/colors instead of the old 8-tier UNIFIED_BANDS.
+// 4-tier rating legend taken directly from the paper Courier/Supplier
+// Performance Evaluation Report forms (Form 20-002 Form 2/4): 100-95
+// Excellent, 94-89 Good, 88-80 Satisfactory, 79-and-below Unsatisfactory
+// (triggers a Supplier/Courier Corrective Action per the form). Courier and
+// Supplier composite scores are already native 0-100 point totals (see
+// computeCompanyComposite), so these thresholds apply directly with no
+// scaling.
 const COURIER_SUPPLIER_BANDS: ScoreBand[] = [
-  { label: 'Top Performer', min: 75, hex: '#0d6b3f' },       // Dark Green
-  { label: 'Good Performer', min: 50, hex: '#1baf7a' },      // Green
-  { label: 'Marginal Performer', min: 25, hex: '#eab308' },  // Yellow
-  { label: 'Poor Performer', min: 0, hex: '#f97316' },       // Orange
+  { label: 'Excellent', min: 95, hex: '#0d6b3f' },       // Dark Green
+  { label: 'Good', min: 89, hex: '#1baf7a' },             // Green
+  { label: 'Satisfactory', min: 80, hex: '#eab308' },     // Yellow
+  { label: 'Unsatisfactory', min: 0, hex: '#dc2626', correctiveAction: true }, // Red
 ];
 
-// Native 0-2.0 scale (0.2 increments, from 5 categories at 20% weight each).
+// 4-tier standing system taken from the paper Subcontractor Performance
+// Evaluation Report form (5 categories, 20% weight each, native 0-2.0 scale,
+// 0.2 increments).
 const SUBCONTRACTOR_BANDS: ScoreBand[] = [
   { label: 'Top Performer', min: 1.5, hex: '#0d6b3f' },       // Dark Green
   { label: 'Good Performer', min: 1.0, hex: '#1baf7a' },      // Green
@@ -116,6 +124,16 @@ export function getBand(surveyType: SurveyType, percentScore: number): ScoreBand
   const bands = ratingBands[surveyType];
   const scoreForLookup = surveyType === 'Subcontractor' ? percentScore / 50 : percentScore;
   return bands.find((b) => scoreForLookup >= b.min) ?? bands[bands.length - 1];
+}
+
+// Full remark text for a band - same as the label, except the Courier/
+// Supplier Unsatisfactory tier, where the paper form's "Corrective Action"
+// requirement is folded directly into the remark so it reads as an action
+// item, not just a rating. Use this (not band.label) anywhere a "remark" is
+// shown to the user (leaderboards, Remarks columns) - use band.label for
+// compact rating-classification widgets (rating band chips, standing badges).
+export function getRemarkText(band: ScoreBand): string {
+  return band.correctiveAction ? `${band.label} – Corrective Action Required` : band.label;
 }
 
 export interface FormattedScore {

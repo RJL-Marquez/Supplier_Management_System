@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { SurveyResponse, SurveyType } from '../types/survey';
-import { surveyTypeDisplayLabel, formatCompositeScore } from '../data/questionWeights';
+import { surveyTypeDisplayLabel, formatCompositeScore, getRemarkText } from '../data/questionWeights';
 import { getLeaderboard, getPureAverageLeaderboard, RankingMode } from '../utils/scoring';
 
 interface CompanyLeaderboardPanelProps {
@@ -47,7 +47,7 @@ export function CompanyLeaderboardPanel({ responses, rankingMode }: CompanyLeade
                   className="badge"
                   style={{ backgroundColor: `${composite.band.hex}1a`, color: composite.band.hex }}
                 >
-                  {composite.band.label}
+                  {getRemarkText(composite.band)}
                 </span>
                 <span className="text-xs text-slate-400 dark:text-slate-500">
                   {composite.evaluationCount} evaluation{composite.evaluationCount === 1 ? '' : 's'}
