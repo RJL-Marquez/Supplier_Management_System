@@ -1,0 +1,33 @@
+// Static TOC entries for the Employee Manual. Page numbers captured from a
+// real Word pagination pass (get_toc_pages.ps1) - re-run and update after
+// any content edit that could shift page breaks.
+module.exports = [
+  { level: 1, title: 'Chapter 1: Welcome to the Supplier Management System', page: 3 },
+  { level: 2, title: 'What is the Supplier Management System?', page: 3 },
+  { level: 2, title: 'What you can do in the system', page: 3 },
+  { level: 2, title: 'How this manual is organized', page: 3 },
+  { level: 1, title: 'Chapter 2: Signing In', page: 5 },
+  { level: 2, title: 'Signing in to your account', page: 5 },
+  { level: 2, title: 'If you cannot sign in', page: 5 },
+  { level: 1, title: 'Chapter 3: Getting Around the Interface', page: 7 },
+  { level: 2, title: 'The top header bar', page: 7 },
+  { level: 2, title: 'The left-hand sidebar menu', page: 7 },
+  { level: 2, title: 'The main content area', page: 7 },
+  { level: 1, title: 'Chapter 4: Dashboard', page: 8 },
+  { level: 2, title: 'Your Evaluation Progress', page: 8 },
+  { level: 2, title: 'Other widgets on your Dashboard', page: 8 },
+  { level: 1, title: 'Chapter 5: New Evaluation', page: 9 },
+  { level: 2, title: 'Step 1 — Respondent Info', page: 9 },
+  { level: 2, title: 'Step 2 — Questions Form', page: 9 },
+  { level: 2, title: 'Step 3 — Success', page: 10 },
+  { level: 2, title: 'Saving your progress if you need to leave partway through', page: 10 },
+  { level: 1, title: 'Chapter 6: My Submissions', page: 12 },
+  { level: 2, title: 'Finding and reviewing a past submission', page: 12 },
+  { level: 1, title: 'Chapter 7: Notifications', page: 13 },
+  { level: 2, title: 'Checking your reminders', page: 13 },
+  { level: 2, title: 'Using the notification bell', page: 13 },
+  { level: 1, title: 'Chapter 8: Profile / Settings', page: 15 },
+  { level: 2, title: 'What you will find here', page: 15 },
+  { level: 2, title: 'Preferences and signing out', page: 15 },
+  { level: 1, title: 'Chapter 9: Frequently Asked Questions', page: 16 },
+];
