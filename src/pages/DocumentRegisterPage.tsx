@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, Globe, MapPin, Truck, Package, Briefcase, RefreshCw, X, Check, Users, ShieldCheck, Clock, XCircle, Gauge, LayoutGrid, Settings2, RotateCcw, AlertTriangle, History, ChevronUp, ChevronDown, BellPlus, Plus } from 'lucide-react';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Legend, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -256,7 +256,29 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
   const [statusFilter, setStatusFilter] = useState<'all' | 'expired' | 'expiring' | 'missing'>('all');
   const [renewalTarget, setRenewalTarget] = useState<{ company: PartnerCompany; branchId: string; docName: string } | null>(null);
   const [renewalDate, setRenewalDate] = useState('');
-  const [flagConfirmTarget, setFlagConfirmTarget] = useState<{ company: PartnerCompany; branch: BranchRecord; docName: string } | null>(null);
+  // Flag docs (plain provided/not-provided checklist items, no expiry date):
+  // clicking a cell opens a two-step flow. Step 'choose' lets the user pick
+  // Missing/Complete explicitly (pre-selected to the current value) instead
+  // of assuming "the opposite" - step 'confirm' is the actual warning, and
+  // only its Confirm button applies the change + logs it.
+  const [flagFlow, setFlagFlow] = useState<{
+    company: PartnerCompany;
+    branch: BranchRecord;
+    docName: string;
+    step: 'choose' | 'confirm';
+    currentProvided: boolean;
+    selectedProvided: boolean;
+  } | null>(null);
+  // Expiry docs (AFS, GIS, etc.): clicking a cell opens a status readout
+  // (Active till.../Expired/Missing) with Renew Document / Mark as Missing
+  // actions. confirmingMissing toggles this same popup into its own warning
+  // step before Mark as Missing actually clears the document.
+  const [expiryStatusTarget, setExpiryStatusTarget] = useState<{
+    company: PartnerCompany;
+    branch: BranchRecord;
+    docName: string;
+    confirmingMissing: boolean;
+  } | null>(null);
   const [widgetVisibility, setWidgetVisibility] = useState<Record<string, string[]>>({});
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
   const customizeRef = useRef<HTMLDivElement>(null);
@@ -264,6 +286,22 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
   const [modificationLog, setModificationLog] = useState<DocumentModificationEntry[]>([]);
   const [sortKey, setSortKey] = useState<MatrixSortKey>('company');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Frozen header overlay for the detail matrix: position:sticky can't reach
+  // the viewport here because the matrix needs its own horizontal scroll
+  // (overflow-x-auto), and per the CSS spec that forces the element to also
+  // become a vertical scroll container - which caps any sticky descendant's
+  // range to that container instead of the page, regardless of whether it
+  // ever actually scrolls vertically. So instead, a second, fixed-position
+  // copy of the header row is rendered via portal only while the matrix
+  // panel spans the navbar, with its own horizontal scroll mirrored from the
+  // real table so columns stay aligned - see updateStickyHeader below.
+  const matrixPanelRef = useRef<HTMLDivElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const realTheadRef = useRef<HTMLTableSectionElement>(null);
+  const overlayScrollRef = useRef<HTMLDivElement>(null);
+  const isHeaderStuckRef = useRef(false);
+  const [stickyHeader, setStickyHeader] = useState<{ left: number; width: number; colWidths: number[] } | null>(null);
   const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false);
   const [notificationRules, setNotificationRules] = useState<DocNotificationRule[]>(DEFAULT_NOTIFICATION_RULES);
   // Portals "Add Notification" into Shell's page-heading row (same slot
@@ -640,6 +678,9 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     });
   }, [categoryKey, currentDateStr, overview.total, overview.complianceRate]);
 
+  // Opens the renewal date picker directly - called either from a fresh
+  // click on an expiry-doc cell's "Renew Document" button in the status
+  // popup, or as a normal continuation once that popup is dismissed.
   const openRenewal = (company: PartnerCompany, branch: BranchRecord, docName: string) => {
     if (!canRenewDocuments) return;
     const doc = branch.documents?.[docName];
@@ -647,13 +688,11 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     setRenewalTarget({ company, branchId: branch.id, docName });
   };
 
-  // Flag docs (plain provided/not-provided checklist items) used to flip the
-  // instant you clicked the cell - no confirmation, no undo. Clicking now
-  // only opens a confirm dialog (setFlagConfirmTarget); this is the function
-  // that actually applies the change, called from that dialog's Confirm button.
-  const toggleFlag = (company: PartnerCompany, branch: BranchRecord, docName: string) => {
+  // Applies an explicit provided/not-provided value (never a blind flip) -
+  // called only from the flag flow's step 2 Confirm button, once the user
+  // has both picked a value in step 1 and confirmed the warning in step 2.
+  const applyFlagChange = (company: PartnerCompany, branch: BranchRecord, docName: string, provided: boolean) => {
     if (!canRenewDocuments) return;
-    const provided = !(branch.documents?.[docName]?.provided);
     const updatedBranches = (company.branches ?? []).map((b) =>
       b.id === branch.id
         ? { ...b, documents: { ...b.documents, [docName]: { provided, status: provided ? 'Current' as const : 'Missing' as const } } }
@@ -673,9 +712,44 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     });
   };
 
-  const requestFlagToggle = (company: PartnerCompany, branch: BranchRecord, docName: string) => {
+  // Opens step 1 of the flag flow (see flagFlow state above), pre-selecting
+  // whichever value is already on record.
+  const openFlagFlow = (company: PartnerCompany, branch: BranchRecord, docName: string) => {
     if (!canRenewDocuments) return;
-    setFlagConfirmTarget({ company, branch, docName });
+    const currentProvided = !!branch.documents?.[docName]?.provided;
+    setFlagFlow({ company, branch, docName, step: 'choose', currentProvided, selectedProvided: currentProvided });
+  };
+
+  // Opens the expiry-doc status popup (Active till.../Expired/Missing +
+  // Renew Document/Mark as Missing) instead of jumping straight to the date
+  // picker, so a click first shows what's on record before acting on it.
+  const openExpiryStatus = (company: PartnerCompany, branch: BranchRecord, docName: string) => {
+    if (!canRenewDocuments) return;
+    setExpiryStatusTarget({ company, branch, docName, confirmingMissing: false });
+  };
+
+  // Clears a document back to Missing (no expiry, not provided) - called
+  // only from the expiry-doc status popup's "Mark as Missing" warning step,
+  // once its own Confirm button is clicked.
+  const markDocumentMissing = (company: PartnerCompany, branch: BranchRecord, docName: string) => {
+    if (!canRenewDocuments) return;
+    const updatedBranches = (company.branches ?? []).map((b) =>
+      b.id === branch.id
+        ? { ...b, documents: { ...b.documents, [docName]: { provided: false } } }
+        : b
+    );
+    onUpdateCompany({ ...company, branches: updatedBranches });
+    logAdminActivity(
+      'Updated compliance document',
+      `${docName} marked Missing for "${branchAwareCompanyLabel(company, branch)}"`
+    );
+    logDocumentModification({
+      actorEmail: currentUserEmail || 'unknown',
+      category: viewLabel,
+      companyName: branchAwareCompanyLabel(company, branch),
+      docName,
+      change: 'Marked Missing',
+    });
   };
 
   const updateBranchStatus = (company: PartnerCompany, branchId: string, status: BranchStatus) => {
@@ -773,6 +847,114 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
     } catch {
       return isoString;
     }
+  };
+
+  // Recomputes whether the frozen header overlay should be showing. Column
+  // widths/position are only re-measured on a stuck-state transition (or
+  // when forced) - not on every scroll tick, since they only actually change
+  // on resize or when the matrix's shape changes, not on ordinary scrolling.
+  const NAV_HEIGHT = 80; // matches Shell's h-20 top header
+  const updateStickyHeader = useCallback((forceMeasure = false) => {
+    const panel = matrixPanelRef.current;
+    const wrapper = tableScrollRef.current;
+    const thead = realTheadRef.current;
+    if (!panel || !wrapper || !thead) return;
+
+    const panelRect = panel.getBoundingClientRect();
+    const theadHeight = thead.getBoundingClientRect().height;
+    const shouldStick = panelRect.top <= NAV_HEIGHT && panelRect.bottom > NAV_HEIGHT + theadHeight;
+
+    if (!shouldStick) {
+      if (isHeaderStuckRef.current) {
+        isHeaderStuckRef.current = false;
+        setStickyHeader(null);
+      }
+      return;
+    }
+
+    if (!isHeaderStuckRef.current || forceMeasure) {
+      isHeaderStuckRef.current = true;
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const colWidths = Array.from(thead.querySelectorAll('th')).map((th) => th.getBoundingClientRect().width);
+      setStickyHeader({ left: wrapperRect.left, width: wrapperRect.width, colWidths });
+      if (overlayScrollRef.current) overlayScrollRef.current.scrollLeft = wrapper.scrollLeft;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => updateStickyHeader(false);
+    const handleResize = () => updateStickyHeader(true);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleResize);
+    updateStickyHeader(true);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [updateStickyHeader]);
+
+  // The matrix's shape (columns, rows) can change with no scroll/resize
+  // event at all (switching category, filtering, sorting) - force a
+  // re-measure so a currently-frozen header doesn't show stale column widths.
+  useEffect(() => {
+    updateStickyHeader(true);
+  }, [updateStickyHeader, docColumns, rows.length]);
+
+  // Mirrors the real table's horizontal scroll position onto the frozen
+  // overlay in real time (direct DOM write, bypassing React state) so
+  // columns stay aligned while scrolling sideways.
+  useEffect(() => {
+    const wrapper = tableScrollRef.current;
+    if (!wrapper) return;
+    const handleHorizontalScroll = () => {
+      if (overlayScrollRef.current) overlayScrollRef.current.scrollLeft = wrapper.scrollLeft;
+    };
+    wrapper.addEventListener('scroll', handleHorizontalScroll, { passive: true });
+    return () => wrapper.removeEventListener('scroll', handleHorizontalScroll);
+  }, []);
+
+  // Shared between the real (in-flow) header row and the frozen overlay copy,
+  // so the two can never drift apart - `widths` is only passed for the
+  // overlay, pinning each cell to the real column's measured pixel width.
+  const renderHeaderCells = (widths?: number[]) => {
+    const fixedCols: { key: string; label: string; sortKeyValue: MatrixSortKey; extraTh?: string }[] = [
+      { key: 'company', label: 'Company', sortKeyValue: 'company', extraTh: 'sticky left-0 z-10' },
+      { key: 'compliance', label: 'Compliance', sortKeyValue: 'compliance', extraTh: 'min-w-[110px]' },
+      { key: 'bpCode', label: 'BP Code', sortKeyValue: 'bpCode' },
+      { key: 'ntType', label: 'Trade/Non-Trade', sortKeyValue: 'ntType', extraTh: 'min-w-[130px]' },
+      { key: 'branchStatus', label: 'Status', sortKeyValue: 'branchStatus', extraTh: 'min-w-[120px]' },
+      { key: 'supplierRank', label: 'Supplier Rank', sortKeyValue: 'supplierRank', extraTh: 'min-w-[110px]' },
+    ];
+    const widthStyle = (i: number) => (widths ? { width: widths[i], minWidth: widths[i], maxWidth: widths[i] } : undefined);
+
+    return [
+      ...fixedCols.map((col, i) => (
+        <th
+          key={col.key}
+          className={`px-3 py-2.5 bg-slate-50 dark:bg-slate-950/60 ${col.extraTh ?? ''}`}
+          style={widthStyle(i)}
+        >
+          <SortHeaderButton label={col.label} sortKeyValue={col.sortKeyValue} activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
+        </th>
+      )),
+      ...docColumns.map((docName, i) => (
+        <th
+          key={docName}
+          className="px-3 py-2.5 min-w-[120px] max-w-[150px] align-bottom bg-slate-50 dark:bg-slate-950/60"
+          style={widthStyle(fixedCols.length + i)}
+          title={docName}
+        >
+          <SortHeaderButton
+            label={docName}
+            sortKeyValue={`doc:${docName}`}
+            activeKey={sortKey}
+            direction={sortDirection}
+            onClick={handleSortClick}
+            labelClassName="line-clamp-2 normal-case font-semibold tracking-normal text-slate-500 dark:text-slate-400"
+          />
+        </th>
+      )),
+    ];
   };
 
   return (
@@ -1204,41 +1386,12 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
           <p className="text-sm font-semibold">No {category.label} companies found.</p>
         </div>
       ) : (
-        <div className="panel p-0 overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="panel p-0 overflow-hidden" ref={matrixPanelRef}>
+          <div className="overflow-x-auto" ref={tableScrollRef}>
             <table className="w-full border-collapse text-sm">
-              <thead>
+              <thead ref={realTheadRef}>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
-                  <th className="px-3 py-2.5 sticky left-0 bg-slate-50 dark:bg-slate-950/60 z-10">
-                    <SortHeaderButton label="Company" sortKeyValue="company" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
-                  </th>
-                  <th className="px-3 py-2.5 min-w-[110px]">
-                    <SortHeaderButton label="Compliance" sortKeyValue="compliance" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
-                  </th>
-                  <th className="px-3 py-2.5">
-                    <SortHeaderButton label="BP Code" sortKeyValue="bpCode" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
-                  </th>
-                  <th className="px-3 py-2.5 min-w-[130px]">
-                    <SortHeaderButton label="Trade/Non-Trade" sortKeyValue="ntType" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
-                  </th>
-                  <th className="px-3 py-2.5 min-w-[120px]">
-                    <SortHeaderButton label="Status" sortKeyValue="branchStatus" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
-                  </th>
-                  <th className="px-3 py-2.5 min-w-[110px]">
-                    <SortHeaderButton label="Supplier Rank" sortKeyValue="supplierRank" activeKey={sortKey} direction={sortDirection} onClick={handleSortClick} />
-                  </th>
-                  {docColumns.map((docName) => (
-                    <th key={docName} className="px-3 py-2.5 min-w-[120px] max-w-[150px] align-bottom" title={docName}>
-                      <SortHeaderButton
-                        label={docName}
-                        sortKeyValue={`doc:${docName}`}
-                        activeKey={sortKey}
-                        direction={sortDirection}
-                        onClick={handleSortClick}
-                        labelClassName="line-clamp-2 normal-case font-semibold tracking-normal text-slate-500 dark:text-slate-400"
-                      />
-                    </th>
-                  ))}
+                  {renderHeaderCells()}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1332,8 +1485,8 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                               disabled={!interactive}
                               onClick={() => {
                                 if (!branch) return;
-                                if (expiryBased) openRenewal(c, branch, docName);
-                                else requestFlagToggle(c, branch, docName);
+                                if (expiryBased) openExpiryStatus(c, branch, docName);
+                                else openFlagFlow(c, branch, docName);
                               }}
                               title={
                                 doc.expiryDate
@@ -1383,6 +1536,28 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
         </div>
       )}
 
+      {/* Frozen header overlay - see updateStickyHeader/renderHeaderCells above for why
+          this can't just be position:sticky on the real thead. Fully interactive (sort
+          buttons work normally) so freezing the header doesn't cost you the ability to
+          re-sort while scrolled into the middle of the table. */}
+      {stickyHeader && createPortal(
+        <div
+          style={{ position: 'fixed', top: NAV_HEIGHT, left: stickyHeader.left, width: stickyHeader.width, zIndex: 45 }}
+          className="shadow-md"
+        >
+          <div ref={overlayScrollRef} className="overflow-hidden">
+            <table className="border-collapse text-sm" style={{ tableLayout: 'fixed' }}>
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
+                  {renderHeaderCells(stickyHeader.colWidths)}
+                </tr>
+              </thead>
+            </table>
+          </div>
+        </div>,
+        document.body
+      )}
+
       <ChartCard
         title="Modification History"
         subtitle="Every flag toggle and renewal made from this matrix, most recent first"
@@ -1419,15 +1594,81 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
         )}
       </ChartCard>
 
-      {/* Confirm before a flag doc's provided/not-provided status actually flips - it used to
-          change the instant the cell was clicked, with no way to back out. */}
-      {flagConfirmTarget && (() => {
-        const willBeProvided = !(flagConfirmTarget.branch.documents?.[flagConfirmTarget.docName]?.provided);
+      {/* Flag docs (no expiry) - step 1: explicit Missing/Complete chooser, pre-selected
+          to whatever's currently on record. Confirm here is disabled until the selection
+          actually differs from the current value, then advances to step 2 below. */}
+      {flagFlow && flagFlow.step === 'choose' && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950 relative">
+            <button
+              onClick={() => setFlagFlow(null)}
+              className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
+              type="button"
+            >
+              <X size={16} />
+            </button>
+
+            <div className="flex flex-col items-center text-center gap-1.5">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Set Document Status</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                <strong className="text-slate-800 dark:text-slate-100">"{flagFlow.docName}"</strong> for{' '}
+                <strong className="text-slate-800 dark:text-slate-100">"{branchAwareCompanyLabel(flagFlow.company, flagFlow.branch)}"</strong>
+              </p>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setFlagFlow((prev) => (prev ? { ...prev, selectedProvided: false } : prev))}
+                className={`rounded-xl border-2 px-3 py-3 text-center transition cursor-pointer ${
+                  !flagFlow.selectedProvided
+                    ? 'border-slate-400 bg-slate-100 dark:border-slate-500 dark:bg-slate-800'
+                    : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700'
+                }`}
+              >
+                <span className="block text-xs font-bold text-slate-700 dark:text-slate-200">Missing</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFlagFlow((prev) => (prev ? { ...prev, selectedProvided: true } : prev))}
+                className={`rounded-xl border-2 px-3 py-3 text-center transition cursor-pointer ${
+                  flagFlow.selectedProvided
+                    ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-600 dark:bg-emerald-950/40'
+                    : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700'
+                }`}
+              >
+                <span className={`block text-xs font-bold ${flagFlow.selectedProvided ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-200'}`}>Complete</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 mt-5">
+              <button onClick={() => setFlagFlow(null)} className="secondary-button flex-1 py-2 text-xs" type="button">
+                Cancel
+              </button>
+              <button
+                onClick={() => setFlagFlow((prev) => (prev ? { ...prev, step: 'confirm' } : prev))}
+                disabled={flagFlow.selectedProvided === flagFlow.currentProvided}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#0063a9] hover:bg-[#00548c] disabled:opacity-40 disabled:cursor-not-allowed px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
+                type="button"
+              >
+                <span>Confirm</span>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Flag docs - step 2: the actual warning, unchanged from before except it now
+          reflects the explicit value picked in step 1. Only this Confirm button applies
+          the change and logs it to Modification History. */}
+      {flagFlow && flagFlow.step === 'confirm' && (() => {
+        const willBeProvided = flagFlow.selectedProvided;
         return createPortal(
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
             <div className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950 relative">
               <button
-                onClick={() => setFlagConfirmTarget(null)}
+                onClick={() => setFlagFlow(null)}
                 className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
                 type="button"
               >
@@ -1444,11 +1685,11 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
               <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/60 divide-y divide-slate-100 dark:divide-slate-800">
                 <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Document</span>
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 text-right truncate">{flagConfirmTarget.docName}</span>
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 text-right truncate">{flagFlow.docName}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Company</span>
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 text-right truncate">{branchAwareCompanyLabel(flagConfirmTarget.company, flagConfirmTarget.branch)}</span>
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 text-right truncate">{branchAwareCompanyLabel(flagFlow.company, flagFlow.branch)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">New Status</span>
@@ -1461,13 +1702,13 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
               <p className="mt-3 text-center text-[11px] text-slate-400">This updates the compliance record immediately.</p>
 
               <div className="flex items-center gap-2 mt-5">
-                <button onClick={() => setFlagConfirmTarget(null)} className="secondary-button flex-1 py-2 text-xs" type="button">
+                <button onClick={() => setFlagFlow(null)} className="secondary-button flex-1 py-2 text-xs" type="button">
                   Cancel
                 </button>
                 <button
                   onClick={() => {
-                    toggleFlag(flagConfirmTarget.company, flagConfirmTarget.branch, flagConfirmTarget.docName);
-                    setFlagConfirmTarget(null);
+                    applyFlagChange(flagFlow.company, flagFlow.branch, flagFlow.docName, flagFlow.selectedProvided);
+                    setFlagFlow(null);
                   }}
                   className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#a16207] hover:bg-amber-800 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
                   type="button"
@@ -1476,6 +1717,120 @@ export function DocumentRegisterPage({ partnerCompanies, onUpdateCompany, canRen
                   <span>Confirm</span>
                 </button>
               </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
+
+      {/* Expiry docs (AFS, GIS, etc.) - status readout (Active till.../Expired/Missing,
+          same status logic as the matrix cells) with Renew Document (always available)
+          and Mark as Missing (only when there's something on record to clear). Mark as
+          Missing flips this same popup into its own warning step before it applies. */}
+      {expiryStatusTarget && (() => {
+        const doc: ComplianceDocument = (expiryStatusTarget.branch.documents?.[expiryStatusTarget.docName] ?? {}) as ComplianceDocument;
+        const { status } = computeDocumentStatus(doc, effectiveNow, expiryStatusTarget.docName);
+        const isMissing = status === 'Missing';
+        const isActive = status === 'Current' || status === 'Expiring Soon';
+        const statusText = isMissing ? 'Missing' : isActive ? `Active till ${formatShortDate(doc.expiryDate)}` : 'Expired';
+        const statusStyle = isMissing ? STATUS_STYLES.Missing : isActive ? STATUS_STYLES.Current : STATUS_STYLES.Expired;
+
+        return createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
+            <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950 relative">
+              <button
+                onClick={() => setExpiryStatusTarget(null)}
+                className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
+                type="button"
+              >
+                <X size={16} />
+              </button>
+
+              {!expiryStatusTarget.confirmingMissing ? (
+                <>
+                  <div className="flex flex-col items-center text-center gap-1.5">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">{expiryStatusTarget.docName}</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {branchAwareCompanyLabel(expiryStatusTarget.company, expiryStatusTarget.branch)}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 flex justify-center">
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold ${statusStyle}`}>
+                      {statusText}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-2 mt-5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openRenewal(expiryStatusTarget.company, expiryStatusTarget.branch, expiryStatusTarget.docName);
+                        setExpiryStatusTarget(null);
+                      }}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition cursor-pointer"
+                    >
+                      <RefreshCw size={13} />
+                      <span>Renew Document</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isMissing}
+                      onClick={() => setExpiryStatusTarget((prev) => (prev ? { ...prev, confirmingMissing: true } : prev))}
+                      title={isMissing ? 'Already marked as missing' : undefined}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent px-4 py-2.5 text-xs font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900 transition cursor-pointer"
+                    >
+                      <XCircle size={13} />
+                      <span>Mark as Missing</span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-col items-center text-center gap-2.5">
+                    <span className="inline-flex items-center justify-center h-10 w-10 rounded-full bg-amber-50 text-[#a16207] dark:bg-amber-950/40 dark:text-amber-400">
+                      <AlertTriangle size={18} />
+                    </span>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">Confirm Mark as Missing</h3>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/60 divide-y divide-slate-100 dark:divide-slate-800">
+                    <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Document</span>
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 text-right truncate">{expiryStatusTarget.docName}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Company</span>
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 text-right truncate">{branchAwareCompanyLabel(expiryStatusTarget.company, expiryStatusTarget.branch)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">New Status</span>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold border ${STATUS_STYLES.Missing}`}>
+                        Missing
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="mt-3 text-center text-[11px] text-slate-400">This clears the recorded expiry and updates the compliance record immediately.</p>
+
+                  <div className="flex items-center gap-2 mt-5">
+                    <button onClick={() => setExpiryStatusTarget(null)} className="secondary-button flex-1 py-2 text-xs" type="button">
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        markDocumentMissing(expiryStatusTarget.company, expiryStatusTarget.branch, expiryStatusTarget.docName);
+                        setExpiryStatusTarget(null);
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#a16207] hover:bg-amber-800 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
+                      type="button"
+                    >
+                      <Check size={13} />
+                      <span>Confirm</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>,
           document.body
