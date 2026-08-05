@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { sharePointService } from '../services/sharepointService';
-import { QuestionDefinition, ResponseNotification, SurveyResponse, SurveyType, CustomForm, Rating, PartnerCompany, PartnerCompanyType, BranchRecord, ArchiveSeries } from '../types/survey';
+import { QuestionDefinition, ResponseNotification, SurveyResponse, SurveyType, CustomForm, Rating, PartnerCompany, PartnerCompanyType, BranchRecord, ArchiveSeries, SupplierOrigin } from '../types/survey';
 import { surveyQuestions } from '../data/questions';
 import { generateMockResponses, generateAllMockResponses, generateSingleMockResponse, generateBulkMockResponses } from '../data/mockResponses';
 import { importMasterListFromFile, ImportResult } from '../utils/masterListImport';
@@ -1408,17 +1408,35 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
     name: string,
     type: SurveyType,
     affiliation?: string,
-    registeredAt?: string
+    registeredAt?: string,
+    bpCode?: string,
+    ntBpCode?: string,
+    supplierOrigin?: SupplierOrigin
   ) => {
     const todayStr = getEffectiveTodayStr(simClock);
+    const id = `pc-${Date.now()}`;
+    // Mirrors the Master List's own category string (e.g. "Supplier-Local",
+    // "Courier-NT") so a manually-registered company is picked up by
+    // computeCategoryRankSummary the same way an imported row is - that
+    // summary reads branch.rawCategory, not company.type/supplierOrigin.
+    const rawCategoryBase = type === 'Supplier' ? `Supplier-${supplierOrigin === 'Foreign' ? 'Foreign' : 'Local'}` : type;
+    // A second, Non-Trade BP Code registers as its own branch (mirrors how a
+    // Master List row with a "-NT" BP Code merges in) so it shows up as its
+    // own row in the Document Tracker, distinct from the regular branch.
+    const branches: BranchRecord[] = [{ id: `${id}-branch-1`, bpCode: (bpCode ?? '').trim(), rawCategory: rawCategoryBase }];
+    if (ntBpCode?.trim()) {
+      branches.push({ id: `${id}-branch-2`, bpCode: ntBpCode.trim(), rawCategory: `${rawCategoryBase}-NT` });
+    }
     const newCompany: PartnerCompany = normalizePartnerCompany({
-      id: `pc-${Date.now()}`,
+      id,
       name: name.trim(),
       type,
+      supplierOrigin: type === 'Supplier' ? (supplierOrigin ?? 'Local') : undefined,
       affiliation: affiliation?.trim() || 'General partner',
       createdAt: new Date().toISOString(),
       registeredAt: registeredAt || todayStr,
       isArchived: false,
+      branches,
     });
     const updated = [...partnerCompanies, newCompany];
     setPartnerCompanies(updated);

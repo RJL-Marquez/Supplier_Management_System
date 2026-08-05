@@ -146,7 +146,10 @@ interface PartnerCompaniesPageProps {
     name: string,
     type: SurveyType,
     affiliation?: string,
-    registeredAt?: string
+    registeredAt?: string,
+    bpCode?: string,
+    ntBpCode?: string,
+    supplierOrigin?: SupplierOrigin
   ) => void;
   onRemoveCompany: (id: string) => void;
   onUpdateCompany: (company: PartnerCompany) => void;
@@ -217,8 +220,19 @@ export function PartnerCompaniesPage({
   // Registration Form State
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<SurveyType>('Courier');
+  // Only meaningful when newType === 'Supplier' - decides Local vs Foreign
+  // supplier doc checklist (see documentRequirements.ts) and which
+  // Category Summary bucket (Supplier-Local/-Foreign) this registration counts toward.
+  const [newSupplierOrigin, setNewSupplierOrigin] = useState<SupplierOrigin>('Local');
   const [newAffiliation, setNewAffiliation] = useState('');
   const [newRegDate, setNewRegDate] = useState(() => getEffectiveTodayStr(simClock));
+  const [newBpCode, setNewBpCode] = useState('');
+  // A company can carry a second, Non-Trade BP Code (e.g. "ABC123-NT")
+  // alongside its regular one - checking this reveals a second field so both
+  // get registered as separate branches and both show up as their own row
+  // in the Document Tracker (see displayRows in DocumentRegisterPage).
+  const [newHasNTBranch, setNewHasNTBranch] = useState(false);
+  const [newNtBpCode, setNewNtBpCode] = useState('');
 
   // Feedback Messages
   const [errorMessage, setErrorMessage] = useState('');
@@ -377,16 +391,33 @@ export function PartnerCompaniesPage({
       return;
     }
 
+    const trimmedBpCode = newBpCode.trim();
+    // Falls back to the suggested "<BP Code>-NT" value if the admin left the
+    // NT field blank after checking the box - the placeholder is a suggestion,
+    // not a requirement to retype it.
+    const trimmedNtBpCode = newHasNTBranch
+      ? (newNtBpCode.trim() || (trimmedBpCode ? `${trimmedBpCode}-NT` : ''))
+      : undefined;
+
     onAddCompany(
       newName.trim(),
       newType,
       newAffiliation || undefined,
-      newRegDate
+      newRegDate,
+      trimmedBpCode || undefined,
+      trimmedNtBpCode || undefined,
+      newType === 'Supplier' ? newSupplierOrigin : undefined
     );
-    
-    setSuccessMessage(`"${newName.trim()}" successfully added as a Partner ${newType}.`);
+
+    setSuccessMessage(
+      `"${newName.trim()}" successfully added as a Partner ${newType}${newType === 'Supplier' ? ` (${newSupplierOrigin})` : ''}.`
+    );
     setNewName('');
     setNewAffiliation('');
+    setNewBpCode('');
+    setNewHasNTBranch(false);
+    setNewNtBpCode('');
+    setNewSupplierOrigin('Local');
     setIsRegisterOpen(false);
 
     setTimeout(() => setSuccessMessage(''), 4000);
@@ -2086,6 +2117,73 @@ export function PartnerCompaniesPage({
                 </div>
               </div>
 
+              {/* Local/Foreign origin - only meaningful for Suppliers. Decides
+                  which doc checklist applies (documentRequirements.ts) and
+                  which Category Summary bucket this counts toward. */}
+              {newType === 'Supplier' && (
+                <div>
+                  <span className="field-label">Supplier Origin *</span>
+                  <div className="flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900/50">
+                    {(['Local', 'Foreign'] as const).map((origin) => (
+                      <button
+                        key={origin}
+                        type="button"
+                        onClick={() => setNewSupplierOrigin(origin)}
+                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2 text-xs font-bold transition-all duration-150 cursor-pointer ${
+                          newSupplierOrigin === origin
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                        }`}
+                      >
+                        {origin === 'Foreign' ? <Globe size={12} /> : <MapPin size={12} />}
+                        <span>{origin}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="modal-reg-bpcode" className="field-label">BP Code</label>
+                  <input
+                    id="modal-reg-bpcode"
+                    type="text"
+                    className="field text-xs py-2.5"
+                    placeholder="e.g. ABC123"
+                    value={newBpCode}
+                    onChange={(e) => setNewBpCode(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <label className="flex w-full items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2.5 cursor-pointer hover:border-[#0063a9]/40 transition">
+                    <input
+                      type="checkbox"
+                      checked={newHasNTBranch}
+                      onChange={(e) => setNewHasNTBranch(e.target.checked)}
+                      className="rounded border-slate-300"
+                    />
+                    <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Also register a Non-Trade (NT) BP Code</span>
+                  </label>
+                </div>
+              </div>
+
+              {newHasNTBranch && (
+                <div>
+                  <label htmlFor="modal-reg-ntbpcode" className="field-label">Non-Trade (NT) BP Code</label>
+                  <input
+                    id="modal-reg-ntbpcode"
+                    type="text"
+                    className="field text-xs py-2.5"
+                    placeholder={`${newBpCode.trim() || 'e.g. ABC123'}-NT`}
+                    value={newNtBpCode}
+                    onChange={(e) => setNewNtBpCode(e.target.value)}
+                  />
+                  <p className="mt-1 text-[10.5px] text-slate-400">Registered as a second branch — both BP Codes will show as their own row in the Document Tracker.</p>
+                </div>
+              )}
+
               {/* Date selection */}
               <div>
                 <label htmlFor="modal-reg-date" className="field-label">Registration Date</label>
@@ -2099,7 +2197,7 @@ export function PartnerCompaniesPage({
               </div>
 
               <p className="text-[11px] text-slate-400 leading-relaxed bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                Compliance documents (Business Permit, AFS, SIF, etc.) aren't set here — add them from this company's detail panel after registering, or via a Master List upload.
+                Compliance documents (Business Permit, AFS, SIF, etc.) aren't uploaded here — each BP Code above starts out Missing in the Document Tracker until renewed there, or via a Master List upload.
               </p>
 
               <div className="flex items-center justify-end gap-3 mt-6 border-t border-slate-100 pt-4 dark:border-slate-800">
