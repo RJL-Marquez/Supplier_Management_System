@@ -6,7 +6,9 @@ import { EmployeeNotificationBell } from './components/EmployeeNotificationBell'
 import { Shell, NavItem } from './layouts/Shell';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { LoginPage } from './pages/LoginPage';
+import { LoginPage, MicrosoftAuth } from './pages/LoginPage';
+import { restoreMicrosoftAccount, logoutMicrosoft, isMsalConfigured } from './services/msalAuth';
+import { signIntoSupabaseWithMicrosoft, signOutSupabase } from './services/authBridge';
 import { NotificationLogsPage } from './pages/NotificationLogsPage';
 import { EmployeeNotificationLogsPage } from './pages/EmployeeNotificationLogsPage';
 import { ReportsPage } from './pages/ReportsPage';
@@ -83,12 +85,22 @@ export interface AccountProfile {
 // Kept even with demo mode off - this is the one bootstrap account needed to
 // log in and start adding real employees via Account Management on a fresh
 // deployment, not placeholder demo data.
-const BOOTSTRAP_ADMIN_ACCOUNT: AccountProfile = {
-  email: 'admin@mgenesis.com',
+// Real system administrators. Any @mgenesis.com Microsoft account listed here
+// is recognized as Admin the moment it signs in, even before an accounts row
+// exists for it - so the first admins are never locked out on a fresh system.
+// Keep this in sync with supabase/seed_admins.sql (the server-side source of
+// truth once RLS enforcement is fully wired).
+const BOOTSTRAP_ADMIN_EMAILS = [
+  'sheanne.cahinhinan@mgenesis.com',
+  'presshel.escleto@mgenesis.com',
+];
+
+const BOOTSTRAP_ADMIN_ACCOUNTS: AccountProfile[] = BOOTSTRAP_ADMIN_EMAILS.map((email) => ({
+  email,
   role: 'Admin',
   designation: 'Executive',
-  department: 'Business Solutions Manager'
-};
+  department: 'Business Solutions Manager',
+}));
 
 // Placeholder roster simulating a multi-department org for demoing/testing
 // RBAC. Only seeded when demo mode is enabled - see isDemoModeEnabled().
@@ -215,8 +227,8 @@ const DEMO_SEED_ACCOUNTS: AccountProfile[] = [
 ];
 
 const DEFAULT_ACCOUNTS: AccountProfile[] = isDemoModeEnabled()
-  ? [BOOTSTRAP_ADMIN_ACCOUNT, ...DEMO_SEED_ACCOUNTS]
-  : [BOOTSTRAP_ADMIN_ACCOUNT];
+  ? [...BOOTSTRAP_ADMIN_ACCOUNTS, ...DEMO_SEED_ACCOUNTS]
+  : [...BOOTSTRAP_ADMIN_ACCOUNTS];
 
 type PageKey = 'dashboard' | 'partner-companies' | 'document-register' | 'supplier-ranking' | 'partners-feedback-hub' | 'account-management' | 'survey-forms' | 'analytics' | 'present' | 'explorer' | 'reports' | 'notifications' | 'create-form' | 'view-form' | 'fill-form' | 'archive' | 'simulator' | 'import-evaluations' | 'my-submissions' | 'profile-settings' | 'pending-review' | 'export-history' | 'settings' | 'categories-manager';
 
@@ -278,8 +290,16 @@ const allSurveyTypes: SurveyType[] = ['Courier', 'Supplier', 'Subcontractor'];
 
 export default function App() {
   const [account, setAccount] = useState<string | null>(() => {
+    // When Microsoft SSO is configured it is the source of truth: identity is
+    // restored from the MSAL cache in the effect below, and a bare
+    // localStorage string can no longer grant access (that was the old
+    // bypass). Only trust localStorage in dev when SSO is unconfigured.
+    if (isMsalConfigured()) return null;
     return localStorage.getItem('user_account') || null;
   });
+  // Gates the first paint until we've asked MSAL whether a real signed-in
+  // account exists, so we never flash the app before auth is verified.
+  const [authChecked, setAuthChecked] = useState(() => !isMsalConfigured());
 
   // 'current' = active period only (today's default, unchanged behavior).
   // 'all-time' = active + every archived period combined, so multi-year
@@ -342,6 +362,15 @@ export default function App() {
     const normalized = email.trim().toLowerCase();
     const matched = accounts.find((acc) => acc.email.trim().toLowerCase() === normalized);
     if (matched) return matched;
+    // Bootstrap admins are always Admin, even if no accounts row exists yet.
+    if (BOOTSTRAP_ADMIN_EMAILS.includes(normalized)) {
+      return {
+        email: normalized,
+        role: 'Admin',
+        designation: 'Executive',
+        department: 'Business Solutions Manager',
+      };
+    }
     return {
       email: normalized,
       role: 'Employee',
@@ -662,11 +691,60 @@ export default function App() {
     }
   }, [activePage, userPermissions.pages, flatNavLeaves, account, isAdmin]);
 
-  const handleLogin = (email: string) => {
+  // On load, restore identity from the MSAL cache (a real prior Microsoft
+  // sign-in) rather than trusting a localStorage string. If there's no cached
+  // Microsoft account, the user is treated as signed out.
+  useEffect(() => {
+    if (!isMsalConfigured()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const acct = await restoreMicrosoftAccount();
+        if (cancelled) return;
+        const email = acct?.username?.trim().toLowerCase();
+        if (email && email.endsWith('@mgenesis.com')) {
+          setAccount(email);
+          localStorage.setItem('user_account', email);
+        } else {
+          setAccount(null);
+          localStorage.removeItem('user_account');
+        }
+      } finally {
+        if (!cancelled) setAuthChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleLogin = (email: string, auth?: MicrosoftAuth) => {
     setAccount(email);
     localStorage.setItem('user_account', email);
     setActivePage('dashboard');
+    // Best-effort: exchange the Microsoft ID token for a Supabase session so
+    // Postgres RLS can enforce access. A failure here (e.g. Azure provider not
+    // yet enabled in Supabase) is logged but does not block the user - their
+    // Microsoft identity is already verified. See supabase/seed_admins.sql.
+    if (auth) {
+      signIntoSupabaseWithMicrosoft(auth.idToken, auth.nonce).then((res) => {
+        if (!res.ok) console.warn('[auth] Supabase session not established:', res.error);
+      });
+    }
   };
+
+  const handleLogout = () => {
+    setAccount(null);
+    localStorage.removeItem('user_account');
+    void signOutSupabase();
+    void logoutMicrosoft();
+  };
+
+  // Hold the first paint until MSAL has been consulted, so the app never
+  // flashes before we know whether the user is really signed in.
+  if (!authChecked) {
+    return <div className="min-h-screen w-full bg-white" />;
+  }
 
   // Auth Guard
   if (!account) {
@@ -836,10 +914,7 @@ export default function App() {
         department={profile.department}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode((value) => !value)}
-        onLogout={() => {
-          setAccount(null);
-          localStorage.removeItem('user_account');
-        }}
+        onLogout={handleLogout}
         responses={userAccessibleAllTimeResponses}
         onViewAllSubmissions={() => setActivePage('my-submissions')}
       />
@@ -855,10 +930,7 @@ export default function App() {
         onOpenSimulator={() => setActivePage('simulator')}
         onOpenImportEvaluations={() => setActivePage('import-evaluations')}
         onResetSystemData={handleResetAllData}
-        onLogout={() => {
-          setAccount(null);
-          localStorage.removeItem('user_account');
-        }}
+        onLogout={handleLogout}
         accountsCount={accounts.length}
         activePartnerCompaniesCount={partnerCompanies.filter((c) => !c.isArchived).length}
         totalResponsesCount={responses.length}
@@ -1053,10 +1125,7 @@ export default function App() {
                 designation={profile?.designation}
                 department={profile?.department}
                 role={profile?.role}
-                onLogout={() => {
-                  setAccount(null);
-                  localStorage.removeItem('user_account');
-                }}
+                onLogout={handleLogout}
               />
             </div>
           </div>

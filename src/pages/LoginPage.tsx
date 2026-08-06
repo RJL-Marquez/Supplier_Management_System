@@ -1,160 +1,18 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Eye, EyeOff, LockKeyhole, Mail, Users, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { useState } from 'react';
+import { motion } from 'motion/react';
 import { isMsalConfigured, loginWithMicrosoft } from '../services/msalAuth';
-import { isDemoModeEnabled } from '../utils/demoMode';
 
-interface LoginPageProps {
-  onLogin: (email: string) => void;
+// Passed up to App so it can establish the Supabase session (RLS) from the
+// Microsoft ID token. `auth` is optional only so non-Microsoft/dev callers
+// still type-check; the real sign-in path always provides it.
+export interface MicrosoftAuth {
+  idToken: string;
+  nonce: string;
 }
 
-export const DEMO_ACCOUNTS = [
-  {
-    email: 'admin@mgenesis.com',
-    password: 'password123',
-    role: 'Admin',
-    designation: 'Executive',
-    department: 'Business Solutions Manager'
-  },
-
-  // Procurement
-  {
-    email: 'maria.fernandez@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Rank & File',
-    department: 'Procurement Group'
-  },
-  {
-    email: 'carlos.bautista@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Supervisory',
-    department: 'Procurement Group'
-  },
-  {
-    email: 'angela.reyes@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Managerial',
-    department: 'Procurement Group'
-  },
-
-  // Logistics
-  {
-    email: 'miguel.santos@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Rank & File',
-    department: 'Logistics'
-  },
-  {
-    email: 'denise.aquino@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Supervisory',
-    department: 'Logistics'
-  },
-  {
-    email: 'ramon.villanueva@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Managerial',
-    department: 'Logistics'
-  },
-
-  // Accounts Payable - Trade
-  {
-    email: 'kristine.manalo@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Rank & File',
-    department: 'Accounts Payable - Trade'
-  },
-  {
-    email: 'paolo.cruz@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Supervisory',
-    department: 'Accounts Payable - Trade'
-  },
-  {
-    email: 'bianca.torres@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Managerial',
-    department: 'Accounts Payable - Trade'
-  },
-
-  // Business Solutions Manager (BSM)
-  {
-    email: 'joshua.ramos@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Rank & File',
-    department: 'Business Solutions Manager'
-  },
-  {
-    email: 'katrina.lopez@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Supervisory',
-    department: 'Business Solutions Manager'
-  },
-  {
-    email: 'nathaniel.garcia@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Managerial',
-    department: 'Business Solutions Manager'
-  },
-  {
-    email: 'estrella.domingo@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Director',
-    department: 'Business Solutions Manager'
-  },
-
-  // TASS
-  {
-    email: 'julius.mercado@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Rank & File',
-    department: 'TASS'
-  },
-  {
-    email: 'corazon.ilagan@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Supervisory',
-    department: 'TASS'
-  },
-  {
-    email: 'vincent.alvarez@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Managerial',
-    department: 'TASS'
-  },
-  {
-    email: 'patricia.navarro@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Director',
-    department: 'TASS'
-  },
-
-  // Executive Office (new department)
-  {
-    email: 'rafael.concepcion@mgenesis.com',
-    password: 'password123',
-    role: 'Employee',
-    designation: 'Executive',
-    department: 'Executive Office'
-  }
-];
+interface LoginPageProps {
+  onLogin: (email: string, auth?: MicrosoftAuth) => void;
+}
 
 // Ambient dot texture for the hero panel — kept extremely faint (2–5% via the
 // text-white/[x] utility on the parent) so it reads as depth, not pattern.
@@ -251,42 +109,9 @@ function HeroIllustration({ className }: { className?: string }) {
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
-  const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const msalReady = isMsalConfigured();
-  const demoModeEnabled = isDemoModeEnabled();
   const [isMsSigningIn, setIsMsSigningIn] = useState(false);
   const [msError, setMsError] = useState('');
-  const [demoPanelOpen, setDemoPanelOpen] = useState(false);
-  const demoWidgetRef = useRef<HTMLDivElement>(null);
-
-  const demoGroups = useMemo(() => {
-    const order: string[] = [];
-    const map = new Map<string, typeof DEMO_ACCOUNTS>();
-    for (const acc of DEMO_ACCOUNTS) {
-      if (!map.has(acc.department)) {
-        order.push(acc.department);
-        map.set(acc.department, []);
-      }
-      map.get(acc.department)!.push(acc);
-    }
-    return order.map((department) => ({ department, accounts: map.get(department)! }));
-  }, []);
-
-  useEffect(() => {
-    if (!demoPanelOpen) return;
-    function handleClickOutside(event: MouseEvent) {
-      if (demoWidgetRef.current && !demoWidgetRef.current.contains(event.target as Node)) {
-        setDemoPanelOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [demoPanelOpen]);
 
   async function handleMicrosoftSignIn() {
     setMsError('');
@@ -298,49 +123,13 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         setMsError('Access is restricted to verified @mgenesis.com accounts.');
         return;
       }
-      onLogin(normalized);
+      onLogin(normalized, { idToken: result.idToken, nonce: result.nonce });
     } catch (err) {
       setMsError(err instanceof Error ? err.message : 'Microsoft sign-in failed. Please try again.');
     } finally {
       setIsMsSigningIn(false);
     }
   }
-
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    setError('');
-
-    if (!email || !password) {
-      setError('Please enter both your email and password.');
-      return;
-    }
-
-    const trimmedEmail = email.trim().toLowerCase();
-
-    // Verification of email extension: MUST have @mgenesis.com
-    if (!trimmedEmail.endsWith('@mgenesis.com')) {
-      setError('Access is restricted to verified @mgenesis.com email addresses.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    // Simulated auth check: accept password123 or 12345678
-    window.setTimeout(() => {
-      if (password === 'password123' || password === '12345678') {
-        onLogin(trimmedEmail);
-      } else {
-        setError('Incorrect password. For demo accounts or custom emails, please use "password123" or "12345678".');
-        setIsSubmitting(false);
-      }
-    }, 400);
-  }
-
-  const handleQuickSelect = (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword('password123');
-    setError('');
-    setDemoPanelOpen(false);
-  };
 
   return (
     <div className="relative min-h-screen w-full overflow-x-hidden bg-white">
@@ -408,7 +197,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           </div>
         </div>
 
-        {/* Login form panel — single instance, reflows for mobile / tablet / desktop */}
+        {/* Sign-in panel — Microsoft SSO only */}
         <div className="relative z-10 -mt-8 flex flex-col justify-center rounded-t-3xl bg-white px-6 py-10 shadow-[0_-12px_40px_rgba(15,23,42,0.12)] sm:px-10 md:mt-0 md:w-[380px] md:shrink-0 md:rounded-none md:px-10 md:py-12 md:shadow-none lg:w-1/3 lg:min-w-[380px] lg:px-14">
           <div className="mx-auto w-full max-w-sm">
             <img
@@ -421,108 +210,36 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <p className="text-[10px] font-semibold uppercase tracking-widest text-[#0063a9]">SMPESA</p>
               <h1 className="mt-1.5 text-2xl font-medium text-slate-900">Welcome back</h1>
               <p className="mt-1.5 text-sm font-light text-slate-500">
-                Sign in to access your supplier performance dashboard.
+                Sign in with your Microgenesis Microsoft account to continue.
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <label className="block">
-                <span className="field-label">Email address</span>
-                <div className="mt-1 flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white pl-3 pr-3 transition focus-within:border-azure focus-within:ring-2 focus-within:ring-blue-100">
-                  <Mail size={16} className="shrink-0 text-[#0063a9]" />
-                  <span className="h-5 w-px shrink-0 bg-slate-200" />
-                  <input
-                    type="email"
-                    autoComplete="username"
-                    className="w-full bg-transparent py-2 text-sm text-ink outline-none placeholder:text-slate-400"
-                    placeholder="name@mgenesis.com"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                  />
-                </div>
-              </label>
+            {msError && (
+              <p className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose">
+                {msError}
+              </p>
+            )}
 
-              <label className="block">
-                <span className="field-label">Password</span>
-                <div className="mt-1 flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white pl-3 pr-3 transition focus-within:border-azure focus-within:ring-2 focus-within:ring-blue-100">
-                  <LockKeyhole size={16} className="shrink-0 text-[#0063a9]" />
-                  <span className="h-5 w-px shrink-0 bg-slate-200" />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    className="w-full bg-transparent py-2 text-sm text-ink outline-none placeholder:text-slate-400"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((value) => !value)}
-                    className="shrink-0 cursor-pointer text-slate-400 hover:text-slate-600"
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </label>
-
-              <div className="flex items-center justify-between text-sm">
-                <label className="flex cursor-pointer select-none items-center gap-2 text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(event) => setRememberMe(event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-[#0063a9] focus:ring-[#0063a9]"
-                  />
-                  Remember me
-                </label>
-                <button type="button" className="cursor-pointer font-medium text-[#0063a9] hover:underline">
-                  Forgot password?
-                </button>
-              </div>
-
-              {error && (
-                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose">{error}</p>
-              )}
-
+            {msalReady ? (
               <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full cursor-pointer rounded-lg bg-[#0063a9] py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#00528c] disabled:opacity-70"
+                type="button"
+                onClick={handleMicrosoftSignIn}
+                disabled={isMsSigningIn}
+                className="flex w-full cursor-pointer items-center justify-center gap-2.5 rounded-lg border border-slate-300 bg-white py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-70"
               >
-                {isSubmitting ? 'Signing in…' : 'Sign in'}
+                <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
+                  <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+                  <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+                  <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+                  <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+                </svg>
+                {isMsSigningIn ? 'Signing in…' : 'Sign in with Microsoft'}
               </button>
-            </form>
-
-            {msalReady && (
-              <>
-                <div className="my-4 flex items-center gap-3 text-xs text-slate-400">
-                  <span className="h-px flex-1 bg-slate-200" />
-                  <span>or</span>
-                  <span className="h-px flex-1 bg-slate-200" />
-                </div>
-
-                {msError && (
-                  <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose">
-                    {msError}
-                  </p>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleMicrosoftSignIn}
-                  disabled={isMsSigningIn}
-                  className="flex w-full cursor-pointer items-center justify-center gap-2.5 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-70"
-                >
-                  <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
-                    <rect x="1" y="1" width="9" height="9" fill="#f25022" />
-                    <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
-                    <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
-                    <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
-                  </svg>
-                  {isMsSigningIn ? 'Signing in…' : 'Sign in with Microsoft'}
-                </button>
-              </>
+            ) : (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-700">
+                Microsoft sign-in is not configured yet. Set <span className="font-semibold">VITE_AZURE_CLIENT_ID</span>{' '}
+                and <span className="font-semibold">VITE_AZURE_TENANT_ID</span> in the deployment environment.
+              </p>
             )}
 
             <p className="mt-8 text-center text-[11px] leading-relaxed text-slate-400">
@@ -533,92 +250,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           </div>
         </div>
       </div>
-
-      {/* Floating demo accounts widget — remove once SSO is fully rolled out */}
-      {demoModeEnabled && (
-        <div ref={demoWidgetRef} className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
-          <AnimatePresence>
-            {demoPanelOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 12, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 12, scale: 0.96 }}
-                transition={{ duration: 0.15 }}
-                className="flex max-h-[65vh] w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:w-[380px]"
-              >
-                <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Users size={16} className="text-[#0063a9]" />
-                    <div>
-                      <p className="text-sm font-bold text-slate-800">Demo Simulation Accounts</p>
-                      <p className="text-[11px] text-slate-500">Tap an account to autofill credentials</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setDemoPanelOpen(false)}
-                    className="cursor-pointer rounded-md p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
-                    title="Close"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-
-                <div className="space-y-4 overflow-y-auto px-3 py-3">
-                  {demoGroups.map((group) => (
-                    <div key={group.department}>
-                      <p className="px-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        {group.department}
-                      </p>
-                      <div className="space-y-1.5">
-                        {group.accounts.map((acc) => (
-                          <button
-                            key={acc.email}
-                            type="button"
-                            onClick={() => handleQuickSelect(acc.email)}
-                            className="flex w-full cursor-pointer flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2.5 text-left transition hover:border-blue-300 hover:bg-blue-50/60"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="truncate text-xs font-bold text-[#0063a9]">{acc.email}</span>
-                              <span
-                                className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                                  acc.role === 'Admin'
-                                    ? 'border border-emerald-200 bg-emerald-50 text-emerald-600'
-                                    : 'border border-blue-200 bg-blue-50 text-blue-600'
-                                }`}
-                              >
-                                {acc.role}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-slate-400">{acc.designation}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="border-t border-slate-100 bg-slate-50 px-4 py-2.5 text-[11px] text-slate-500">
-                  All demo accounts use password <strong className="text-slate-700">password123</strong>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <button
-            type="button"
-            onClick={() => setDemoPanelOpen((value) => !value)}
-            className="flex cursor-pointer items-center gap-2 rounded-full bg-gradient-to-r from-[#0063a9] to-[#0090d9] py-3 pl-4 pr-5 text-sm font-semibold text-white shadow-lg shadow-blue-900/30 transition hover:-translate-y-0.5 hover:shadow-xl"
-          >
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-400" />
-            </span>
-            <Users size={16} />
-            Demo Accounts
-          </button>
-        </div>
-      )}
     </div>
   );
 }

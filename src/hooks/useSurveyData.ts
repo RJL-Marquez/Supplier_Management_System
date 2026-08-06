@@ -403,6 +403,21 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
       try {
         setIsLoading(true);
 
+        // One-time production reset ("treat it as no data yet"): any browser
+        // that was used during the demo/simulation phase is wiped clean the
+        // first time it loads this build - stale simulated surveys, responses,
+        // the full-dataset flag, and the time-travel clock all cleared - so
+        // every user starts from the migrated, empty state with closed
+        // surveys. The Partner Companies master list is deliberately NOT
+        // touched here (it is real reference data, not simulation).
+        if (localStorage.getItem('survey_analytics_migration_v7_fresh') !== 'true') {
+          localStorage.removeItem('survey_analytics_surveys_v6');
+          localStorage.removeItem('survey_analytics_responses_v6');
+          localStorage.removeItem('survey_analytics_full_dataset_active');
+          localStorage.removeItem('survey_sim_clock_v1');
+          localStorage.setItem('survey_analytics_migration_v7_fresh', 'true');
+        }
+
         // 1. Handle Surveys (Forms)
         let loadedSurveys: CustomForm[] = [];
         const savedSurveys = localStorage.getItem('survey_analytics_surveys_v6');
@@ -1145,6 +1160,10 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
               description: 'Standard satisfaction reporting for external courier and logistics.',
               createdAt: new Date('2025-01-01T08:00:00Z').toISOString(),
               deadlineDate: '31/12/2026',
+              // Migrated system: prior evaluation rounds were run in the old
+              // system, so every survey starts CLOSED here. Admins reopen (set
+              // to Running) when a new evaluation period begins.
+              status: 'Completed',
               accessDepartments: ALL_DEPARTMENTS,
               accessRoles: [...ALL_SURVEY_ACCESS_ROLES],
               questions: contractorQuestions as any,
@@ -1156,6 +1175,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
               description: 'Product quality and commercial terms assessment for inventory suppliers.',
               createdAt: new Date('2025-01-01T08:00:00Z').toISOString(),
               deadlineDate: '31/12/2026',
+              status: 'Completed',
               accessDepartments: ALL_DEPARTMENTS,
               accessRoles: [...ALL_SURVEY_ACCESS_ROLES],
               questions: supplierQuestions as any,
@@ -1167,6 +1187,7 @@ export function useSurveyData(accounts: SimulatableAccount[] = [], currentUserEm
               description: 'On-site execution, compliance, and schedule feedback for active subcontractors.',
               createdAt: new Date('2025-01-01T08:00:00Z').toISOString(),
               deadlineDate: '31/12/2026',
+              status: 'Completed',
               accessDepartments: ALL_DEPARTMENTS,
               accessRoles: [...ALL_SURVEY_ACCESS_ROLES],
               questions: subcontractorQuestions as any,

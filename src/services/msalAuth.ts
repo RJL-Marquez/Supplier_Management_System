@@ -47,6 +47,21 @@ export interface MicrosoftLoginResult {
   email: string;
   name?: string;
   account: AccountInfo;
+  // The raw OpenID Connect ID token (JWT) and the nonce it was minted with.
+  // These are what we hand to Supabase (supabase.auth.signInWithIdToken) so
+  // Supabase issues its own session and Postgres RLS can enforce access
+  // server-side. Kept together because Supabase re-validates the nonce.
+  idToken: string;
+  nonce: string;
+}
+
+// Cryptographically-random nonce, bound into the ID token by Microsoft and
+// re-checked by Supabase when we exchange the token. Prevents a token minted
+// for a different request from being replayed into our Supabase session.
+function generateNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // Opens the Microsoft sign-in popup and requests the scopes above up front,
@@ -54,10 +69,22 @@ export interface MicrosoftLoginResult {
 // prompt later at send-time.
 export async function loginWithMicrosoft(): Promise<MicrosoftLoginResult> {
   const instance = await ensureInitialized();
-  const result = await instance.loginPopup({ scopes: GRAPH_SCOPES, prompt: 'select_account' });
+  const nonce = generateNonce();
+  const result = await instance.loginPopup({ scopes: GRAPH_SCOPES, prompt: 'select_account', nonce });
   instance.setActiveAccount(result.account);
   const email = result.account.username;
-  return { email, name: result.account.name, account: result.account };
+  return { email, name: result.account.name, account: result.account, idToken: result.idToken, nonce };
+}
+
+// Returns the Microsoft account already cached from a previous sign-in, or
+// null if there is none. Restoring identity from this (rather than from a
+// plain localStorage string) is what makes the app's login gate real: an
+// account only exists in the MSAL cache if a genuine Microsoft sign-in
+// actually happened, so it cannot be forged by editing localStorage by hand.
+export async function restoreMicrosoftAccount(): Promise<AccountInfo | null> {
+  if (!isMsalConfigured()) return null;
+  const instance = await ensureInitialized();
+  return instance.getActiveAccount() || instance.getAllAccounts()[0] || null;
 }
 
 export async function logoutMicrosoft(): Promise<void> {
