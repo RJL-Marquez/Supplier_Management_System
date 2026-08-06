@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Signing you in…</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: #0a1f38;
+        color: #cfe0f2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .box { text-align: center; }
+      .spinner {
+        width: 34px;
+        height: 34px;
+        margin: 0 auto 14px;
+        border: 3px solid rgba(255, 255, 255, 0.2);
+        border-top-color: #4ea1e6;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      p { font-size: 14px; opacity: 0.85; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Microsoft SSO landing page. The sign-in popup is redirected here after
+      authentication; MSAL.js in the main window reads the response from this
+      same-origin URL and closes the popup automatically. No script is needed
+      here for the popup flow - the page just needs to exist and load fast.
+    -->
+    <div class="box">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Signing you in…</p>
+    </div>
+  </body>
+</html>
